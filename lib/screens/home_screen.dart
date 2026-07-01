@@ -26,8 +26,6 @@ class HomeScreen extends StatelessWidget {
             children: [
               _buildHeader(context, room),
               const SizedBox(height: 20),
-              _buildBudgetBar(state),
-              const SizedBox(height: 24),
               _buildScoreSection(context, state),
               const SizedBox(height: 24),
               _buildPresetSelector(context, state),
@@ -38,54 +36,6 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildBudgetBar(AppState state) {
-    final ratio = (state.totalSpent / state.totalBudget).clamp(0.0, 1.0);
-    final isOver = state.totalSpent > state.totalBudget;
-    return GlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          SvgIcon(RoomSvg.wallet, size: 20, color: isOver ? AppColors.red : AppColors.cyan),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'TOTAL RIG BUDGET',
-                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1),
-                    ),
-                    Text(
-                      '\$${state.totalSpent.toInt()} / \$${state.totalBudget.toInt()}',
-                      style: TextStyle(
-                        color: isOver ? AppColors.red : AppColors.cyan,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: ratio,
-                    minHeight: 5,
-                    backgroundColor: AppColors.border,
-                    valueColor: AlwaysStoppedAnimation(isOver ? AppColors.red : AppColors.cyan),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
