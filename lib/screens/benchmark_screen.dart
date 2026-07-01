@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../models/room_model.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/room_icons.dart';
@@ -64,6 +65,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
               _buildHeader(),
               const SizedBox(height: 20),
               _buildModeSelector(state),
+              const SizedBox(height: 20),
+              _buildModelPreview(state),
               const SizedBox(height: 20),
               _buildSimulationCanvas(state),
               const SizedBox(height: 20),
@@ -177,6 +180,56 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildModelPreview(AppState state) {
+    final room = state.currentRoomData;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'LIVE MODEL',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
+        ),
+        const SizedBox(height: 10),
+        GlassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  SvgIcon(RoomSvg.house, size: 18, color: AppColors.cyan),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${room.name} model',
+                      style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 15),
+                    ),
+                  ),
+                  Text(
+                    '${state.furniture.length} items',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 180,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: CustomPaint(
+                    painter: _RoomModelPainter(
+                      room: room,
+                      furniture: state.furniture,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -483,4 +536,93 @@ class _SimulationPainter extends CustomPainter {
   @override
   bool shouldRepaint(_SimulationPainter old) =>
       old.particleT != particleT || old.heatT != heatT || old.mode != mode;
+}
+
+class _RoomModelPainter extends CustomPainter {
+  final RoomData room;
+  final List<FurnitureItem> furniture;
+
+  _RoomModelPainter({required this.room, required this.furniture});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final roomRect = Rect.fromLTWH(16, 16, size.width - 32, size.height - 32);
+    final wallPaint = Paint()
+      ..color = AppColors.surfaceAlt.withValues(alpha: 0.9)
+      ..style = PaintingStyle.fill;
+    final framePaint = Paint()
+      ..color = AppColors.cyan.withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    canvas.drawRRect(RRect.fromRectAndRadius(roomRect, const Radius.circular(14)), wallPaint);
+    canvas.drawRRect(RRect.fromRectAndRadius(roomRect, const Radius.circular(14)), framePaint);
+
+    for (int c = 1; c < room.gridCols; c++) {
+      final dx = roomRect.left + roomRect.width * (c / room.gridCols);
+      canvas.drawLine(Offset(dx, roomRect.top), Offset(dx, roomRect.bottom), Paint()..color = AppColors.border.withValues(alpha: 0.55)..strokeWidth = 0.7);
+    }
+    for (int r = 1; r < room.gridRows; r++) {
+      final dy = roomRect.top + roomRect.height * (r / room.gridRows);
+      canvas.drawLine(Offset(roomRect.left, dy), Offset(roomRect.right, dy), Paint()..color = AppColors.border.withValues(alpha: 0.55)..strokeWidth = 0.7);
+    }
+
+    for (final item in furniture) {
+      final x = roomRect.left + roomRect.width * (item.gridX / room.gridCols);
+      final y = roomRect.top + roomRect.height * (item.gridY / room.gridRows);
+      final w = roomRect.width * (item.width / room.gridCols);
+      final h = roomRect.height * (item.height / room.gridRows);
+      final rect = RRect.fromRectAndRadius(Rect.fromLTWH(x + 1, y + 1, w - 2, h - 2), const Radius.circular(8));
+
+      canvas.drawRRect(
+        rect,
+        Paint()..color = AppColors.cyan.withValues(alpha: item.category == 'lighting' ? 0.18 : 0.12),
+      );
+      canvas.drawRRect(
+        rect,
+        Paint()
+          ..color = _categoryColor(item.category).withValues(alpha: 0.65)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.1,
+      );
+
+      final tp = TextPainter(
+        text: TextSpan(
+          text: item.name,
+          style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w600),
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 2,
+        ellipsis: '…',
+      )..layout(maxWidth: w - 8);
+      tp.paint(canvas, Offset(x + 4, y + 4));
+    }
+
+    final titlePaint = TextPainter(
+      text: const TextSpan(
+        text: 'Current room layout',
+        style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    titlePaint.paint(canvas, const Offset(14, 12));
+  }
+
+  Color _categoryColor(String cat) {
+    switch (cat) {
+      case 'airflow':
+        return AppColors.airflowColor;
+      case 'lighting':
+        return AppColors.lightingColor;
+      case 'ergonomics':
+        return AppColors.ergonomicsColor;
+      default:
+        return AppColors.textMuted;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RoomModelPainter oldDelegate) {
+    return oldDelegate.room != room || oldDelegate.furniture != furniture;
+  }
 }
