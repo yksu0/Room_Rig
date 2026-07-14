@@ -1,8 +1,15 @@
 // lib/models/app_state.dart
+import 'dart:convert';
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'room_model.dart';
+import 'scan_layout_model.dart';
 
 class AppState extends ChangeNotifier {
+  static const _persistedLayoutKey = 'room_rig.persisted_layout';
+
   // Navigation
   int _currentTab = 0;
   int get currentTab => _currentTab;
@@ -34,25 +41,86 @@ class AppState extends ChangeNotifier {
   RoomPreset _selectedPreset = RoomPreset.gamingSetup;
   RoomPreset get selectedPreset => _selectedPreset;
   late List<FurnitureItem> _furniture;
+  RoomLayoutModel? _activeRoomLayout;
 
   AppState() {
     _loadPreset(RoomPreset.gamingSetup);
+    unawaited(_restorePersistedLayout());
   }
 
   void _loadPreset(RoomPreset preset) {
     final data = RoomPresets.getPreset(preset);
     _furniture = List.from(data.furniture.map((f) => f.copyWith()));
     _selectedPreset = preset;
+    _activeRoomLayout = RoomLayoutModel.fromPreset(data, _furniture);
   }
 
   List<FurnitureItem> get furniture => _furniture;
   RoomData get currentRoomData => RoomPresets.getPreset(_selectedPreset);
+  RoomLayoutModel? get activeRoomLayout => _activeRoomLayout;
+  List<ScanObject> get detectedScanObjects {
+    return _activeRoomLayout?.objects
+            .where((o) => o.source == 'scan-fusion')
+            .toList(growable: false) ??
+        const <ScanObject>[];
+  }
+
+  void deleteDetectedScanObject(String id) {
+    final layout = _activeRoomLayout;
+    if (layout == null) return;
+    final next = layout.objects.where((o) => o.id != id).toList(growable: false);
+    _activeRoomLayout = layout.withObjects(next);
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
+
+  void toggleDetectedScanObjectLock(String id) {
+    final layout = _activeRoomLayout;
+    if (layout == null) return;
+
+    final next = layout.objects
+        .map((o) => o.id == id ? o.copyWith(locked: !o.locked) : o)
+        .toList(growable: false);
+    _activeRoomLayout = layout.withObjects(next);
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
+
+  void replaceDetectedScanObject(
+    String id, {
+    required String newLabel,
+    required String newCategory,
+  }) {
+    final layout = _activeRoomLayout;
+    if (layout == null) return;
+
+    final next = layout.objects
+        .map((o) => o.id == id
+            ? ScanObject(
+                id: o.id,
+                label: newLabel,
+                category: newCategory,
+                confidence: o.confidence,
+                center: o.center,
+                sizeMeters: o.sizeMeters,
+                yawDegrees: o.yawDegrees,
+                source: o.source,
+                locked: o.locked,
+              )
+            : o)
+        .toList(growable: false);
+
+    _activeRoomLayout = layout.withObjects(next);
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
 
   void selectPreset(RoomPreset preset) {
     _loadPreset(preset);
     _scanComplete = false;
     _scanProgress = 0.0;
     _isOptimized = false;
+    unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
 
@@ -60,7 +128,65 @@ class AppState extends ChangeNotifier {
     final idx = _furniture.indexWhere((f) => f.id == id);
     if (idx >= 0) {
       _furniture[idx] = _furniture[idx].copyWith(gridX: newX, gridY: newY);
+      _activeRoomLayout = _activeRoomLayout?.withFurniture(_furniture);
+      unawaited(_persistActiveRoomLayout());
       notifyListeners();
+    }
+  }
+
+  void markCoverageCell(int col, int row, double coverageValue) {
+    final current = _activeRoomLayout;
+    if (current == null) return;
+    final nextCoverage = current.coverageGrid.markCell(col, row, coverageValue);
+    _activeRoomLayout = current.withCoverage(nextCoverage);
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
+
+  void applyScannedRoomLayout(RoomLayoutModel layout) {
+    _activeRoomLayout = layout;
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
+
+  String? exportRoomLayoutJson() {
+    final layout = _activeRoomLayout;
+    if (layout == null) return null;
+    return const JsonEncoder.withIndent('  ').convert(layout.toJson());
+  }
+
+  bool tryImportRoomLayoutJson(String rawJson) {
+    try {
+      final decoded = jsonDecode(rawJson) as Map<String, dynamic>;
+      _activeRoomLayout = RoomLayoutModel.fromJson(decoded);
+      unawaited(_persistActiveRoomLayout());
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _persistActiveRoomLayout() async {
+    final layout = _activeRoomLayout;
+    if (layout == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = jsonEncode(layout.toJson());
+    await prefs.setString(_persistedLayoutKey, raw);
+  }
+
+  Future<void> _restorePersistedLayout() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_persistedLayoutKey);
+    if (raw == null || raw.isEmpty) return;
+
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final restored = RoomLayoutModel.fromJson(decoded);
+      _activeRoomLayout = restored;
+      notifyListeners();
+    } catch (_) {
+      // Ignore invalid cached layouts and continue with preset state.
     }
   }
 
