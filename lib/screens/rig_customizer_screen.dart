@@ -153,6 +153,40 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   ),
                 ),
               ),
+              GestureDetector(
+                onTap: () {
+                  state.setBenchmarkMode('airflow');
+                  state.setTab(3);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Simulated prototype started at Airflow mode. Lighting and Ergonomics come next.'),
+                      backgroundColor: AppColors.card,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 160,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.science_rounded, size: 16, color: AppColors.cyan),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Sim Prototype',
+                        style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w700, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ],
