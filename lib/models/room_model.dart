@@ -94,6 +94,7 @@ class RoomPresets {
             FurnitureItem(id: 'window', name: 'Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, lightingImpact: 0.8, airflowImpact: 0.5, cost: 300, description: 'Provides natural light and ambient ventilation.'),
             FurnitureItem(id: 'lamp', name: 'LED Strip', iconName: 'lamp', category: 'lighting', gridX: 3, gridY: 1, lightingImpact: 0.5, cost: 49, description: 'RGB ambient lighting to customize workspace mood.'),
             FurnitureItem(id: 'shelf', name: 'Shelf', iconName: 'shelf', category: 'neutral', gridX: 5, gridY: 3, airflowImpact: -0.2, cost: 119, description: 'Storage unit; blockages can redirect airflow path.'),
+            FurnitureItem(id: 'fan', name: 'Stand Fan', iconName: 'fan', category: 'airflow', gridX: 4, gridY: 5, airflowImpact: 0.55, cost: 45, description: 'Oscillating pedestal fan; sweeps ~45° to push air around the room.'),
           ],
         );
       case RoomPreset.homeOffice:

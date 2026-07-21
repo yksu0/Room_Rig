@@ -155,11 +155,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               ),
               GestureDetector(
                 onTap: () {
-                  state.setBenchmarkMode('airflow');
+                  state.loadSimulatedPrototypeBaseline();
                   state.setTab(3);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: const Text('Simulated prototype started at Airflow mode. Lighting and Ergonomics come next.'),
+                      content: const Text('Loaded inefficient demo baseline. Airflow simulation is first, then Lighting and Ergonomics.'),
                       backgroundColor: AppColors.card,
                       behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -517,7 +517,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                         border: Border.all(color: AppColors.border),
                       ),
                       child: const Text(
-                        '3D orbit: drag to look, tap objects to select, pinch/scroll to zoom',
+                        '3D orbit: drag to look, tap objects to select, pinch/scroll to zoom, hold and drag to orbit around the room',
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -535,6 +535,22 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       child: Text(
                         'yaw ${(_roomRotationRad * 180 / math.pi).round()} deg  pitch ${(_cameraPitchRad * 180 / math.pi).round()} deg',
                         style: const TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Text(
+                        'Tip: rotate to inspect airflow from all sides',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),

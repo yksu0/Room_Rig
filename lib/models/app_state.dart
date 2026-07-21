@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'airflow_prototype.dart';
 import 'room_model.dart';
 import 'scan_layout_model.dart';
 
@@ -225,6 +226,10 @@ class AppState extends ChangeNotifier {
     return score.clamp(0, 100);
   }
 
+  double get baselineAirflowScore => _baseAirflowScore;
+  double get baselineLightingScore => _baseLightingScore;
+  double get baselineErgonomicsScore => _baseErgonomicsScore;
+
   double get airflowScore => _isOptimized
       ? (_baseAirflowScore + _airflowSlider * 25).clamp(0, 100)
       : _baseAirflowScore;
@@ -259,7 +264,40 @@ class AppState extends ChangeNotifier {
   }
 
   void runOptimization() {
+    // Default optimization profile for deterministic demo runs.
+    _airflowSlider = 0.90;
+    _lightingSlider = 0.88;
+    _ergonomicsSlider = 0.92;
     _isOptimized = true;
+    notifyListeners();
+  }
+
+  /// Applies the airflow-optimized furniture rearrange used by the Bench prototype.
+  void applyAirflowOptimizedLayout() {
+    _loadPreset(RoomPreset.gamingSetup);
+    _furniture = AirflowPrototypeLayouts.optimized(_furniture);
+    _activeRoomLayout = RoomLayoutModel.fromPreset(currentRoomData, _furniture);
+    _airflowSlider = 0.90;
+    _lightingSlider = 0.88;
+    _ergonomicsSlider = 0.92;
+    _isOptimized = true;
+    _benchmarkMode = 'airflow';
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
+
+  void loadSimulatedPrototypeBaseline() {
+    _loadPreset(RoomPreset.gamingSetup);
+    _furniture = AirflowPrototypeLayouts.baseline(_furniture);
+    _activeRoomLayout = RoomLayoutModel.fromPreset(currentRoomData, _furniture);
+    _scanComplete = false;
+    _scanProgress = 0.0;
+    _isOptimized = false;
+    _airflowSlider = 0.25;
+    _lightingSlider = 0.25;
+    _ergonomicsSlider = 0.25;
+    _benchmarkMode = 'airflow';
+    unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
 
