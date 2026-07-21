@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
+import '../models/scan_layout_model.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/room_icons.dart';
@@ -21,7 +22,8 @@ class RigCustomizerScreen extends StatefulWidget {
 
 class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  FurnitureItem? _selected;
+  String? _selectedFurnitureId;
+  String? _selectedScanObjectId;
   _RigViewMode _viewMode = _RigViewMode.twoD;
   _OptimizeGoal _optimizeGoal = _OptimizeGoal.balanced;
   double _roomRotationRad = 0;
@@ -35,6 +37,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final selectedFurniture = _selectedFurniture(state);
+    final selectedScanObject = _selectedScanObject(state);
 
     return Scaffold(
       key: _scaffoldKey,
@@ -53,7 +57,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       _buildOptimizationPanel(state),
                     ],
                   ),
-                  if (_selected != null) _buildInfoCard(_selected!),
+                  if (selectedFurniture != null) _buildFurnitureInfoCard(selectedFurniture),
+                  if (selectedScanObject != null) _buildScanInfoCard(selectedScanObject),
                 ],
               ),
             ),
@@ -144,6 +149,40 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       SvgIcon(RoomSvg.star, size: 16, color: Colors.white),
                       const SizedBox(width: 6),
                       const Text('Auto-Rig', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () {
+                  state.loadSimulatedPrototypeBaseline();
+                  state.setTab(3);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Loaded inefficient demo baseline. Airflow simulation is first, then Lighting and Ergonomics.'),
+                      backgroundColor: AppColors.card,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 160,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.science_rounded, size: 16, color: AppColors.cyan),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Sim Prototype',
+                        style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w700, fontSize: 12),
+                      ),
                     ],
                   ),
                 ),
@@ -298,14 +337,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                         ),
                         ..._buildSurfaceDetections2D(constraints.maxWidth, constraints.maxHeight),
                         ...state.furniture.map((item) {
-                          final isSelected = _selected?.id == item.id;
+                          final isSelected = _isFurnitureSelected(item.id);
                           return Positioned(
                             left: item.gridX * cellW + cellW * 0.05,
                             top: item.gridY * cellH + cellH * 0.05,
                             width: item.width * cellW * 0.9,
                             height: item.height * cellH * 0.9,
                             child: GestureDetector(
-                              onTap: () => _selectOrToggle(item, isSelected),
+                              onTap: () => _toggleFurnitureSelection(item.id),
                               onPanUpdate: (details) {
                                 final rotatedDelta = _rotateOffset(details.delta, -_roomRotationRadians);
                                 final newX = (item.gridX + rotatedDelta.dx / cellW)
@@ -313,7 +352,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                                 final newY = (item.gridY + rotatedDelta.dy / cellH)
                                     .clamp(0.0, (state.currentRoomData.gridRows - item.height).toDouble());
                                 state.moveFurniture(item.id, newX, newY);
-                                _syncSelectedFromState(state);
                               },
                               child: _FurnitureCell(item: item, isSelected: isSelected),
                             ),
@@ -348,7 +386,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             final gridRows = state.currentRoomData.gridRows;
             final w = constraints.maxWidth;
             final h = constraints.maxHeight;
-            final renderItems = state.furniture
+            final roomLayout = state.activeRoomLayout;
+            final roomLengthMeters = roomLayout?.dimensions.lengthMeters ?? gridCols.toDouble();
+            final roomWidthMeters = roomLayout?.dimensions.widthMeters ?? gridRows.toDouble();
+            final metersPerGridX = roomLengthMeters <= 0 ? 1.0 : roomLengthMeters / gridCols;
+            final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / gridRows;
+
+            final presetItems = state.furniture
                 .map(
                   (item) => _RoomRenderItem(
                     id: item.id,
@@ -357,10 +401,34 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     width: item.width,
                     depth: item.height,
                     color: _categoryColor(item.category),
-                    selected: _selected?.id == item.id,
+                    selected: _isFurnitureSelected(item.id),
+                    isScanObject: false,
+                    label: item.name,
+                    heightY: 0.95,
                   ),
                 )
                 .toList();
+
+            final detectedItems = state.detectedScanObjects
+                .map(
+                  (obj) => _RoomRenderItem(
+                    id: 'scan_${obj.id}',
+                    x: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
+                        .clamp(0.0, gridCols.toDouble()),
+                    z: ((obj.center.z - obj.sizeMeters.z * 0.5) / metersPerGridZ)
+                        .clamp(0.0, gridRows.toDouble()),
+                    width: (obj.sizeMeters.x / metersPerGridX).clamp(0.35, gridCols.toDouble()),
+                    depth: (obj.sizeMeters.z / metersPerGridZ).clamp(0.35, gridRows.toDouble()),
+                    color: _categoryColor(obj.category).withValues(alpha: 0.72),
+                    selected: _isScanSelected(obj.id),
+                    isScanObject: true,
+                    label: obj.label,
+                    heightY: obj.sizeMeters.y.clamp(0.4, 2.2),
+                  ),
+                )
+                .toList();
+
+            final renderItems = <_RoomRenderItem>[...presetItems, ...detectedItems];
 
             return Listener(
               behavior: HitTestBehavior.opaque,
@@ -404,7 +472,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 if (start != null && (start - event.localPosition).distance < 8) {
                   final picked = _pickItemIn3D(event.localPosition, canvasSize, state);
                   if (picked != null) {
-                    _selectOrToggle(picked, _selected?.id == picked.id);
+                    if (picked.isScanObject) {
+                      _toggleScanSelection(picked.id);
+                    } else {
+                      _toggleFurnitureSelection(picked.id);
+                    }
                   }
                 }
               },
@@ -445,7 +517,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                         border: Border.all(color: AppColors.border),
                       ),
                       child: const Text(
-                        '3D orbit: drag to look, tap objects to select, pinch/scroll to zoom',
+                        '3D orbit: drag to look, tap objects to select, pinch/scroll to zoom, hold and drag to orbit around the room',
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -466,6 +538,22 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       ),
                     ),
                   ),
+                  Positioned(
+                    bottom: 10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Text(
+                        'Tip: rotate to inspect airflow from all sides',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             );
@@ -475,7 +563,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  FurnitureItem? _pickItemIn3D(Offset localPos, Size size, AppState state) {
+  _PickedEntity? _pickItemIn3D(Offset localPos, Size size, AppState state) {
     final roomWidth = state.currentRoomData.gridCols.toDouble();
     final roomDepth = state.currentRoomData.gridRows.toDouble();
     final cam = _CameraPose(
@@ -487,19 +575,58 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       distance: _cameraDistance,
     );
 
-    FurnitureItem? best;
+    _PickedEntity? best;
     double bestDepth = double.infinity;
 
-    for (final item in state.furniture) {
+    final roomLayout = state.activeRoomLayout;
+    final roomLengthMeters = roomLayout?.dimensions.lengthMeters ?? state.currentRoomData.gridCols.toDouble();
+    final roomWidthMeters = roomLayout?.dimensions.widthMeters ?? state.currentRoomData.gridRows.toDouble();
+    final metersPerGridX = roomLengthMeters <= 0 ? 1.0 : roomLengthMeters / state.currentRoomData.gridCols;
+    final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / state.currentRoomData.gridRows;
+
+    final pickItems = <_RoomRenderItem>[
+      ...state.furniture.map(
+        (item) => _RoomRenderItem(
+          id: item.id,
+          x: item.gridX,
+          z: item.gridY,
+          width: item.width,
+          depth: item.height,
+          heightY: 0.95,
+          color: Colors.white,
+          selected: false,
+          isScanObject: false,
+          label: item.name,
+        ),
+      ),
+      ...state.detectedScanObjects.map(
+        (obj) => _RoomRenderItem(
+          id: obj.id,
+          x: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
+              .clamp(0.0, state.currentRoomData.gridCols.toDouble()),
+          z: ((obj.center.z - obj.sizeMeters.z * 0.5) / metersPerGridZ)
+              .clamp(0.0, state.currentRoomData.gridRows.toDouble()),
+          width: (obj.sizeMeters.x / metersPerGridX).clamp(0.35, state.currentRoomData.gridCols.toDouble()),
+          depth: (obj.sizeMeters.z / metersPerGridZ).clamp(0.35, state.currentRoomData.gridRows.toDouble()),
+          heightY: obj.sizeMeters.y.clamp(0.4, 2.2),
+          color: Colors.white,
+          selected: false,
+          isScanObject: true,
+          label: obj.label,
+        ),
+      ),
+    ];
+
+    for (final item in pickItems) {
       final yTop = 0.95;
-      final a = _Vec3(item.gridX, 0, item.gridY);
-      final b = _Vec3(item.gridX + item.width, 0, item.gridY);
-      final c = _Vec3(item.gridX + item.width, 0, item.gridY + item.height);
-      final d = _Vec3(item.gridX, 0, item.gridY + item.height);
-      final a2 = _Vec3(item.gridX, yTop, item.gridY);
-      final b2 = _Vec3(item.gridX + item.width, yTop, item.gridY);
-      final c2 = _Vec3(item.gridX + item.width, yTop, item.gridY + item.height);
-      final d2 = _Vec3(item.gridX, yTop, item.gridY + item.height);
+      final a = _Vec3(item.x, 0, item.z);
+      final b = _Vec3(item.x + item.width, 0, item.z);
+      final c = _Vec3(item.x + item.width, 0, item.z + item.depth);
+      final d = _Vec3(item.x, 0, item.z + item.depth);
+      final a2 = _Vec3(item.x, yTop, item.z);
+      final b2 = _Vec3(item.x + item.width, yTop, item.z);
+      final c2 = _Vec3(item.x + item.width, yTop, item.z + item.depth);
+      final d2 = _Vec3(item.x, yTop, item.z + item.depth);
 
       final faces = [
         _RoomProjection.projectFace(_Face([a2, b2, c2, d2], Colors.white), size, cam),
@@ -514,18 +641,18 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         final path = Path()..addPolygon(face.points, true);
         if (path.contains(localPos) && face.depth < bestDepth) {
           bestDepth = face.depth;
-          best = item;
+          best = _PickedEntity(id: item.id, isScanObject: item.isScanObject);
         }
       }
     }
 
     if (best != null) return best;
 
-    FurnitureItem? fallback;
+    _PickedEntity? fallback;
     double fallbackDist = 24;
-    for (final item in state.furniture) {
+    for (final item in pickItems) {
       final point = _RoomProjection.project(
-        _Vec3(item.gridX + item.width * 0.5, 0.6, item.gridY + item.height * 0.5),
+        _Vec3(item.x + item.width * 0.5, 0.6, item.z + item.depth * 0.5),
         size,
         cam,
       );
@@ -533,13 +660,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       final distance = (point.offset - localPos).distance;
       if (distance < fallbackDist) {
         fallbackDist = distance;
-        fallback = item;
+        fallback = _PickedEntity(id: item.id, isScanObject: item.isScanObject);
       }
     }
     return fallback;
   }
 
   Widget _buildDetectedItemsDrawer(AppState state) {
+    final scanObjects = state.detectedScanObjects;
     return Drawer(
       backgroundColor: AppColors.surface,
       width: 320,
@@ -556,7 +684,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   ),
                   const Spacer(),
                   Text(
-                    '${state.furniture.length} total',
+                    '${state.furniture.length + scanObjects.length} total',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
                   ),
                 ],
@@ -564,79 +692,186 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             ),
             const Divider(color: AppColors.border, height: 1),
             Expanded(
-              child: ListView.separated(
+              child: ListView(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
-                itemCount: state.furniture.length,
-                separatorBuilder: (_, index) => const SizedBox(height: 8),
-                itemBuilder: (_, i) {
-                  final item = state.furniture[i];
-                  final isSelected = _selected?.id == item.id;
-                  final catColor = _categoryColor(item.category);
-                  final confidence = 86 + (i * 3) % 13;
+                children: [
+                  Text(
+                    'LAYOUT ITEMS',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5),
+                  ),
+                  const SizedBox(height: 8),
+                  ...state.furniture.asMap().entries.map((entry) {
+                    final i = entry.key;
+                    final item = entry.value;
+                    final isSelected = _isFurnitureSelected(item.id);
+                    final catColor = _categoryColor(item.category);
+                    final confidence = 86 + (i * 3) % 13;
 
-                  return GestureDetector(
-                    onTap: () {
-                      _selectOrToggle(item, false);
-                      Navigator.of(context).pop();
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: isSelected ? catColor.withValues(alpha: 0.12) : AppColors.card,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: isSelected ? catColor : AppColors.border,
-                          width: isSelected ? 1.4 : 1,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: catColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: SvgIcon(
-                                furnitureSvgFor(item.iconName),
-                                size: 18,
-                                color: catColor,
-                              ),
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          _toggleFurnitureSelection(item.id);
+                          Navigator.of(context).pop();
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: isSelected ? catColor.withValues(alpha: 0.12) : AppColors.card,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected ? catColor : AppColors.border,
+                              width: isSelected ? 1.4 : 1,
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: catColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: SvgIcon(
+                                    furnitureSvgFor(item.iconName),
+                                    size: 18,
+                                    color: catColor,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(item.name, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '${item.category.toUpperCase()}  •  ${item.gridX.toStringAsFixed(1)}, ${item.gridY.toStringAsFixed(1)}',
+                                      style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppColors.green.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '$confidence%',
+                                  style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                  if (scanObjects.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'SCAN OBJECTS',
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5),
+                    ),
+                    const SizedBox(height: 8),
+                    ...scanObjects.map((obj) {
+                      final isSelected = _isScanSelected(obj.id);
+                      final catColor = _categoryColor(obj.category);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: GestureDetector(
+                          onTap: () => _toggleScanSelection(obj.id),
+                          child: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: isSelected ? catColor.withValues(alpha: 0.12) : AppColors.card,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isSelected ? catColor : catColor.withValues(alpha: 0.55),
+                                width: isSelected ? 1.4 : 1,
+                              ),
+                            ),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(item.name, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
-                                const SizedBox(height: 3),
-                                Text(
-                                  '${item.category.toUpperCase()}  •  ${item.gridX.toStringAsFixed(1)}, ${item.gridY.toStringAsFixed(1)}',
-                                  style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: catColor.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Center(
+                                        child: Icon(Icons.view_in_ar_rounded, size: 18, color: catColor),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(obj.label, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            '${obj.sizeMeters.x.toStringAsFixed(2)}m × ${obj.sizeMeters.z.toStringAsFixed(2)}m × ${obj.sizeMeters.y.toStringAsFixed(2)}m',
+                                            style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.green.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        '${(obj.confidence * 100).round()}%',
+                                        style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.w700),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    _ScanActionButton(
+                                      icon: obj.locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                                      label: obj.locked ? 'Unlock' : 'Lock',
+                                      color: obj.locked ? AppColors.amber : AppColors.textSecondary,
+                                      onTap: () => state.toggleDetectedScanObjectLock(obj.id),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    _ScanActionButton(
+                                      icon: Icons.swap_horiz_rounded,
+                                      label: 'Replace',
+                                      color: AppColors.cyan,
+                                      onTap: () => _showScanReplacePicker(state, obj),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    _ScanActionButton(
+                                      icon: Icons.delete_outline_rounded,
+                                      label: 'Delete',
+                                      color: AppColors.red,
+                                      onTap: () => _deleteScanObjectWithUndo(state, obj),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: AppColors.green.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              '$confidence%',
-                              style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
+                        ),
+                      );
+                    }),
+                  ],
+                ],
               ),
             ),
           ],
@@ -645,18 +880,148 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  void _selectOrToggle(FurnitureItem item, bool isSelected) {
+  bool _isFurnitureSelected(String id) => _selectedFurnitureId == id;
+
+  bool _isScanSelected(String id) => _selectedScanObjectId == id;
+
+  void _toggleFurnitureSelection(String id) {
     setState(() {
-      _selected = isSelected ? null : item;
+      if (_selectedFurnitureId == id) {
+        _selectedFurnitureId = null;
+      } else {
+        _selectedFurnitureId = id;
+        _selectedScanObjectId = null;
+      }
     });
   }
 
-  void _syncSelectedFromState(AppState state) {
-    if (_selected == null) return;
-    final synced = state.furniture.where((f) => f.id == _selected!.id);
-    if (synced.isNotEmpty) {
-      setState(() => _selected = synced.first);
-    }
+  void _toggleScanSelection(String id) {
+    setState(() {
+      if (_selectedScanObjectId == id) {
+        _selectedScanObjectId = null;
+      } else {
+        _selectedScanObjectId = id;
+        _selectedFurnitureId = null;
+      }
+    });
+  }
+
+  FurnitureItem? _selectedFurniture(AppState state) {
+    final id = _selectedFurnitureId;
+    if (id == null) return null;
+    final matches = state.furniture.where((f) => f.id == id);
+    if (matches.isEmpty) return null;
+    return matches.first;
+  }
+
+  ScanObject? _selectedScanObject(AppState state) {
+    final id = _selectedScanObjectId;
+    if (id == null) return null;
+    final matches = state.detectedScanObjects.where((o) => o.id == id);
+    if (matches.isEmpty) return null;
+    return matches.first;
+  }
+
+  Future<void> _showScanReplacePicker(AppState state, ScanObject obj) async {
+    final templates = <String, List<String>>{
+      'ergonomics': ['Office Chair', 'Standing Desk', 'Monitor Stand', 'Keyboard Tray'],
+      'lighting': ['Floor Lamp', 'Task Light', 'Window', 'Ceiling Light'],
+      'airflow': ['Tower Fan', 'Air Purifier', 'Vent Unit', 'AC Outlet'],
+      'neutral': ['Storage Cabinet', 'Side Table', 'Shelf Unit', 'Decor Piece'],
+    };
+
+    final category = obj.category;
+    final options = templates[category] ?? ['Generic Item', 'Storage Unit', 'Desk Accessory'];
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'REPLACE SCAN OBJECT',
+                  style: TextStyle(color: AppColors.cyan, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  obj.label,
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                ...options.map(
+                  (option) => ListTile(
+                    dense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    leading: Icon(Icons.swap_horiz_rounded, color: AppColors.cyan),
+                    title: Text(option, style: const TextStyle(color: AppColors.textPrimary)),
+                    onTap: () => Navigator.of(context).pop(option),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected == null || !mounted) return;
+    final previousLabel = obj.label;
+    final previousCategory = obj.category;
+
+    state.replaceDetectedScanObject(
+      obj.id,
+      newLabel: selected,
+      newCategory: category,
+    );
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Replaced "$previousLabel" with "$selected"'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              state.replaceDetectedScanObject(
+                obj.id,
+                newLabel: previousLabel,
+                newCategory: previousCategory,
+              );
+            },
+          ),
+        ),
+      );
+  }
+
+  void _deleteScanObjectWithUndo(AppState state, ScanObject obj) {
+    final layoutBefore = state.activeRoomLayout;
+    state.deleteDetectedScanObject(obj.id);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Deleted "${obj.label}"'),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              if (layoutBefore != null) {
+                state.applyScannedRoomLayout(layoutBefore);
+              }
+            },
+          ),
+        ),
+      );
   }
 
   Color _categoryColor(String cat) {
@@ -787,13 +1152,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     }
   }
 
-  Widget _buildInfoCard(FurnitureItem item) {
+  Widget _buildFurnitureInfoCard(FurnitureItem item) {
     return Positioned(
       bottom: 210,
       left: 16,
       right: 16,
       child: GestureDetector(
-        onTap: () => setState(() => _selected = null),
+        onTap: () => setState(() => _selectedFurnitureId = null),
         child: NeonBorderCard(
           glowColor: AppColors.cyan,
           child: Column(
@@ -835,6 +1200,60 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               const SizedBox(height: 8),
               Text(
                 'Drag to reposition  •  Tap to deselect',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScanInfoCard(ScanObject obj) {
+    final color = _categoryColor(obj.category);
+    return Positioned(
+      bottom: 210,
+      left: 16,
+      right: 16,
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedScanObjectId = null),
+        child: NeonBorderCard(
+          glowColor: color,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: color.withValues(alpha: 0.3)),
+                    ),
+                    child: Center(child: Icon(Icons.view_in_ar_rounded, size: 22, color: color)),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(obj.label, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 15)),
+                      Text(obj.category.toUpperCase(), style: TextStyle(color: color, fontSize: 10, letterSpacing: 2)),
+                    ],
+                  ),
+                  const Spacer(),
+                  if (obj.locked) const Icon(Icons.lock_rounded, color: AppColors.amber, size: 18),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '${obj.sizeMeters.x.toStringAsFixed(2)}m × ${obj.sizeMeters.z.toStringAsFixed(2)}m × ${obj.sizeMeters.y.toStringAsFixed(2)}m',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Detected confidence: ${(obj.confidence * 100).round()}%  •  Tap to deselect',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 11),
               ),
             ],
@@ -960,8 +1379,11 @@ class _RoomRenderItem {
   final double z;
   final double width;
   final double depth;
+  final double heightY;
   final Color color;
   final bool selected;
+  final bool isScanObject;
+  final String label;
 
   const _RoomRenderItem({
     required this.id,
@@ -969,8 +1391,11 @@ class _RoomRenderItem {
     required this.z,
     required this.width,
     required this.depth,
+    required this.heightY,
     required this.color,
     required this.selected,
+    required this.isScanObject,
+    required this.label,
   });
 }
 
@@ -1080,7 +1505,7 @@ class _RoomOrbit3DPainter extends CustomPainter {
 
     final furnitureFaces = <_ProjectedFace>[];
     for (final item in items) {
-      final yTop = 0.95;
+      final yTop = item.heightY;
       final a = _Vec3(item.x, 0, item.z);
       final b = _Vec3(item.x + item.width, 0, item.z);
       final c = _Vec3(item.x + item.width, 0, item.z + item.depth);
@@ -1091,14 +1516,15 @@ class _RoomOrbit3DPainter extends CustomPainter {
       final d2 = _Vec3(item.x, yTop, item.z + item.depth);
 
       final top = _RoomProjection.projectFace(
-        _Face([a2, b2, c2, d2], item.color.withValues(alpha: item.selected ? 0.8 : 0.55)),
+        _Face([a2, b2, c2, d2], item.color.withValues(alpha: item.selected ? 0.8 : (item.isScanObject ? 0.46 : 0.55))),
         size,
         cam,
       );
-      final s1 = _RoomProjection.projectFace(_Face([a, b, b2, a2], item.color.withValues(alpha: 0.4)), size, cam);
-      final s2 = _RoomProjection.projectFace(_Face([b, c, c2, b2], item.color.withValues(alpha: 0.46)), size, cam);
-      final s3 = _RoomProjection.projectFace(_Face([c, d, d2, c2], item.color.withValues(alpha: 0.42)), size, cam);
-      final s4 = _RoomProjection.projectFace(_Face([d, a, a2, d2], item.color.withValues(alpha: 0.38)), size, cam);
+      final sideBase = item.isScanObject ? 0.28 : 0.4;
+      final s1 = _RoomProjection.projectFace(_Face([a, b, b2, a2], item.color.withValues(alpha: sideBase)), size, cam);
+      final s2 = _RoomProjection.projectFace(_Face([b, c, c2, b2], item.color.withValues(alpha: sideBase + 0.06)), size, cam);
+      final s3 = _RoomProjection.projectFace(_Face([c, d, d2, c2], item.color.withValues(alpha: sideBase + 0.02)), size, cam);
+      final s4 = _RoomProjection.projectFace(_Face([d, a, a2, d2], item.color.withValues(alpha: sideBase - 0.02)), size, cam);
 
       if (top != null) furnitureFaces.add(top);
       if (s1 != null) furnitureFaces.add(s1);
@@ -1235,6 +1661,56 @@ class _RoomProjection {
     }
     depth /= face.vertices.length;
     return _ProjectedFace(points: points, depth: depth, color: face.color);
+  }
+}
+
+class _PickedEntity {
+  final String id;
+  final bool isScanObject;
+
+  const _PickedEntity({required this.id, required this.isScanObject});
+}
+
+class _ScanActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ScanActionButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

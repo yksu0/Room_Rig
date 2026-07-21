@@ -419,6 +419,7 @@ String furnitureSvgFor(String id) {
     case 'wardrobe': return RoomSvg.wardrobe;
     case 'kitchen': return RoomSvg.kitchen;
     case 'shelf': return RoomSvg.bookshelf;
+    case 'fan': return RoomSvg.fan;
     default: return RoomSvg.house;
   }
 }

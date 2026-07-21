@@ -1,13 +1,22 @@
 // lib/screens/benchmark_screen.dart
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:provider/provider.dart';
+import '../models/airflow_prototype.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
+import '../services/airflow_simulator.dart';
 import '../theme/app_theme.dart';
+import '../widgets/airflow_voxel_painter.dart';
+import '../widgets/bench_room_views.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/score_ring.dart';
+
+enum _AirflowStep { layout, simulate, results }
+enum _LayoutVariant { current, improved }
+enum _RoomViewMode { twoD, threeD }
 
 class BenchmarkScreen extends StatefulWidget {
   const BenchmarkScreen({super.key});
@@ -16,48 +25,133 @@ class BenchmarkScreen extends StatefulWidget {
   State<BenchmarkScreen> createState() => _BenchmarkScreenState();
 }
 
-class _BenchmarkScreenState extends State<BenchmarkScreen>
-    with TickerProviderStateMixin {
+class _BenchmarkScreenState extends State<BenchmarkScreen> with TickerProviderStateMixin {
   late AnimationController _particleController;
   late AnimationController _heatmapController;
+  late AnimationController _ticker;
+
   bool _isRunning = false;
   double _runProgress = 0.0;
   bool _showResults = false;
+
+  // Shared orbit for lighting/ergo legacy sims + airflow 3D.
+  double _yaw = 0.75;
+  double _pitch = 0.38;
+  double _distance = 16.0;
+  bool _orbitDragging = false;
+  int? _orbitPointer;
+  Offset? _lastOrbitPos;
+
+  // Airflow prototype state.
+  _AirflowStep _airflowStep = _AirflowStep.layout;
+  _LayoutVariant _layoutVariant = _LayoutVariant.current;
+  _RoomViewMode _roomViewMode = _RoomViewMode.twoD;
+  AirflowVizMode _simVizMode = AirflowVizMode.orbit3D;
+  _LayoutVariant _simVariant = _LayoutVariant.current;
+
+  AirflowSimSnapshot? _baselineSim;
+  AirflowSimSnapshot? _optimizedSim;
+  late List<FurnitureItem> _baselineFurniture;
+  late List<FurnitureItem> _optimizedFurniture;
+  bool _prototypeReady = false;
 
   @override
   void initState() {
     super.initState();
     _particleController = AnimationController(duration: const Duration(seconds: 3), vsync: this)..repeat();
     _heatmapController = AnimationController(duration: const Duration(seconds: 2), vsync: this)..repeat(reverse: true);
+    _ticker = AnimationController(duration: const Duration(milliseconds: 16), vsync: this)..addListener(_onTick);
+    _ticker.repeat();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final state = context.read<AppState>();
+      state.loadSimulatedPrototypeBaseline();
+      _rebuildPrototype(state);
+    });
+  }
+
+  void _onTick() {
+    final sim = _activeSim;
+    if (sim == null || !mounted) return;
+    if (context.read<AppState>().benchmarkMode != 'airflow') return;
+    if (_airflowStep != _AirflowStep.simulate && _airflowStep != _AirflowStep.results) return;
+
+    AirflowSimulator.stepParticles(
+      sim,
+      dt: 0.045,
+      time: _ticker.lastElapsedDuration?.inMilliseconds.toDouble() ?? 0,
+    );
+    setState(() {});
+  }
+
+  AirflowSimSnapshot? get _activeSim =>
+      _simVariant == _LayoutVariant.improved ? _optimizedSim : _baselineSim;
+
+  List<FurnitureItem> get _activeLayoutFurniture =>
+      _layoutVariant == _LayoutVariant.improved ? _optimizedFurniture : _baselineFurniture;
+
+  void _rebuildPrototype(AppState state) {
+    final source = RoomPresets.getPreset(RoomPreset.gamingSetup).furniture;
+    _baselineFurniture = AirflowPrototypeLayouts.baseline(source);
+    _optimizedFurniture = AirflowPrototypeLayouts.optimized(source);
+    _baselineSim = AirflowSimulator.build(furniture: _baselineFurniture, optimized: false);
+    _optimizedSim = AirflowSimulator.build(furniture: _optimizedFurniture, optimized: true);
+    _prototypeReady = true;
+    _airflowStep = _AirflowStep.layout;
+    _layoutVariant = _LayoutVariant.current;
+    _simVariant = _LayoutVariant.current;
+    _showResults = false;
+    setState(() {});
   }
 
   @override
   void dispose() {
     _particleController.dispose();
     _heatmapController.dispose();
+    _ticker.dispose();
     super.dispose();
   }
 
-  void _runBenchmark() async {
-    setState(() { _isRunning = true; _showResults = false; _runProgress = 0; });
-    for (int i = 1; i <= 20; i++) {
-      await Future.delayed(const Duration(milliseconds: 120));
+  Future<void> _runBenchmark() async {
+    setState(() {
+      _isRunning = true;
+      _showResults = false;
+      _runProgress = 0;
+      _airflowStep = _AirflowStep.simulate;
+      _simVariant = _LayoutVariant.current;
+    });
+
+    for (int i = 1; i <= 24; i++) {
+      await Future.delayed(const Duration(milliseconds: 90));
       if (!mounted) return;
-      setState(() => _runProgress = i / 20);
+      setState(() {
+        _runProgress = i / 24;
+        // Flip to improved mid-run so user sees both voxel fields.
+        if (i == 12) _simVariant = _LayoutVariant.improved;
+      });
     }
+
     if (!mounted) return;
-    setState(() { _isRunning = false; _showResults = true; });
-    context.read<AppState>().runOptimization();
+    final state = context.read<AppState>();
+    state.applyAirflowOptimizedLayout();
+    setState(() {
+      _isRunning = false;
+      _showResults = true;
+      _airflowStep = _AirflowStep.results;
+      _simVariant = _LayoutVariant.improved;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final isAirflow = state.benchmarkMode == 'airflow';
 
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
         child: SingleChildScrollView(
+          physics: _orbitDragging ? const NeverScrollableScrollPhysics() : null,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -66,19 +160,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
               const SizedBox(height: 20),
               _buildModeSelector(state),
               const SizedBox(height: 20),
-              _buildModelPreview(state),
-              const SizedBox(height: 20),
-              _buildSimulationCanvas(state),
-              const SizedBox(height: 20),
-              _buildRunButton(),
-              if (_isRunning) ...[
-                const SizedBox(height: 16),
-                _buildProgressBar(),
-              ],
-              if (_showResults) ...[
-                const SizedBox(height: 24),
-                _buildResultsPanel(state),
-              ],
+              if (isAirflow) ..._buildAirflowPrototype(state) else ..._buildLegacyMode(state),
               const SizedBox(height: 32),
             ],
           ),
@@ -91,8 +173,14 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('BENCHMARK CENTER', style: TextStyle(color: AppColors.cyan, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 3)),
-        const Text('Room Stress Tests', style: TextStyle(color: AppColors.textPrimary, fontSize: 26, fontWeight: FontWeight.w800)),
+        Text(
+          'BENCHMARK CENTER',
+          style: TextStyle(color: AppColors.cyan, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 3),
+        ),
+        const Text(
+          'Room Stress Tests',
+          style: TextStyle(color: AppColors.textPrimary, fontSize: 26, fontWeight: FontWeight.w800),
+        ),
       ],
     );
   }
@@ -124,7 +212,14 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                 children: [
                   SvgIcon(m.$2, size: 22, color: isSelected ? m.$4 : AppColors.textMuted),
                   const SizedBox(height: 5),
-                  Text(m.$3, style: TextStyle(color: isSelected ? m.$4 : AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
+                  Text(
+                    m.$3,
+                    style: TextStyle(
+                      color: isSelected ? m.$4 : AppColors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -134,56 +229,544 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
     );
   }
 
-  Widget _buildSimulationCanvas(AppState state) {
-    return Container(
-      height: 240,
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: AnimatedBuilder(
-        animation: Listenable.merge([_particleController, _heatmapController]),
-        builder: (context, _) => CustomPaint(
-          painter: _SimulationPainter(
-            mode: state.benchmarkMode,
-            particleT: _particleController.value,
-            heatT: _heatmapController.value,
+  List<Widget> _buildAirflowPrototype(AppState state) {
+    if (!_prototypeReady) {
+      return [
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(40),
+            child: CircularProgressIndicator(color: AppColors.cyan),
           ),
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6, height: 6,
-                      decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.green),
+        ),
+      ];
+    }
+
+    return [
+      _buildAirflowStepTabs(),
+      const SizedBox(height: 16),
+      if (_airflowStep == _AirflowStep.layout) ...[
+        _buildLayoutSection(),
+        const SizedBox(height: 16),
+        _buildPrimaryButton(
+          label: 'RUN VOXEL AIRFLOW BENCH',
+          icon: RoomSvg.scan,
+          onTap: _isRunning ? null : _runBenchmark,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Compare the average room vs the improved rearrange, then stress-test cold/hot particle circulation.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ],
+      if (_airflowStep == _AirflowStep.simulate || (_airflowStep == _AirflowStep.results && _isRunning)) ...[
+        _buildSimulationSection(),
+        if (_isRunning) ...[
+          const SizedBox(height: 16),
+          _buildProgressBar(),
+        ],
+      ],
+      if (_airflowStep == _AirflowStep.results && !_isRunning) ...[
+        _buildSimulationSection(),
+        const SizedBox(height: 20),
+        _buildAirflowResults(state),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildPrimaryButton(
+                label: 'APPLY IMPROVED LAYOUT',
+                icon: RoomSvg.star,
+                onTap: () {
+                  state.applyAirflowOptimizedLayout();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Improved airflow layout applied to Rig'),
+                      backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
+                      behavior: SnackBarBehavior.floating,
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${state.benchmarkMode.toUpperCase()} SIMULATION',
-                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1),
-                    ),
-                  ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            _buildIconButton(
+              icon: Icons.refresh_rounded,
+              onTap: () {
+                state.loadSimulatedPrototypeBaseline();
+                _rebuildPrototype(state);
+              },
+            ),
+          ],
+        ),
+      ],
+      if (_airflowStep == _AirflowStep.simulate && !_isRunning) ...[
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildPrimaryButton(
+                label: 'COMPARE & FINISH',
+                icon: RoomSvg.trendingUp,
+                onTap: () {
+                  setState(() {
+                    _simVariant = _LayoutVariant.improved;
+                    _airflowStep = _AirflowStep.results;
+                    _showResults = true;
+                  });
+                  state.applyAirflowOptimizedLayout();
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            _buildIconButton(
+              icon: Icons.refresh_rounded,
+              onTap: () {
+                state.loadSimulatedPrototypeBaseline();
+                _rebuildPrototype(state);
+              },
+            ),
+          ],
+        ),
+      ],
+    ];
+  }
+
+  Widget _buildAirflowStepTabs() {
+    final steps = [
+      (_AirflowStep.layout, '1. Layout'),
+      (_AirflowStep.simulate, '2. Voxel Sim'),
+      (_AirflowStep.results, '3. Results'),
+    ];
+    return Row(
+      children: steps.map((s) {
+        final selected = _airflowStep == s.$1;
+        return Expanded(
+          child: GestureDetector(
+            onTap: () {
+              if (s.$1 == _AirflowStep.results && !_showResults && !_isRunning) return;
+              setState(() => _airflowStep = s.$1);
+            },
+            child: Container(
+              margin: EdgeInsets.only(right: s.$1 == _AirflowStep.results ? 0 : 8),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.cyan.withValues(alpha: 0.12) : AppColors.card,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: selected ? AppColors.cyan : AppColors.border),
+              ),
+              child: Text(
+                s.$2,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: selected ? AppColors.cyan : AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      }).toList(),
     );
   }
 
-  Widget _buildModelPreview(AppState state) {
+  Widget _buildLayoutSection() {
+    final notes = _layoutVariant == _LayoutVariant.improved
+        ? AirflowPrototypeLayouts.optimizedNotes
+        : AirflowPrototypeLayouts.baselineNotes;
+    final room = RoomPresets.getPreset(RoomPreset.gamingSetup);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'ROOM LAYOUT PROTOTYPE',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _chip(
+              'Current',
+              _layoutVariant == _LayoutVariant.current,
+              AppColors.amber,
+              () => setState(() => _layoutVariant = _LayoutVariant.current),
+            ),
+            const SizedBox(width: 8),
+            _chip(
+              'Improved',
+              _layoutVariant == _LayoutVariant.improved,
+              AppColors.green,
+              () => setState(() => _layoutVariant = _LayoutVariant.improved),
+            ),
+            const Spacer(),
+            _chip('2D', _roomViewMode == _RoomViewMode.twoD, AppColors.cyan, () {
+              setState(() => _roomViewMode = _RoomViewMode.twoD);
+            }),
+            const SizedBox(width: 6),
+            _chip('3D', _roomViewMode == _RoomViewMode.threeD, AppColors.cyan, () {
+              setState(() => _roomViewMode = _RoomViewMode.threeD);
+            }),
+          ],
+        ),
+        const SizedBox(height: 12),
+        GlassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  SvgIcon(RoomSvg.house, size: 18, color: AppColors.cyan),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _layoutVariant == _LayoutVariant.current
+                          ? 'Average room — AC in a corner, weak coverage'
+                          : 'Improved — AC mid-wall for max throw coverage',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 300,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: ColoredBox(
+                    color: AppColors.surface,
+                    child: _roomViewMode == _RoomViewMode.twoD
+                        ? CustomPaint(
+                            painter: BenchRoom2DPainter(
+                              gridCols: room.gridCols,
+                              gridRows: room.gridRows,
+                              furniture: _activeLayoutFurniture,
+                            ),
+                            child: const SizedBox.expand(),
+                          )
+                        : _orbitShell(
+                            child: CustomPaint(
+                              painter: BenchRoom3DPainter(
+                                roomWidth: 6,
+                                roomDepth: 8,
+                                roomHeight: 2.8,
+                                gridCols: room.gridCols,
+                                gridRows: room.gridRows,
+                                yaw: _yaw,
+                                pitch: _pitch,
+                                distance: _distance,
+                                furniture: _activeLayoutFurniture,
+                              ),
+                              child: const SizedBox.expand(),
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...notes.map(
+                (n) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        _layoutVariant == _LayoutVariant.improved
+                            ? Icons.check_circle_outline
+                            : Icons.warning_amber_rounded,
+                        size: 14,
+                        color: _layoutVariant == _LayoutVariant.improved ? AppColors.green : AppColors.amber,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          n,
+                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSimulationSection() {
+    final sim = _activeSim;
+    if (sim == null) return const SizedBox.shrink();
+    final metrics = sim.metrics;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'VOXEL AIRFLOW FIELD',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _chip(
+              'Current',
+              _simVariant == _LayoutVariant.current,
+              AppColors.amber,
+              () => setState(() => _simVariant = _LayoutVariant.current),
+            ),
+            const SizedBox(width: 8),
+            _chip(
+              'Improved',
+              _simVariant == _LayoutVariant.improved,
+              AppColors.green,
+              () => setState(() => _simVariant = _LayoutVariant.improved),
+            ),
+            const Spacer(),
+            _chip('2D', _simVizMode == AirflowVizMode.topDown2D, AppColors.cyan, () {
+              setState(() => _simVizMode = AirflowVizMode.topDown2D);
+            }),
+            const SizedBox(width: 6),
+            _chip('3D', _simVizMode == AirflowVizMode.orbit3D, AppColors.cyan, () {
+              setState(() => _simVizMode = AirflowVizMode.orbit3D);
+            }),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          height: 300,
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: _orbitShell(
+                  enabled: _simVizMode == AirflowVizMode.orbit3D,
+                  child: CustomPaint(
+                    painter: AirflowVoxelPainter(
+                      snapshot: sim,
+                      vizMode: _simVizMode,
+                      yaw: _yaw,
+                      pitch: _pitch,
+                      distance: _distance,
+                      time: (_ticker.lastElapsedDuration?.inMilliseconds ?? 0).toDouble(),
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 10,
+                top: 10,
+                child: _badge(
+                  _simVariant == _LayoutVariant.improved ? 'IMPROVED CIRCULATION' : 'BASELINE STRESS',
+                  _simVariant == _LayoutVariant.improved ? AppColors.green : AppColors.amber,
+                ),
+              ),
+              Positioned(
+                left: 10,
+                bottom: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _LegendRow(color: AppColors.cyan, label: 'Cold from AC'),
+                      SizedBox(height: 4),
+                      _LegendRow(color: AppColors.red, label: 'Hot from PC'),
+                      SizedBox(height: 4),
+                      _LegendRow(color: Color(0xFFB8C0CC), label: 'Room air tracers'),
+                      SizedBox(height: 4),
+                      _LegendRow(color: AppColors.airflowColor, label: 'Fan ±45° push'),
+                    ],
+                  ),
+                ),
+              ),
+              if (_simVizMode == AirflowVizMode.orbit3D)
+                Positioned(
+                  right: 10,
+                  top: 10,
+                  child: _badge(
+                    'Orbit ${(_yaw * 180 / pi).round()}°',
+                    AppColors.textSecondary,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _metricCard('Circulation', metrics.circulationScore, AppColors.airflowColor, suffix: '')),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _metricCard(
+                'Dead zones',
+                metrics.deadZoneRatio * 100,
+                AppColors.red,
+                suffix: '%',
+                invertGood: true,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _metricCard(
+                'Heat pockets',
+                metrics.heatPocketRatio * 100,
+                AppColors.orange,
+                suffix: '%',
+                invertGood: true,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          _simVariant == _LayoutVariant.improved
+              ? 'Cold drops from the AC, wraps furniture, mixes toward ambient, then exits the window. Hot plumes rise and clear.'
+              : 'Watch cold hit the bed/shelf and stall. Hot air rises into pockets. Trails fade as parcels mix with room air.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAirflowResults(AppState state) {
+    final base = _baselineSim!.metrics;
+    final opt = _optimizedSim!.metrics;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'AIRFLOW BENCH RESULTS',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
+        ),
+        const SizedBox(height: 12),
+        GlassCard(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF0D1A14), Color(0xFF0A1018)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderColor: AppColors.green.withValues(alpha: 0.4),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Voxel Circulation Pass',
+                      style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 16),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.green.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('PASS', style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w800, fontSize: 12)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ScoreRing(score: base.circulationScore, size: 78, color: AppColors.amber, label: 'Before'),
+                  ScoreRing(score: opt.circulationScore, size: 78, color: AppColors.airflowColor, label: 'After'),
+                  ScoreRing(score: state.airflowScore, size: 78, color: AppColors.green, label: 'Score'),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _ComparisonRow(
+                label: 'Circulation',
+                before: base.circulationScore,
+                after: opt.circulationScore,
+                color: AppColors.airflowColor,
+              ),
+              const SizedBox(height: 10),
+              _ComparisonRow(
+                label: 'Dead zones',
+                before: base.deadZoneRatio * 100,
+                after: opt.deadZoneRatio * 100,
+                color: AppColors.red,
+                lowerIsBetter: true,
+              ),
+              const SizedBox(height: 10),
+              _ComparisonRow(
+                label: 'Heat pockets',
+                before: base.heatPocketRatio * 100,
+                after: opt.heatPocketRatio * 100,
+                color: AppColors.orange,
+                lowerIsBetter: true,
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.cyan.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.cyan.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    SvgIcon(RoomSvg.trendingUp, size: 20, color: AppColors.cyan),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Dead air cut ${(base.deadZoneRatio * 100 - opt.deadZoneRatio * 100).toStringAsFixed(0)} pts · '
+                        'Heat pockets cut ${(base.heatPocketRatio * 100 - opt.heatPocketRatio * 100).toStringAsFixed(0)} pts',
+                        style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildLegacyMode(AppState state) {
+    return [
+      _buildLegacyModelPreview(state),
+      const SizedBox(height: 20),
+      _buildLegacySimulationCanvas(state),
+      const SizedBox(height: 20),
+      _buildLegacyControls(state),
+      if (_isRunning) ...[
+        const SizedBox(height: 16),
+        _buildProgressBar(),
+      ],
+      if (_showResults) ...[
+        const SizedBox(height: 24),
+        _buildLegacyResults(state),
+      ],
+    ];
+  }
+
+  Widget _buildLegacyModelPreview(AppState state) {
     final room = state.currentRoomData;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,8 +802,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: CustomPaint(
-                    painter: _RoomModelPainter(
-                      room: room,
+                    painter: BenchRoom2DPainter(
+                      gridCols: room.gridCols,
+                      gridRows: room.gridRows,
                       furniture: state.furniture,
                     ),
                   ),
@@ -233,40 +817,112 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
     );
   }
 
-  Widget _buildRunButton() {
-    return GestureDetector(
-      onTap: _isRunning ? null : _runBenchmark,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          gradient: _isRunning ? null : AppColors.accentGradient,
-          color: _isRunning ? AppColors.card : null,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _isRunning ? AppColors.border : Colors.transparent),
-          boxShadow: _isRunning ? [] : [BoxShadow(color: AppColors.cyan.withValues(alpha: 0.4), blurRadius: 20)],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SvgIcon(
-              _isRunning ? RoomSvg.scan : RoomSvg.speedometer,
-              size: 20,
-              color: Colors.white,
+  Widget _buildLegacySimulationCanvas(AppState state) {
+    return Container(
+      height: 240,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: AnimatedBuilder(
+        animation: Listenable.merge([_particleController, _heatmapController]),
+        builder: (context, _) => CustomPaint(
+          painter: _LegacySimulationPainter(
+            mode: state.benchmarkMode,
+            particleT: _particleController.value,
+            heatT: _heatmapController.value,
+            optimized: state.isOptimized,
+            furniture: state.furniture,
+          ),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: _badge('${state.benchmarkMode.toUpperCase()} SIMULATION', AppColors.cyan),
             ),
-            const SizedBox(width: 8),
-            Text(
-              _isRunning ? 'RUNNING BENCHMARK...' : 'RUN BENCHMARK',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14, letterSpacing: 2),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
+  Widget _buildLegacyControls(AppState state) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _buildPrimaryButton(
+                label: _isRunning ? 'RIGGING ROOM...' : 'RIG ROOM NOW',
+                icon: _isRunning ? RoomSvg.scan : RoomSvg.star,
+                onTap: _isRunning
+                    ? null
+                    : () async {
+                        setState(() {
+                          _isRunning = true;
+                          _showResults = false;
+                          _runProgress = 0;
+                        });
+                        for (int i = 1; i <= 20; i++) {
+                          await Future.delayed(const Duration(milliseconds: 100));
+                          if (!mounted) return;
+                          setState(() => _runProgress = i / 20);
+                        }
+                        if (!mounted) return;
+                        state.runOptimization();
+                        setState(() {
+                          _isRunning = false;
+                          _showResults = true;
+                        });
+                      },
+              ),
+            ),
+            const SizedBox(width: 8),
+            _buildIconButton(
+              icon: Icons.refresh_rounded,
+              onTap: _isRunning
+                  ? null
+                  : () {
+                      state.loadSimulatedPrototypeBaseline();
+                      setState(() {
+                        _showResults = false;
+                        _runProgress = 0;
+                      });
+                    },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLegacyResults(AppState state) {
+    return GlassCard(
+      borderColor: AppColors.green.withValues(alpha: 0.4),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              ScoreRing(score: state.airflowScore, size: 80, color: AppColors.airflowColor, label: 'Airflow'),
+              ScoreRing(score: state.lightingScore, size: 80, color: AppColors.lightingColor, label: 'Lighting'),
+              ScoreRing(score: state.ergonomicsScore, size: 80, color: AppColors.ergonomicsColor, label: 'Ergo'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildProgressBar() {
-    final steps = ['Airflow analysis', 'Lighting ray-trace', 'Ergonomics mapping', 'Generating report'];
+    final steps = [
+      'Seeding voxel grid',
+      'Solving velocity field',
+      'Advecting cold / hot particles',
+      'Scoring dead zones',
+    ];
     final stepIdx = (_runProgress * steps.length).floor().clamp(0, steps.length - 1);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,7 +931,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
           children: [
             Text(steps[stepIdx], style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
             const Spacer(),
-            Text('${(_runProgress * 100).toInt()}%', style: TextStyle(color: AppColors.cyan, fontSize: 12, fontWeight: FontWeight.w700)),
+            Text(
+              '${(_runProgress * 100).toInt()}%',
+              style: TextStyle(color: AppColors.cyan, fontSize: 12, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
         const SizedBox(height: 6),
@@ -290,81 +949,170 @@ class _BenchmarkScreenState extends State<BenchmarkScreen>
     );
   }
 
-  Widget _buildResultsPanel(AppState state) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('BENCHMARK RESULTS', style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2)),
-        const SizedBox(height: 12),
-        GlassCard(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF0D1A14), Color(0xFF0A1018)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderColor: AppColors.green.withValues(alpha: 0.4),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
-                  const SizedBox(width: 10),
-                  const Text('Optimization Applied', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.green.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text('PASS', style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w800, fontSize: 12)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ScoreRing(score: state.airflowScore, size: 80, color: AppColors.airflowColor, label: 'Airflow'),
-                  ScoreRing(score: state.lightingScore, size: 80, color: AppColors.lightingColor, label: 'Lighting'),
-                  ScoreRing(score: state.ergonomicsScore, size: 80, color: AppColors.ergonomicsColor, label: 'Ergo'),
-                ],
-              ),
-              const SizedBox(height: 20),
-              _ComparisonRow(label: 'Airflow', before: state.previousOverallScore * 0.85, after: state.airflowScore, color: AppColors.airflowColor),
-              const SizedBox(height: 10),
-              _ComparisonRow(label: 'Lighting', before: state.previousOverallScore * 0.78, after: state.lightingScore, color: AppColors.lightingColor),
-              const SizedBox(height: 10),
-              _ComparisonRow(label: 'Ergonomics', before: state.previousOverallScore * 0.80, after: state.ergonomicsScore, color: AppColors.ergonomicsColor),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.cyan.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.cyan.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  children: [
-                    SvgIcon(RoomSvg.trendingUp, size: 20, color: AppColors.cyan),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Overall: ${state.previousOverallScore.toStringAsFixed(1)} → ${state.overallScore.toStringAsFixed(1)}',
-                        style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                    Text(
-                      '+${(state.overallScore - state.previousOverallScore).toStringAsFixed(1)}',
-                      style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w800, fontSize: 18),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+  Widget _orbitShell({required Widget child, bool enabled = true}) {
+    if (!enabled) {
+      return SizedBox.expand(child: child);
+    }
+    // Pointer-driven orbit so the parent ScrollView can't steal the drag.
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (e) {
+        _orbitPointer = e.pointer;
+        _lastOrbitPos = e.localPosition;
+        setState(() => _orbitDragging = true);
+      },
+      onPointerMove: (e) {
+        if (e.pointer != _orbitPointer || _lastOrbitPos == null) return;
+        final delta = e.localPosition - _lastOrbitPos!;
+        _lastOrbitPos = e.localPosition;
+        setState(() {
+          _yaw = (_yaw + delta.dx * 0.01).clamp(-pi, pi);
+          _pitch = (_pitch - delta.dy * 0.008).clamp(0.08, 1.15);
+        });
+      },
+      onPointerUp: (e) {
+        if (e.pointer == _orbitPointer) {
+          _orbitPointer = null;
+          _lastOrbitPos = null;
+          setState(() => _orbitDragging = false);
+        }
+      },
+      onPointerCancel: (e) {
+        if (e.pointer == _orbitPointer) {
+          _orbitPointer = null;
+          _lastOrbitPos = null;
+          setState(() => _orbitDragging = false);
+        }
+      },
+      onPointerSignal: (signal) {
+        if (signal is PointerScrollEvent) {
+          setState(() {
+            _distance = (_distance + signal.scrollDelta.dy * 0.02).clamp(10.0, 28.0);
+          });
+        }
+      },
+      child: SizedBox.expand(
+        child: ColoredBox(
+          color: Colors.transparent,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(String label, bool selected, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.15) : AppColors.card,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: selected ? color : AppColors.border),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? color : AppColors.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
           ),
         ),
-      ],
+      ),
+    );
+  }
+
+  Widget _badge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1),
+      ),
+    );
+  }
+
+  Widget _metricCard(String label, double value, Color color, {String suffix = '', bool invertGood = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Text(label, style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          Text(
+            '${value.toStringAsFixed(0)}$suffix',
+            style: TextStyle(
+              color: invertGood && value > 20 ? AppColors.red : color,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton({
+    required String label,
+    required String icon,
+    required VoidCallback? onTap,
+  }) {
+    final disabled = onTap == null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          gradient: disabled ? null : AppColors.accentGradient,
+          color: disabled ? AppColors.card : null,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: disabled ? AppColors.border : Colors.transparent),
+          boxShadow: disabled ? [] : [BoxShadow(color: AppColors.cyan.withValues(alpha: 0.35), blurRadius: 18)],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SvgIcon(icon, size: 18, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIconButton({required IconData icon, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Icon(icon, color: AppColors.textSecondary, size: 20),
+      ),
     );
   }
 }
@@ -374,255 +1122,173 @@ class _ComparisonRow extends StatelessWidget {
   final double before;
   final double after;
   final Color color;
+  final bool lowerIsBetter;
 
-  const _ComparisonRow({required this.label, required this.before, required this.after, required this.color});
+  const _ComparisonRow({
+    required this.label,
+    required this.before,
+    required this.after,
+    required this.color,
+    this.lowerIsBetter = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final improvement = after - before;
+    final delta = after - before;
+    final good = lowerIsBetter ? delta <= 0 : delta >= 0;
+    final display = lowerIsBetter ? -delta : delta;
     return Row(
       children: [
-        SizedBox(width: 80, child: Text(label, style: TextStyle(color: AppColors.textSecondary, fontSize: 12))),
+        SizedBox(width: 88, child: Text(label, style: TextStyle(color: AppColors.textSecondary, fontSize: 12))),
         Expanded(
           child: ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: Stack(
               children: [
                 Container(height: 8, color: AppColors.border),
-                FractionallySizedBox(widthFactor: before / 100, child: Container(height: 8, color: AppColors.textMuted)),
-                FractionallySizedBox(widthFactor: after / 100, child: Container(height: 8, color: color.withValues(alpha: 0.8))),
+                FractionallySizedBox(
+                  widthFactor: (before / 100).clamp(0.0, 1.0),
+                  child: Container(height: 8, color: AppColors.textMuted),
+                ),
+                FractionallySizedBox(
+                  widthFactor: (after / 100).clamp(0.0, 1.0),
+                  child: Container(height: 8, color: color.withValues(alpha: 0.8)),
+                ),
               ],
             ),
           ),
         ),
         const SizedBox(width: 8),
-        Text('+${improvement.toStringAsFixed(1)}', style: TextStyle(color: AppColors.green, fontSize: 12, fontWeight: FontWeight.w800)),
+        Text(
+          '${good ? '+' : ''}${display.toStringAsFixed(1)}',
+          style: TextStyle(
+            color: good ? AppColors.green : AppColors.red,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ],
     );
   }
 }
 
-class _SimulationPainter extends CustomPainter {
+class _LegendRow extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _LegendRow({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+
+/// Lightweight lighting / ergonomics painters (airflow uses voxel engine).
+class _LegacySimulationPainter extends CustomPainter {
   final String mode;
   final double particleT;
   final double heatT;
+  final bool optimized;
+  final List<FurnitureItem> furniture;
 
-  _SimulationPainter({required this.mode, required this.particleT, required this.heatT});
+  _LegacySimulationPainter({
+    required this.mode,
+    required this.particleT,
+    required this.heatT,
+    required this.optimized,
+    required this.furniture,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (mode == 'airflow') {
-      _drawAirflow(canvas, size);
-    } else if (mode == 'lighting') {
+    if (mode == 'lighting') {
       _drawLighting(canvas, size);
     } else {
       _drawErgonomics(canvas, size);
     }
   }
 
-  void _drawAirflow(Canvas canvas, Size size) {
-    final bgPaint = Paint()
-      ..shader = RadialGradient(
-        center: const Alignment(-0.8, -0.8),
-        radius: 1.2,
-        colors: [AppColors.cyanDim.withValues(alpha: 0.15), Colors.transparent],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
-
-    for (int i = 0; i < 22; i++) {
-      final baseY = (i / 22) * size.height;
-      final t = (particleT + i * 0.045) % 1.0;
-      final x = t * size.width;
-      final y = baseY + sin(t * pi * 2 + i) * 14;
-      final opacity = sin(t * pi).clamp(0.2, 0.9);
-
-      final paint = Paint()
-        ..color = AppColors.airflowColor.withValues(alpha: opacity.toDouble())
-        ..strokeWidth = 1.5
-        ..strokeCap = StrokeCap.round;
-
-      if (t > 0.05) {
-        canvas.drawLine(Offset(x - 14 * sin(t * pi), y), Offset(x, y), paint);
-      }
-      canvas.drawCircle(Offset(x, y), 2.5, Paint()..color = AppColors.airflowColor.withValues(alpha: opacity.toDouble()));
-    }
-
-    // Stagnation zone
-    canvas.drawCircle(
-      Offset(size.width * 0.72, size.height * 0.62),
-      52,
-      Paint()
-        ..shader = RadialGradient(
-          colors: [AppColors.red.withValues(alpha: 0.2), Colors.transparent],
-        ).createShader(Rect.fromCircle(center: Offset(size.width * 0.72, size.height * 0.62), radius: 52))
-        ..blendMode = BlendMode.plus,
-    );
-  }
-
   void _drawLighting(Canvas canvas, Size size) {
     final sources = [
-      Offset(size.width * 0.25, 0),
-      Offset(size.width * 0.75, 0),
-      Offset(size.width * 0.1, size.height * 0.45),
+      Offset(size.width * 0.18, 10),
+      Offset(size.width * 0.52, 12),
+      Offset(size.width * 0.86, size.height * 0.18),
     ];
+    final roomGlow = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: optimized
+            ? [AppColors.lightingColor.withValues(alpha: 0.10), Colors.transparent]
+            : [AppColors.red.withValues(alpha: 0.08), Colors.transparent],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), roomGlow);
 
-    for (int s = 0; s < sources.length; s++) {
-      final src = sources[s];
-      final brightness = (0.45 + heatT * 0.3 + s * 0.08).clamp(0.0, 0.9);
+    for (final src in sources) {
       canvas.drawCircle(
         src,
-        size.width * 0.6,
+        size.width * 0.5,
         Paint()
           ..shader = RadialGradient(
-            colors: [AppColors.lightingColor.withValues(alpha: brightness), AppColors.lightingColor.withValues(alpha: 0.08), Colors.transparent],
-            stops: const [0.0, 0.35, 1.0],
-          ).createShader(Rect.fromCircle(center: src, radius: size.width * 0.6)),
+            colors: [
+              AppColors.lightingColor.withValues(alpha: 0.45 + heatT * 0.2),
+              Colors.transparent,
+            ],
+          ).createShader(Rect.fromCircle(center: src, radius: size.width * 0.5)),
       );
     }
 
-    const gridSize = 20.0;
-    for (double x = 0; x < size.width; x += gridSize) {
-      for (double y = 0; y < size.height; y += gridSize) {
-        double brightness = 0;
-        for (final src in sources) {
-          final dist = (Offset(x, y) - src).distance;
-          brightness += (1 - (dist / size.width).clamp(0.0, 1.0)) * 0.45;
-        }
-        canvas.drawRect(
-          Rect.fromLTWH(x, y, gridSize - 1, gridSize - 1),
-          Paint()..color = AppColors.lightingColor.withValues(alpha: (brightness * 0.15 * (0.8 + heatT * 0.2)).clamp(0.0, 0.28)),
-        );
-      }
+    for (final f in furniture.take(5)) {
+      final x = (f.gridX / 6) * size.width;
+      final y = (f.gridY / 8) * size.height;
+      final w = (f.width / 6) * size.width;
+      final h = (f.height / 8) * size.height;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(x + 8, y + 8, w, h), const Radius.circular(6)),
+        Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.7),
+      );
     }
   }
 
   void _drawErgonomics(Canvas canvas, Size size) {
-    final chairPos = Offset(size.width * 0.45, size.height * 0.55);
-    final deskPos = Offset(size.width * 0.45, size.height * 0.28);
+    final entry = Offset(22, size.height * 0.68);
+    final chair = optimized
+        ? Offset(size.width * 0.44, size.height * 0.57)
+        : Offset(size.width * 0.57, size.height * 0.68);
+    final desk = optimized
+        ? Offset(size.width * 0.46, size.height * 0.32)
+        : Offset(size.width * 0.71, size.height * 0.30);
 
-    canvas.drawCircle(
-      chairPos,
-      92,
+    final lane = Path()
+      ..moveTo(entry.dx, entry.dy)
+      ..cubicTo(size.width * 0.22, size.height * 0.64, size.width * 0.30, size.height * 0.56, chair.dx, chair.dy)
+      ..quadraticBezierTo(size.width * 0.47, size.height * 0.47, desk.dx, desk.dy);
+
+    canvas.drawPath(
+      lane,
       Paint()
-        ..shader = RadialGradient(
-          colors: [AppColors.ergonomicsColor.withValues(alpha: 0.28), AppColors.ergonomicsColor.withValues(alpha: 0.04), Colors.transparent],
-          stops: const [0.2, 0.6, 1.0],
-        ).createShader(Rect.fromCircle(center: chairPos, radius: 92)),
+        ..color = AppColors.ergonomicsColor.withValues(alpha: optimized ? 0.6 : 0.3)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = optimized ? 7 : 5
+        ..strokeCap = StrokeCap.round,
     );
-
-    final pathPaint = Paint()
-      ..color = AppColors.ergonomicsColor.withValues(alpha: 0.2 + heatT * 0.15)
-      ..strokeWidth = 8
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-
-    final path = Path()
-      ..moveTo(20, size.height / 2)
-      ..cubicTo(size.width * 0.2, size.height * 0.4, size.width * 0.3, size.height * 0.6, chairPos.dx, chairPos.dy);
-    canvas.drawPath(path, pathPaint);
-
-    canvas.drawCircle(chairPos, 18, Paint()..color = AppColors.ergonomicsColor.withValues(alpha: 0.7));
-    canvas.drawCircle(deskPos, 14, Paint()..color = AppColors.purple.withValues(alpha: 0.7));
-
-    canvas.drawRect(
-      Rect.fromCenter(center: chairPos, width: 80, height: 100),
-      Paint()
-        ..color = AppColors.ergonomicsColor.withValues(alpha: 0.25)
-        ..strokeWidth = 1
-        ..style = PaintingStyle.stroke,
-    );
+    canvas.drawCircle(chair, 16, Paint()..color = AppColors.ergonomicsColor.withValues(alpha: 0.8));
+    canvas.drawCircle(desk, 12, Paint()..color = AppColors.purple.withValues(alpha: 0.75));
   }
 
   @override
-  bool shouldRepaint(_SimulationPainter old) =>
-      old.particleT != particleT || old.heatT != heatT || old.mode != mode;
-}
-
-class _RoomModelPainter extends CustomPainter {
-  final RoomData room;
-  final List<FurnitureItem> furniture;
-
-  _RoomModelPainter({required this.room, required this.furniture});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final roomRect = Rect.fromLTWH(16, 16, size.width - 32, size.height - 32);
-    final wallPaint = Paint()
-      ..color = AppColors.surfaceAlt.withValues(alpha: 0.9)
-      ..style = PaintingStyle.fill;
-    final framePaint = Paint()
-      ..color = AppColors.cyan.withValues(alpha: 0.4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-
-    canvas.drawRRect(RRect.fromRectAndRadius(roomRect, const Radius.circular(14)), wallPaint);
-    canvas.drawRRect(RRect.fromRectAndRadius(roomRect, const Radius.circular(14)), framePaint);
-
-    for (int c = 1; c < room.gridCols; c++) {
-      final dx = roomRect.left + roomRect.width * (c / room.gridCols);
-      canvas.drawLine(Offset(dx, roomRect.top), Offset(dx, roomRect.bottom), Paint()..color = AppColors.border.withValues(alpha: 0.55)..strokeWidth = 0.7);
-    }
-    for (int r = 1; r < room.gridRows; r++) {
-      final dy = roomRect.top + roomRect.height * (r / room.gridRows);
-      canvas.drawLine(Offset(roomRect.left, dy), Offset(roomRect.right, dy), Paint()..color = AppColors.border.withValues(alpha: 0.55)..strokeWidth = 0.7);
-    }
-
-    for (final item in furniture) {
-      final x = roomRect.left + roomRect.width * (item.gridX / room.gridCols);
-      final y = roomRect.top + roomRect.height * (item.gridY / room.gridRows);
-      final w = roomRect.width * (item.width / room.gridCols);
-      final h = roomRect.height * (item.height / room.gridRows);
-      final rect = RRect.fromRectAndRadius(Rect.fromLTWH(x + 1, y + 1, w - 2, h - 2), const Radius.circular(8));
-
-      canvas.drawRRect(
-        rect,
-        Paint()..color = AppColors.cyan.withValues(alpha: item.category == 'lighting' ? 0.18 : 0.12),
-      );
-      canvas.drawRRect(
-        rect,
-        Paint()
-          ..color = _categoryColor(item.category).withValues(alpha: 0.65)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.1,
-      );
-
-      final tp = TextPainter(
-        text: TextSpan(
-          text: item.name,
-          style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w600),
-        ),
-        textDirection: TextDirection.ltr,
-        maxLines: 2,
-        ellipsis: '…',
-      )..layout(maxWidth: w - 8);
-      tp.paint(canvas, Offset(x + 4, y + 4));
-    }
-
-    final titlePaint = TextPainter(
-      text: const TextSpan(
-        text: 'Current room layout',
-        style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    titlePaint.paint(canvas, const Offset(14, 12));
-  }
-
-  Color _categoryColor(String cat) {
-    switch (cat) {
-      case 'airflow':
-        return AppColors.airflowColor;
-      case 'lighting':
-        return AppColors.lightingColor;
-      case 'ergonomics':
-        return AppColors.ergonomicsColor;
-      default:
-        return AppColors.textMuted;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RoomModelPainter oldDelegate) {
-    return oldDelegate.room != room || oldDelegate.furniture != furniture;
-  }
+  bool shouldRepaint(covariant _LegacySimulationPainter old) =>
+      old.particleT != particleT ||
+      old.heatT != heatT ||
+      old.mode != mode ||
+      old.optimized != optimized ||
+      old.furniture != furniture;
 }
