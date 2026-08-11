@@ -73,6 +73,15 @@ class RoomSvg {
   <rect x="13.5" y="13.5" width="6" height="6" rx="0.3" fill="currentColor" opacity="0.08"/>
 </svg>''';
 
+  static const String door = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="5" y="2.5" width="14" height="19" rx="1.2" stroke="currentColor" stroke-width="1.5"/>
+  <rect x="6.5" y="4" width="11" height="16" rx="0.6" fill="currentColor" opacity="0.12"/>
+  <circle cx="14.5" cy="12.5" r="1.1" fill="currentColor"/>
+  <path d="M5 21.5 H19" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M7.5 4.5 H16.5" stroke="currentColor" stroke-width="1" opacity="0.45"/>
+</svg>''';
+
   static const String lamp = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <line x1="12" y1="11" x2="12" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -412,6 +421,7 @@ String furnitureSvgFor(String id) {
     case 'pc': return RoomSvg.pcTower;
     case 'ac': return RoomSvg.acUnit;
     case 'window': return RoomSvg.window;
+    case 'door': return RoomSvg.door;
     case 'lamp': return RoomSvg.lamp;
     case 'plant': return RoomSvg.plant;
     case 'bookshelf': return RoomSvg.bookshelf;

@@ -26,6 +26,8 @@ String shortFurnitureLabel(FurnitureItem item) {
       return 'PC';
     case 'window':
       return 'WIN';
+    case 'door':
+      return 'DOOR';
     case 'desk':
       return 'DESK';
     case 'chair':
@@ -45,12 +47,102 @@ String shortFurnitureLabel(FurnitureItem item) {
   }
 }
 
+/// Shared 2D room rect (aspect-correct) + furniture hit testing for Bench demos.
+class BenchRoom2DGeometry {
+  static const legendW = 86.0;
+  static const pad = 10.0;
+
+  static Rect roomRectFor({
+    required Size size,
+    required int gridCols,
+    required int gridRows,
+  }) {
+    final availW = (size.width - legendW - pad * 2 - 8).clamp(40.0, size.width);
+    final availH = (size.height - pad * 2).clamp(40.0, size.height);
+    final aspect = gridCols <= 0 || gridRows <= 0 ? 1.0 : gridCols / gridRows;
+    late final double roomW;
+    late final double roomH;
+    if (availW / availH > aspect) {
+      roomH = availH;
+      roomW = roomH * aspect;
+    } else {
+      roomW = availW;
+      roomH = roomW / aspect;
+    }
+    return Rect.fromLTWH(
+      pad + (availW - roomW) / 2,
+      pad + (availH - roomH) / 2,
+      roomW,
+      roomH,
+    );
+  }
+
+  /// Smallest item under the tap wins (so tiny AC/PC stay selectable over a bed).
+  static FurnitureItem? hitTest({
+    required Offset local,
+    required Size size,
+    required int gridCols,
+    required int gridRows,
+    required List<FurnitureItem> furniture,
+  }) {
+    if (gridCols <= 0 || gridRows <= 0) return null;
+    final roomRect = roomRectFor(size: size, gridCols: gridCols, gridRows: gridRows);
+    if (!roomRect.contains(local)) return null;
+
+    final cellW = roomRect.width / gridCols;
+    final cellH = roomRect.height / gridRows;
+    final ordered = [...furniture]
+      ..sort((a, b) => (a.width * a.height).compareTo(b.width * b.height));
+
+    for (final item in ordered) {
+      final rect = Rect.fromLTWH(
+        roomRect.left + item.gridX * cellW,
+        roomRect.top + item.gridY * cellH,
+        item.width * cellW,
+        item.height * cellH,
+      );
+      if (rect.inflate(2).contains(local)) return item;
+    }
+    return null;
+  }
+}
+
+/// One-line demo copy when tapping an item in Bench 2D.
+String benchInspectBlurb(FurnitureItem item, {required String mode}) {
+  final id = item.id.toLowerCase();
+  switch (mode) {
+    case 'lighting':
+      if (id.contains('window')) return 'Primary daylight source — keep the path to the desk clear.';
+      if (id.contains('lamp')) return 'Task light — place near the desk, not behind blockers.';
+      if (id.contains('desk')) return 'Task zone — needs daylight + lamp without shelf shadows.';
+      if (id.contains('shelf') || id.contains('book')) return 'Tall storage can cast shadows into the work area.';
+      return '${item.name} — lighting impact in this layout.';
+    case 'ergonomics':
+      if (id.contains('desk')) return 'Primary work surface — chair should sit in reach of this desk.';
+      if (id.contains('chair')) return 'Seating — keep clearance behind and a clear path to the desk.';
+      if (id.contains('door')) return 'Entry — leave an approach aisle so you can walk in comfortably.';
+      if (id.contains('monitor')) return 'Screen height / reach — belongs on the desk zone.';
+      return '${item.name} — ergonomics clearance in this layout.';
+    case 'airflow':
+    default:
+      if (id.contains('ac')) return 'Cold supply — mid-wall placement covers far more floor than a corner.';
+      if (id.contains('fan')) return 'Circulation assist — aims into open floor, not into a cluttered corner.';
+      if (id.contains('pc')) return 'Heat source — better inside the cooled sweep so exhaust mixes with supply.';
+      if (id.contains('bed')) return 'Large blocker — keep on the perimeter, out of the AC throw cone.';
+      if (id.contains('shelf') || id.contains('book')) return 'Blocks residual airflow — better in a dead corner.';
+      if (id.contains('window')) return 'Return / exhaust opening — offset from the AC throw axis.';
+      if (id.contains('door')) return 'Entry opening — keep the approach path clear of clutter.';
+      return '${item.name} — airflow role in this layout.';
+  }
+}
+
 class BenchRoom2DPainter extends CustomPainter {
   final int gridCols;
   final int gridRows;
   final List<FurnitureItem> furniture;
   final String? highlightNote;
   final bool showCoverageCone;
+  final String? selectedId;
 
   BenchRoom2DPainter({
     required this.gridCols,
@@ -58,13 +150,16 @@ class BenchRoom2DPainter extends CustomPainter {
     required this.furniture,
     this.highlightNote,
     this.showCoverageCone = true,
+    this.selectedId,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Leave a right strip for the legend so labels never pile on furniture.
-    const legendW = 86.0;
-    final roomRect = Rect.fromLTWH(10, 10, size.width - legendW - 18, size.height - 20);
+    final roomRect = BenchRoom2DGeometry.roomRectFor(
+      size: size,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(roomRect, const Radius.circular(12)),
@@ -134,6 +229,7 @@ class BenchRoom2DPainter extends CustomPainter {
     final ordered = [...furniture]..sort((a, b) => (b.width * b.height).compareTo(a.width * a.height));
 
     for (final item in ordered) {
+      final selected = selectedId != null && item.id == selectedId;
       final x = roomRect.left + item.gridX * cellW;
       final y = roomRect.top + item.gridY * cellH;
       final w = item.width * cellW;
@@ -143,13 +239,22 @@ class BenchRoom2DPainter extends CustomPainter {
         Rect.fromLTWH(x + 3, y + 3, (w - 6).clamp(8, roomRect.width), (h - 6).clamp(8, roomRect.height)),
         const Radius.circular(7),
       );
-      canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: 0.22));
+      canvas.drawRRect(rect, Paint()..color = color.withValues(alpha: selected ? 0.38 : 0.22));
+      if (selected) {
+        canvas.drawRRect(
+          rect.inflate(2),
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.55)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.4,
+        );
+      }
       canvas.drawRRect(
         rect,
         Paint()
-          ..color = color.withValues(alpha: 0.85)
+          ..color = color.withValues(alpha: selected ? 1.0 : 0.85)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.4,
+          ..strokeWidth = selected ? 2.2 : 1.4,
       );
 
       // Short code only — full names live in the side legend.
@@ -221,7 +326,10 @@ class BenchRoom2DPainter extends CustomPainter {
   bool shouldRepaint(covariant BenchRoom2DPainter old) =>
       old.furniture != furniture ||
       old.highlightNote != highlightNote ||
-      old.showCoverageCone != showCoverageCone;
+      old.showCoverageCone != showCoverageCone ||
+      old.gridCols != gridCols ||
+      old.gridRows != gridRows ||
+      old.selectedId != selectedId;
 }
 
 class BenchRoom3DPainter extends CustomPainter {
@@ -352,7 +460,7 @@ class BenchRoom3DPainter extends CustomPainter {
     // Hint that the view is orbitable.
     final hint = TextPainter(
       text: const TextSpan(
-        text: 'Drag to orbit · scroll to zoom',
+        text: 'Drag to orbit · double-tap reset · scroll to zoom',
         style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w600),
       ),
       textDirection: TextDirection.ltr,

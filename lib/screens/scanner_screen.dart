@@ -5,17 +5,23 @@ import 'dart:io';
 import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/app_state.dart';
 import '../models/scan_layout_model.dart';
+import '../services/scan_input_provider.dart';
 import '../services/scan_pipeline.dart';
 import '../services/scan_readiness.dart';
 import '../services/scan_pipeline_stubs.dart';
+import '../services/scan_guidance.dart';
 import '../theme/app_theme.dart';
 import '../widgets/room_icons.dart';
+import '../widgets/scan_guidance_banner.dart';
+import '../widgets/scan_luma_preview.dart';
+import '../widgets/scan_pre_coach_sheet.dart';
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -37,13 +43,27 @@ class _ScannerScreenState extends State<ScannerScreen>
   late AnimationController _pulseController;
   CameraController? _cameraController;
   ScanPipeline? _scanPipeline;
+  ScanInputProvider? _inputProvider;
+  String _inputProviderId = 'camera';
   bool _cameraReady = false;
+  bool _arCoreOwnsCamera = false;
   bool _processingFrame = false;
   DateTime _lastFrameAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _qualityLogCooldown = 0;
   late final ScanFinishReadinessController _readiness;
   bool _latestQualityAcceptable = false;
   List<ScanQualityIssue> _latestQualityIssues = const [];
+  double _latestYawDegrees = 0;
+  double _latestCamX = 1.4;
+  double _latestCamZ = 1.4;
+  ScanCoachBanner? _coachBanner;
+  Uint8List? _previewBytes;
+  int _previewWidth = 0;
+  int _previewHeight = 0;
+  ScanCoachBannerKind? _lastBannerKind;
+  ScanTurnAction? _lastTurnAction;
+  int _lastCornersDone = 0;
+  bool _didFinishHaptic = false;
 
   bool _isScanning = false;
   final List<_ScanLogEntry> _logs = [];
@@ -87,15 +107,28 @@ class _ScannerScreenState extends State<ScannerScreen>
     unawaited(_restoreLogFilterPreference());
     unawaited(_restoreReadinessHintsPreference());
     unawaited(_restoreLogPanelPreferences());
-    _initializeCamera();
+    // On Android, ARCore owns the camera during scan (S10+). Defer Flutter
+    // camera until AR is unavailable so the two never fight for the lens.
+    if (Platform.isAndroid) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _appendLog(
+          '> Android: preferring ARCore world tracking (Galaxy S10+ class).',
+          key: 'android-arcore-pref',
+        );
+      });
+    } else {
+      _initializeCamera();
+    }
   }
 
   @override
   void dispose() {
     _scanLineController.dispose();
     _pulseController.dispose();
-    _stopCameraStream();
-    _scanPipeline?.dispose();
+    unawaited(_stopInputProvider());
+    unawaited(_stopCameraStream());
+    unawaited(_scanPipeline?.dispose());
     _cameraController?.dispose();
     _logScrollController.dispose();
     super.dispose();
@@ -148,8 +181,15 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   ScanPipeline _createPipeline() {
+    final state = context.read<AppState>();
+    final dims = state.activeRoomLayout?.dimensions ??
+        RoomDimensions(
+          lengthMeters: state.currentRoomData.gridCols * 0.6,
+          widthMeters: state.currentRoomData.gridRows * 0.6,
+          heightMeters: 2.7,
+        );
     return ScanPipeline(
-      trackingProvider: ArCoreTrackingProviderStub(),
+      trackingProvider: CompositeTrackingProvider(roomBounds: dims),
       qualityAnalyzer: BasicFrameQualityAnalyzer(),
       objectDetector: HybridObjectDetector(
         primary: TfliteObjectDetectorPlaceholder(modelAssetPath: 'assets/models/yolo_roomrig.tflite'),
@@ -159,10 +199,18 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
+  Future<void> _requestStartScan() async {
+    if (_isScanning) return;
+    final go = await showScanPreCoachSheet(context);
+    if (!go || !mounted) return;
+    await _startScan();
+  }
+
   Future<void> _startScan() async {
     final state = context.read<AppState>();
     state.resetScan();
 
+    await _stopInputProvider();
     await _scanPipeline?.dispose();
     final pipeline = _createPipeline();
     _scanPipeline = pipeline;
@@ -177,6 +225,18 @@ class _ScannerScreenState extends State<ScannerScreen>
       _readiness.reset();
       _latestQualityAcceptable = false;
       _latestQualityIssues = const [];
+      _latestYawDegrees = 0;
+      _latestCamX = 1.4;
+      _latestCamZ = 1.4;
+      _coachBanner = null;
+      _previewBytes = null;
+      _previewWidth = 0;
+      _previewHeight = 0;
+      _lastBannerKind = null;
+      _lastTurnAction = null;
+      _lastCornersDone = 0;
+      _didFinishHaptic = false;
+      _logPanelCollapsed = true;
       _processedFrames = 0;
       _framesWithDetections = 0;
       _totalDetectionBoxes = 0;
@@ -199,43 +259,92 @@ class _ScannerScreenState extends State<ScannerScreen>
       );
       _logs.add(
         const _ScanLogEntry(
-          message: '> Tracking provider attached (Android channel + fallback).',
+          message: '> Tracking: composite (ARCore → visual odometry → simulated).',
           severity: _ScanLogSeverity.info,
         ),
       );
     });
+    unawaited(_persistLogPanelPreferences());
     _scheduleLogAutoScroll();
 
-    await _startCameraStream();
+    await _startInputSource();
   }
 
-  Future<void> _startCameraStream() async {
-    final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) {
+  Future<void> _startInputSource() async {
+    final tracking = _scanPipeline?.trackingProvider;
+    final nativeReady =
+        tracking is CompositeTrackingProvider && tracking.isNativeReady;
+
+    if (Platform.isAndroid && nativeReady) {
+      await _releaseFlutterCamera();
+      final arInput = ArCoreOwnedScanInputProvider();
+      _inputProvider = arInput;
+      _inputProviderId = arInput.id;
+      _arCoreOwnsCamera = true;
+      await arInput.initialize();
+      await arInput.start(_ingestFrame);
+      final backend = tracking.nativeBackend;
       _appendLog(
-        '> Camera stream unavailable.',
-        severity: _ScanLogSeverity.warning,
-        key: 'camera-stream-unavailable',
-        minInterval: const Duration(seconds: 8),
+        '> Input provider: ARCore ($backend). Camera owned by AR session.',
+        key: 'input-arcore',
       );
+      if (mounted) setState(() {});
       return;
     }
 
-    if (controller.value.isStreamingImages) {
+    if (Platform.isAndroid && tracking is CompositeTrackingProvider) {
+      final reason = tracking.nativeInitReason ?? 'unavailable';
+      _appendLog(
+        '> ARCore not ready ($reason). Falling back to device camera.',
+        severity: _ScanLogSeverity.warning,
+        key: 'arcore-fallback',
+      );
+    }
+
+    _arCoreOwnsCamera = false;
+    if (!_cameraReady || _cameraController == null) {
+      await _initializeCamera();
+    }
+
+    if (_cameraReady && _cameraController != null) {
+      final relay = RelayScanInputProvider();
+      _inputProvider = relay;
+      _inputProviderId = relay.id;
+      await relay.initialize();
+      await relay.start(_ingestFrame);
+      await _startCameraStream();
+      _appendLog('> Input provider: device camera.', key: 'input-camera');
       return;
     }
 
-    await controller.startImageStream((image) {
-      _handleCameraFrame(image);
-    });
+    final simulated = SimulatedScanInputProvider();
+    _inputProvider = simulated;
+    _inputProviderId = simulated.id;
+    await simulated.initialize();
+    await simulated.start(_ingestFrame);
+    _appendLog(
+      '> Input provider: simulated scan (camera unavailable).',
+      severity: _ScanLogSeverity.warning,
+      key: 'input-simulated',
+    );
   }
 
-  Future<void> _stopCameraStream() async {
+  Future<void> _releaseFlutterCamera() async {
+    await _stopCameraStream();
     final controller = _cameraController;
-    if (controller == null) return;
-    if (controller.value.isStreamingImages) {
-      await controller.stopImageStream();
+    _cameraController = null;
+    _cameraReady = false;
+    if (controller != null) {
+      try {
+        await controller.dispose();
+      } catch (_) {}
     }
+  }
+
+  Future<void> _stopInputProvider() async {
+    await _inputProvider?.stop();
+    await _inputProvider?.dispose();
+    _inputProvider = null;
   }
 
   Future<void> _finishScan() async {
@@ -254,12 +363,26 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     final state = context.read<AppState>();
     await _stopCameraStream();
+    await _stopInputProvider();
 
     final layout = _scanPipeline?.finalize();
     if (layout != null) {
-      state.applyScannedRoomLayout(layout);
-      final completion = max(state.scanProgress, layout.coverageGrid.ratio());
-      state.setScanProgress(completion < 0.92 ? 0.92 : 1.0);
+      final usedFallback = _trackingFallbackFrames > 0 ||
+          _qualityFallbackFrames > 0 ||
+          _detectorFallbackFrames > 0 ||
+          _fusionFallbackFrames > 0 ||
+          _inputProviderId == 'simulated';
+      state.commitScannedRoomLayout(
+        layout,
+        inputProviderId: _inputProviderId,
+        usedFallback: usedFallback,
+        diagnostics: ScanPipelineDiagnostics(
+          trackingFallbackUsed: _trackingFallbackFrames > 0,
+          qualityFallbackUsed: _qualityFallbackFrames > 0,
+          detectorFallbackUsed: _detectorFallbackFrames > 0,
+          fusionFallbackUsed: _fusionFallbackFrames > 0,
+        ),
+      );
     }
 
     await _scanPipeline?.dispose();
@@ -269,34 +392,27 @@ class _ScannerScreenState extends State<ScannerScreen>
     setState(() {
       _isScanning = false;
       _scanEndedAt = DateTime.now().toUtc();
+      _arCoreOwnsCamera = false;
     });
+    final conf = state.lastScanConfidence;
+    final confPct = conf == null ? '--' : '${(conf.overallScore * 100).round()}%';
     _appendLog(
-      '> Scan finalized. Opening rig customizer is now enabled.',
+      '> Scan committed to Rig ($confPct confidence). Open Rig Customizer to edit.',
       key: 'scan-finalized',
       minInterval: const Duration(seconds: 6),
     );
   }
 
-  Future<void> _handleCameraFrame(CameraImage image) async {
+  Future<void> _ingestFrame(ScanFrameInput frame) async {
     if (!_isScanning || _processingFrame || _scanPipeline == null) return;
 
     final now = DateTime.now();
-    if (now.difference(_lastFrameAt).inMilliseconds < 220) return;
-
-    final planeBytes = image.planes.isNotEmpty ? image.planes.first.bytes : <int>[];
-    if (planeBytes.isEmpty) return;
+    if (now.difference(_lastFrameAt).inMilliseconds < 200) return;
 
     _processingFrame = true;
     _lastFrameAt = now;
 
     try {
-      final frame = ScanFrameInput(
-        timestamp: now,
-        width: image.width,
-        height: image.height,
-        bytes: planeBytes,
-      );
-
       final tick = await _scanPipeline!.processFrame(frame);
       if (!mounted) return;
 
@@ -339,7 +455,6 @@ class _ScannerScreenState extends State<ScannerScreen>
       _updateDetectionOverlays(tick.frameResult.detections);
       _maybeLogQuality(tick.frameResult.quality);
       _maybeLogPipelineDiagnostics(tick.diagnostics);
-
       if (coverage >= 0.9 && _qualityLogCooldown % 8 == 0) {
         _appendLog(
           '> Coverage threshold reached. Keep quality stable to finish.',
@@ -347,16 +462,118 @@ class _ScannerScreenState extends State<ScannerScreen>
           minInterval: const Duration(seconds: 8),
         );
       }
-    } catch (_) {
+
+      final tracking = tick.frameResult.tracking;
+      final coach = ScanGuidance.coachBanner(
+        issues: tick.frameResult.quality.issues,
+        trackingStable: tracking.trackingStable,
+        trackingConfidence: tracking.confidence,
+        coverageReadyForFinish: coverage >= _requiredCoverageToFinish,
+        canFinish: readiness.canFinish,
+        stableQualityFrames: _readiness.stableQualityFrames,
+        requiredStableQualityFrames: _requiredStableQualityFrames,
+      );
+
+      Uint8List? previewBytes = _previewBytes;
+      var previewW = _previewWidth;
+      var previewH = _previewHeight;
+      if (frame.bytes.isNotEmpty && frame.width > 0 && frame.height > 0) {
+        previewBytes = frame.bytes is Uint8List
+            ? frame.bytes as Uint8List
+            : Uint8List.fromList(frame.bytes);
+        previewW = frame.width;
+        previewH = frame.height;
+      }
+
+      final corners = tick.layout.coverageGrid.cols > 0
+          ? ScanGuidance.cornerChecklist(tick.layout.coverageGrid)
+          : const <ScanCornerStatus>[];
+      final cornersDone = corners.where((c) => c.done).length;
+
+      ScanTurnAction? turnAction;
+      final dims = tick.layout.dimensions;
+      final target = ScanGuidance.findWeakestSector(
+        grid: tick.layout.coverageGrid,
+        dimensions: dims,
+      );
+      if (target != null) {
+        turnAction = ScanGuidance.directionCue(
+          target: target,
+          cameraX: tracking.cameraPosition.x,
+          cameraZ: tracking.cameraPosition.z,
+          yawDegrees: tracking.cameraEulerDegrees.y,
+          coverageReadyForFinish: coverage >= _requiredCoverageToFinish,
+        ).action;
+      }
+
+      _emitScanHaptics(
+        coach: coach,
+        turnAction: turnAction,
+        cornersDone: cornersDone,
+        canFinish: readiness.canFinish,
+      );
+
+      setState(() {
+        _latestQualityAcceptable = tick.frameResult.quality.acceptable;
+        _latestQualityIssues = tick.frameResult.quality.issues;
+        _latestYawDegrees = tracking.cameraEulerDegrees.y;
+        _latestCamX = tracking.cameraPosition.x;
+        _latestCamZ = tracking.cameraPosition.z;
+        _coachBanner = coach;
+        _previewBytes = previewBytes;
+        _previewWidth = previewW;
+        _previewHeight = previewH;
+        _qualityLogCooldown++;
+      });
+    } catch (e) {
       _appendLog(
-        '> Frame processing failed; continuing...',
+        '> Frame ingest error: $e',
         severity: _ScanLogSeverity.error,
-        key: 'frame-processing-failed',
-        minInterval: const Duration(seconds: 5),
-        includeSuppressedSummary: true,
+        key: 'frame-error',
+        minInterval: const Duration(seconds: 4),
       );
     } finally {
       _processingFrame = false;
+    }
+  }
+
+  Future<void> _startCameraStream() async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) {
+      _appendLog(
+        '> Camera stream unavailable.',
+        severity: _ScanLogSeverity.warning,
+        key: 'camera-stream-unavailable',
+        minInterval: const Duration(seconds: 8),
+      );
+      return;
+    }
+
+    if (controller.value.isStreamingImages) {
+      return;
+    }
+
+    await controller.startImageStream((image) {
+      final relay = _inputProvider;
+      if (relay is! RelayScanInputProvider) return;
+      final planeBytes = image.planes.isNotEmpty ? image.planes.first.bytes : <int>[];
+      if (planeBytes.isEmpty) return;
+      relay.push(
+        ScanFrameInput(
+          timestamp: DateTime.now(),
+          width: image.width,
+          height: image.height,
+          bytes: planeBytes,
+        ),
+      );
+    });
+  }
+
+  Future<void> _stopCameraStream() async {
+    final controller = _cameraController;
+    if (controller == null) return;
+    if (controller.value.isStreamingImages) {
+      await controller.stopImageStream();
     }
   }
 
@@ -413,7 +630,15 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   void _maybeLogPipelineDiagnostics(ScanPipelineDiagnostics diagnostics) {
-    if (!diagnostics.hasFallback || !mounted) return;
+    if (!mounted) return;
+
+    _appendLog(
+      '> Tracking ${diagnostics.trackingSource} @ ${(diagnostics.trackingConfidence * 100).round()}%',
+      key: 'tracking-source:${diagnostics.trackingSource}',
+      minInterval: const Duration(seconds: 5),
+    );
+
+    if (!diagnostics.hasFallback) return;
 
     final notes = <String>[];
     if (diagnostics.trackingFallbackUsed) {
@@ -528,6 +753,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                   if (_isScanning) _buildScanLine(size),
                   ..._detectedBoxes.map((b) => _buildDetectionBox(b, size)),
                   _buildCornerBrackets(size),
+                  if (_isScanning) _buildCoachBannerOverlay(),
                   if (_isScanning || state.scanComplete)
                     _buildScanProgress(size, state),
                 ],
@@ -585,6 +811,43 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildCameraViewfinder() {
+    if (_arCoreOwnsCamera || (_isScanning && _previewBytes != null)) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          ScanLumaPreview(
+            bytes: _previewBytes,
+            width: _previewWidth,
+            height: _previewHeight,
+            placeholder: Container(
+              color: const Color(0xFF020508),
+              child: CustomPaint(painter: _GridPainter()),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            bottom: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _arCoreOwnsCamera ? 'ARCORE LIVE' : 'CAMERA PREVIEW',
+                style: TextStyle(
+                  color: AppColors.cyan,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     final controller = _cameraController;
     if (_cameraReady && controller != null && controller.value.isInitialized) {
       return CameraPreview(controller);
@@ -608,13 +871,64 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
+  void _emitScanHaptics({
+    required ScanCoachBanner? coach,
+    required ScanTurnAction? turnAction,
+    required int cornersDone,
+    required bool canFinish,
+  }) {
+    final kind = coach?.kind;
+    if (kind != null &&
+        kind != _lastBannerKind &&
+        (kind == ScanCoachBannerKind.trackingLost ||
+            kind == ScanCoachBannerKind.motionBlur)) {
+      HapticFeedback.heavyImpact();
+    } else if (kind == ScanCoachBannerKind.holdForFinish && kind != _lastBannerKind) {
+      HapticFeedback.mediumImpact();
+    }
+    _lastBannerKind = kind;
+
+    if (turnAction != null &&
+        turnAction != _lastTurnAction &&
+        turnAction != ScanTurnAction.holdStill &&
+        turnAction != ScanTurnAction.scanInPlace) {
+      HapticFeedback.selectionClick();
+    }
+    _lastTurnAction = turnAction;
+
+    if (cornersDone > _lastCornersDone) {
+      HapticFeedback.lightImpact();
+      _lastCornersDone = cornersDone;
+    }
+
+    if (canFinish && !_didFinishHaptic) {
+      _didFinishHaptic = true;
+      HapticFeedback.mediumImpact();
+    }
+  }
+
+  Widget _buildCoachBannerOverlay() {
+    final banner = _coachBanner;
+    if (banner == null) return const SizedBox.shrink();
+
+    return Positioned(
+      top: 12,
+      left: 16,
+      right: 16,
+      child: ScanCoachBannerCard(banner: banner),
+    );
+  }
+
   Widget _buildCoverageOverlay(Size size, AppState state) {
-    final grid = state.activeRoomLayout?.coverageGrid;
-    if (grid == null || grid.coverage.isEmpty) {
+    final layout = state.activeRoomLayout;
+    final grid = layout?.coverageGrid;
+    if (layout == null || grid == null || grid.coverage.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final guidance = _isScanning ? _buildCoverageGuidance(grid) : null;
+    final target = _isScanning
+        ? ScanGuidance.findWeakestSector(grid: grid, dimensions: layout.dimensions)
+        : null;
 
     return Positioned(
       left: 0,
@@ -625,7 +939,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         child: CustomPaint(
           painter: _CoverageGridPainter(
             grid: grid,
-            guidance: guidance,
+            guidance: target,
           ),
         ),
       ),
@@ -723,7 +1037,8 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Widget _buildScanProgress(Size size, AppState state) {
-    final grid = state.activeRoomLayout?.coverageGrid;
+    final layout = state.activeRoomLayout;
+    final grid = layout?.coverageGrid;
     final coverageRatio = grid?.ratio() ?? 0;
     final coveragePct = (coverageRatio * 100).toInt();
     final qualityStatus = _readiness.smoothedQuality >= _readiness.qualityEnterThreshold
@@ -737,7 +1052,24 @@ class _ScannerScreenState extends State<ScannerScreen>
       qualityRatio: _readiness.smoothedQuality,
       stabilityRatio: stabilityRatio,
     );
-    final coverageGuidance = grid == null ? null : _buildCoverageGuidance(grid);
+
+    ScanDirectionCue? directionCue;
+    ScanCoverageTarget? coverageTarget;
+    if (_isScanning && layout != null && grid != null) {
+      coverageTarget = ScanGuidance.findWeakestSector(
+        grid: grid,
+        dimensions: layout.dimensions,
+      );
+      if (coverageTarget != null) {
+        directionCue = ScanGuidance.directionCue(
+          target: coverageTarget,
+          cameraX: _latestCamX,
+          cameraZ: _latestCamZ,
+          yawDegrees: _latestYawDegrees,
+          coverageReadyForFinish: coverageRatio >= _requiredCoverageToFinish,
+        );
+      }
+    }
 
     return Positioned(
       bottom: 16, left: 0, right: 0,
@@ -777,11 +1109,23 @@ class _ScannerScreenState extends State<ScannerScreen>
               fontWeight: FontWeight.w600,
             ),
           ),
-          if (_isScanning && coverageGuidance != null) ...[
+          if (_isScanning && directionCue != null && coverageTarget != null) ...[
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 30),
-              child: _buildCoverageGuidanceCard(coverageGuidance),
+              child: ScanDirectionCueCard(
+                cue: directionCue,
+                remainingCells: coverageTarget.remainingCells,
+                scannedCells: coverageTarget.scannedCells,
+                totalCells: coverageTarget.totalCells,
+              ),
+            ),
+          ],
+          if (_isScanning && grid != null) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 30),
+              child: _buildCornerChecklist(grid),
             ),
           ],
           const SizedBox(height: 8),
@@ -799,16 +1143,14 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  Widget _buildCoverageGuidanceCard(_CoverageGuidance guidance) {
-    final remainingPct = guidance.totalCells == 0
-        ? 0
-        : ((guidance.remainingCells / guidance.totalCells) * 100).round();
-
+  Widget _buildCornerChecklist(CoverageGrid grid) {
+    final corners = ScanGuidance.cornerChecklist(grid);
+    final done = corners.where((c) => c.done).length;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.74),
-        borderRadius: BorderRadius.circular(10),
+        color: AppColors.surface.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
       child: Column(
@@ -816,193 +1158,74 @@ class _ScannerScreenState extends State<ScannerScreen>
         children: [
           Row(
             children: [
-              Icon(guidance.icon, size: 14, color: AppColors.cyan),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  guidance.remainingCells == 0
-                      ? 'Coverage map complete.'
-                      : 'Next area: ${guidance.targetLabel}',
-                  style: TextStyle(
-                    color: AppColors.cyan,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
               Text(
-                '${guidance.scannedCells}/${guidance.totalCells} cells',
+                'CORNERS',
                 style: TextStyle(
                   color: AppColors.textMuted,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.1,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$done/4',
+                style: TextStyle(
+                  color: done == 4 ? AppColors.green : AppColors.cyan,
                   fontSize: 10,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            guidance.remainingCells == 0
-                ? 'Great coverage. Keep camera steady to lock quality and finish.'
-                : '${guidance.instruction} Remaining: ${guidance.remainingCells} cells (~$remainingPct%).',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 10,
-              fontWeight: FontWeight.w500,
-            ),
+          const SizedBox(height: 6),
+          Row(
+            children: corners
+                .map(
+                  (c) => Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        decoration: BoxDecoration(
+                          color: c.done
+                              ? AppColors.green.withValues(alpha: 0.16)
+                              : AppColors.card,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: c.done
+                                ? AppColors.green.withValues(alpha: 0.55)
+                                : AppColors.border,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              c.done ? Icons.check_rounded : Icons.crop_square_rounded,
+                              size: 12,
+                              color: c.done ? AppColors.green : AppColors.textMuted,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              c.label,
+                              style: TextStyle(
+                                color: c.done ? AppColors.green : AppColors.textSecondary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+                .toList(growable: false),
           ),
         ],
       ),
     );
-  }
-
-  _CoverageGuidance _buildCoverageGuidance(CoverageGrid grid) {
-    final total = grid.coverage.length;
-    final scanned = grid.coverage.where((v) => v >= 0.70).length;
-    final remaining = (total - scanned).clamp(0, total);
-    final cols = grid.cols;
-    final rows = grid.rows;
-    if (cols <= 0 || rows <= 0 || total == 0) {
-      return const _CoverageGuidance(
-        scannedCells: 0,
-        totalCells: 0,
-        remainingCells: 0,
-        startCol: 0,
-        endColExclusive: 1,
-        startRow: 0,
-        endRowExclusive: 1,
-        targetLabel: 'Center',
-        instruction: 'Sweep the room edges in slow arcs.',
-        icon: Icons.center_focus_strong_rounded,
-      );
-    }
-
-    final sectorCols = cols >= 3 ? 3 : cols;
-    final sectorRows = rows >= 3 ? 3 : rows;
-    final sectorCount = sectorCols * sectorRows;
-    final sums = List<double>.filled(sectorCount, 0);
-    final counts = List<int>.filled(sectorCount, 0);
-
-    for (int row = 0; row < rows; row++) {
-      for (int col = 0; col < cols; col++) {
-        final idx = row * cols + col;
-        if (idx >= grid.coverage.length) continue;
-        final sx = ((col * sectorCols) / cols).floor().clamp(0, sectorCols - 1);
-        final sy = ((row * sectorRows) / rows).floor().clamp(0, sectorRows - 1);
-        final sIdx = sy * sectorCols + sx;
-        sums[sIdx] += grid.coverage[idx].clamp(0, 1).toDouble();
-        counts[sIdx] += 1;
-      }
-    }
-
-    var bestIdx = 0;
-    var bestCoverage = double.infinity;
-    for (int i = 0; i < sectorCount; i++) {
-      final avg = counts[i] == 0 ? 1.0 : (sums[i] / counts[i]);
-      if (avg < bestCoverage) {
-        bestCoverage = avg;
-        bestIdx = i;
-      }
-    }
-
-    final targetSectorCol = bestIdx % sectorCols;
-    final targetSectorRow = bestIdx ~/ sectorCols;
-    final startCol = ((targetSectorCol * cols) / sectorCols).floor().clamp(0, cols - 1);
-    final endCol = (((targetSectorCol + 1) * cols) / sectorCols).ceil().clamp(startCol + 1, cols);
-    final startRow = ((targetSectorRow * rows) / sectorRows).floor().clamp(0, rows - 1);
-    final endRow = (((targetSectorRow + 1) * rows) / sectorRows).ceil().clamp(startRow + 1, rows);
-
-    final label = _sectorLabel(
-      row: targetSectorRow,
-      col: targetSectorCol,
-      rows: sectorRows,
-      cols: sectorCols,
-    );
-
-    return _CoverageGuidance(
-      scannedCells: scanned,
-      totalCells: total,
-      remainingCells: remaining,
-      startCol: startCol,
-      endColExclusive: endCol,
-      startRow: startRow,
-      endRowExclusive: endRow,
-      targetLabel: label,
-      instruction: _sectorInstruction(
-        row: targetSectorRow,
-        col: targetSectorCol,
-        rows: sectorRows,
-        cols: sectorCols,
-      ),
-      icon: _sectorIcon(
-        row: targetSectorRow,
-        col: targetSectorCol,
-        rows: sectorRows,
-        cols: sectorCols,
-      ),
-    );
-  }
-
-  String _sectorLabel({
-    required int row,
-    required int col,
-    required int rows,
-    required int cols,
-  }) {
-    final vertical = row == 0
-        ? 'Top'
-        : (row == rows - 1 ? 'Bottom' : 'Middle');
-    final horizontal = col == 0
-        ? 'Left'
-        : (col == cols - 1 ? 'Right' : 'Center');
-
-    if (rows == 1 && cols == 1) {
-      return 'Center';
-    }
-    if (rows == 1) {
-      return horizontal;
-    }
-    if (cols == 1) {
-      return vertical;
-    }
-    return '$vertical-$horizontal';
-  }
-
-  String _sectorInstruction({
-    required int row,
-    required int col,
-    required int rows,
-    required int cols,
-  }) {
-    final vertical = row == 0
-        ? 'upper'
-        : (row == rows - 1 ? 'lower' : 'middle');
-    final horizontal = col == 0
-        ? 'left'
-        : (col == cols - 1 ? 'right' : 'center');
-    return 'Sweep the $vertical-$horizontal view area with a slow side-to-side pass.';
-  }
-
-  IconData _sectorIcon({
-    required int row,
-    required int col,
-    required int rows,
-    required int cols,
-  }) {
-    final top = row == 0;
-    final bottom = row == rows - 1;
-    final left = col == 0;
-    final right = col == cols - 1;
-
-    if (top && left) return Icons.north_west_rounded;
-    if (top && right) return Icons.north_east_rounded;
-    if (bottom && left) return Icons.south_west_rounded;
-    if (bottom && right) return Icons.south_east_rounded;
-    if (top) return Icons.north_rounded;
-    if (bottom) return Icons.south_rounded;
-    if (left) return Icons.west_rounded;
-    if (right) return Icons.east_rounded;
-    return Icons.center_focus_strong_rounded;
   }
 
   Widget _buildReadinessMeter({
@@ -1545,7 +1768,7 @@ class _ScannerScreenState extends State<ScannerScreen>
               ],
             )
           : GestureDetector(
-              onTap: _startScan,
+              onTap: _requestStartScan,
               child: AnimatedBuilder(
                 animation: _pulseController,
                 builder: (context, _) => Container(
@@ -1867,7 +2090,7 @@ class _BracketPainter extends CustomPainter {
 
 class _CoverageGridPainter extends CustomPainter {
   final CoverageGrid grid;
-  final _CoverageGuidance? guidance;
+  final ScanCoverageTarget? guidance;
 
   const _CoverageGridPainter({required this.grid, this.guidance});
 
@@ -1913,31 +2136,6 @@ class _CoverageGridPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _CoverageGridPainter oldDelegate) => oldDelegate.grid != grid;
-}
-
-class _CoverageGuidance {
-  final int scannedCells;
-  final int totalCells;
-  final int remainingCells;
-  final int startCol;
-  final int endColExclusive;
-  final int startRow;
-  final int endRowExclusive;
-  final String targetLabel;
-  final String instruction;
-  final IconData icon;
-
-  const _CoverageGuidance({
-    required this.scannedCells,
-    required this.totalCells,
-    required this.remainingCells,
-    required this.startCol,
-    required this.endColExclusive,
-    required this.startRow,
-    required this.endRowExclusive,
-    required this.targetLabel,
-    required this.instruction,
-    required this.icon,
-  });
+  bool shouldRepaint(covariant _CoverageGridPainter oldDelegate) =>
+      oldDelegate.grid != grid || oldDelegate.guidance != guidance;
 }

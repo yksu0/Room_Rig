@@ -1,4 +1,85 @@
+import 'item_detection.dart';
 import 'room_model.dart';
+
+/// Aggregate confidence / coverage for a scan layout (Milestone 2).
+class ScanConfidenceMetrics {
+  final double coverageRatio;
+  final double meanObjectConfidence;
+  final int objectCount;
+  final int detectionCount;
+  final double overallScore;
+  final String inputProviderId;
+  final bool usedFallback;
+  final List<String> notes;
+
+  const ScanConfidenceMetrics({
+    required this.coverageRatio,
+    required this.meanObjectConfidence,
+    required this.objectCount,
+    required this.detectionCount,
+    required this.overallScore,
+    this.inputProviderId = 'unknown',
+    this.usedFallback = false,
+    this.notes = const [],
+  });
+
+  Map<String, dynamic> toJson() => {
+        'coverageRatio': coverageRatio,
+        'meanObjectConfidence': meanObjectConfidence,
+        'objectCount': objectCount,
+        'detectionCount': detectionCount,
+        'overallScore': overallScore,
+        'inputProviderId': inputProviderId,
+        'usedFallback': usedFallback,
+        'notes': notes,
+      };
+
+  factory ScanConfidenceMetrics.fromJson(Map<String, dynamic> json) {
+    return ScanConfidenceMetrics(
+      coverageRatio: (json['coverageRatio'] as num?)?.toDouble() ?? 0,
+      meanObjectConfidence: (json['meanObjectConfidence'] as num?)?.toDouble() ?? 0,
+      objectCount: (json['objectCount'] as num?)?.toInt() ?? 0,
+      detectionCount: (json['detectionCount'] as num?)?.toInt() ?? 0,
+      overallScore: (json['overallScore'] as num?)?.toDouble() ?? 0,
+      inputProviderId: (json['inputProviderId'] as String?) ?? 'unknown',
+      usedFallback: (json['usedFallback'] as bool?) ?? false,
+      notes: (json['notes'] as List?)?.map((e) => '$e').toList(growable: false) ?? const [],
+    );
+  }
+
+  static ScanConfidenceMetrics fromLayout(
+    RoomLayoutModel layout, {
+    String inputProviderId = 'unknown',
+    bool usedFallback = false,
+    List<String> extraNotes = const [],
+  }) {
+    final objects = layout.objects;
+    final meanConf = objects.isEmpty
+        ? 0.0
+        : objects.map((o) => o.confidence).fold<double>(0, (a, b) => a + b) / objects.length;
+    final coverage = layout.coverageGrid.ratio();
+    final overall = (coverage * 0.55 + meanConf * 0.45).clamp(0.0, 1.0);
+    final notes = <String>[
+      if (coverage < 0.55) 'Low floor coverage — walk the room again for a stronger scan.',
+      if (meanConf < 0.45 && objects.isNotEmpty)
+        'Object confidence is low — lighting or framing may be weak.',
+      if (objects.isEmpty) 'No furniture detections yet — keep scanning or use a preset.',
+      if (usedFallback) 'One or more pipeline stages used fallback paths.',
+      ...extraNotes,
+    ];
+
+    return ScanConfidenceMetrics(
+      coverageRatio: coverage,
+      meanObjectConfidence: meanConf,
+      objectCount: objects.length,
+      detectionCount: layout.detections.length,
+      overallScore: overall,
+      inputProviderId: inputProviderId,
+      usedFallback: usedFallback,
+      notes: notes,
+    );
+  }
+}
 
 class Vec3 {
   final double x;
@@ -67,6 +148,7 @@ class ScanObject {
   final double yawDegrees;
   final String source;
   final bool locked;
+  final bool hidden;
 
   const ScanObject({
     required this.id,
@@ -78,6 +160,7 @@ class ScanObject {
     required this.yawDegrees,
     required this.source,
     this.locked = false,
+    this.hidden = false,
   });
 
   ScanObject copyWith({
@@ -86,17 +169,21 @@ class ScanObject {
     double? yawDegrees,
     double? confidence,
     bool? locked,
+    bool? hidden,
+    String? label,
+    String? category,
   }) {
     return ScanObject(
       id: id,
-      label: label,
-      category: category,
+      label: label ?? this.label,
+      category: category ?? this.category,
       confidence: confidence ?? this.confidence,
       center: center ?? this.center,
       sizeMeters: sizeMeters ?? this.sizeMeters,
       yawDegrees: yawDegrees ?? this.yawDegrees,
       source: source,
       locked: locked ?? this.locked,
+      hidden: hidden ?? this.hidden,
     );
   }
 
@@ -110,6 +197,7 @@ class ScanObject {
         'yawDegrees': yawDegrees,
         'source': source,
         'locked': locked,
+        'hidden': hidden,
       };
 
   factory ScanObject.fromJson(Map<String, dynamic> json) {
@@ -123,6 +211,7 @@ class ScanObject {
       yawDegrees: (json['yawDegrees'] as num?)?.toDouble() ?? 0,
       source: (json['source'] as String?) ?? 'unknown',
       locked: (json['locked'] as bool?) ?? false,
+      hidden: (json['hidden'] as bool?) ?? false,
     );
   }
 
@@ -145,9 +234,10 @@ class ScanObject {
       confidence: 0.95,
       center: center,
       sizeMeters: size,
-      yawDegrees: 0,
+      yawDegrees: item.yawDegrees,
       source: 'preset',
-      locked: false,
+      locked: item.locked,
+      hidden: item.hidden,
     );
   }
 }
@@ -209,14 +299,20 @@ class RoomLayoutModel {
   final RoomDimensions dimensions;
   final CoverageGrid coverageGrid;
   final List<ScanObject> objects;
+  final List<ItemDetection> detections;
   final DateTime updatedAt;
+  final String? scanSource;
+  final ScanConfidenceMetrics? confidence;
 
   const RoomLayoutModel({
     required this.roomName,
     required this.dimensions,
     required this.coverageGrid,
     required this.objects,
+    this.detections = const <ItemDetection>[],
     required this.updatedAt,
+    this.scanSource,
+    this.confidence,
   });
 
   factory RoomLayoutModel.fromPreset(RoomData roomData, List<FurnitureItem> furniture, {double cellMeters = 0.6}) {
@@ -233,7 +329,9 @@ class RoomLayoutModel {
       ),
       coverageGrid: CoverageGrid.empty(cols: roomData.gridCols, rows: roomData.gridRows),
       objects: objects,
+      detections: const <ItemDetection>[],
       updatedAt: DateTime.now().toUtc(),
+      scanSource: 'preset',
     );
   }
 
@@ -247,7 +345,9 @@ class RoomLayoutModel {
       ),
       coverageGrid: CoverageGrid.empty(cols: roomData.gridCols, rows: roomData.gridRows),
       objects: const <ScanObject>[],
+      detections: const <ItemDetection>[],
       updatedAt: DateTime.now().toUtc(),
+      scanSource: 'scan-seed',
     );
   }
 
@@ -259,7 +359,10 @@ class RoomLayoutModel {
       objects: furniture
           .map((item) => ScanObject.fromFurniture(item, cellMeters: cellMeters))
           .toList(growable: false),
+      detections: detections,
       updatedAt: DateTime.now().toUtc(),
+      scanSource: scanSource,
+      confidence: confidence,
     );
   }
 
@@ -269,7 +372,10 @@ class RoomLayoutModel {
       dimensions: dimensions,
       coverageGrid: nextCoverage,
       objects: objects,
+      detections: detections,
       updatedAt: DateTime.now().toUtc(),
+      scanSource: scanSource,
+      confidence: confidence,
     );
   }
 
@@ -279,7 +385,36 @@ class RoomLayoutModel {
       dimensions: dimensions,
       coverageGrid: coverageGrid,
       objects: List<ScanObject>.from(nextObjects),
+      detections: detections,
       updatedAt: DateTime.now().toUtc(),
+      scanSource: scanSource,
+      confidence: confidence,
+    );
+  }
+
+  RoomLayoutModel withDetections(List<ItemDetection> nextDetections) {
+    return RoomLayoutModel(
+      roomName: roomName,
+      dimensions: dimensions,
+      coverageGrid: coverageGrid,
+      objects: objects,
+      detections: List<ItemDetection>.from(nextDetections),
+      updatedAt: DateTime.now().toUtc(),
+      scanSource: scanSource,
+      confidence: confidence,
+    );
+  }
+
+  RoomLayoutModel withConfidence(ScanConfidenceMetrics? nextConfidence, {String? nextScanSource}) {
+    return RoomLayoutModel(
+      roomName: roomName,
+      dimensions: dimensions,
+      coverageGrid: coverageGrid,
+      objects: objects,
+      detections: detections,
+      updatedAt: DateTime.now().toUtc(),
+      scanSource: nextScanSource ?? scanSource,
+      confidence: nextConfidence,
     );
   }
 
@@ -288,10 +423,14 @@ class RoomLayoutModel {
         'dimensions': dimensions.toJson(),
         'coverageGrid': coverageGrid.toJson(),
         'objects': objects.map((o) => o.toJson()).toList(growable: false),
+        'detections': detections.map((d) => d.toJson()).toList(growable: false),
         'updatedAt': updatedAt.toIso8601String(),
+        if (scanSource != null) 'scanSource': scanSource,
+        if (confidence != null) 'confidence': confidence!.toJson(),
       };
 
   factory RoomLayoutModel.fromJson(Map<String, dynamic> json) {
+    final confRaw = json['confidence'];
     return RoomLayoutModel(
       roomName: (json['roomName'] as String?) ?? 'Unknown Room',
       dimensions: RoomDimensions.fromJson((json['dimensions'] as Map?)?.cast<String, dynamic>() ?? const {}),
@@ -300,7 +439,15 @@ class RoomLayoutModel {
               ?.map((e) => ScanObject.fromJson((e as Map).cast<String, dynamic>()))
               .toList(growable: false) ??
           const <ScanObject>[],
+      detections: (json['detections'] as List?)
+              ?.map((e) => ItemDetection.fromJson((e as Map).cast<String, dynamic>()))
+              .toList(growable: false) ??
+          const <ItemDetection>[],
       updatedAt: DateTime.tryParse((json['updatedAt'] as String?) ?? '')?.toUtc() ?? DateTime.now().toUtc(),
+      scanSource: json['scanSource'] as String?,
+      confidence: confRaw is Map
+          ? ScanConfidenceMetrics.fromJson(confRaw.cast<String, dynamic>())
+          : null,
     );
   }
 }

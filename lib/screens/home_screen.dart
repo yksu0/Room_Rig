@@ -3,13 +3,54 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
+import '../models/scan_layout_model.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/onboarding_sheet.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/score_ring.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool _onboardingPresented = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final state = context.watch<AppState>();
+    if (!_onboardingPresented && state.shouldShowOnboarding) {
+      _onboardingPresented = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showOnboarding(context.read<AppState>());
+      });
+    }
+  }
+
+  Future<void> _showOnboarding(AppState state) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => OnboardingSheet(
+        onDone: () {
+          Navigator.of(ctx).pop();
+          state.completeOnboarding();
+        },
+        onJumpTab: (tab) => state.setTab(tab),
+      ),
+    );
+    if (mounted) state.completeOnboarding();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,8 +65,15 @@ class HomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildHeader(context, room),
+              _buildHeader(context, room, state),
               const SizedBox(height: 20),
+              if (!state.scanComplete) ...[
+                _GettingStartedBanner(onScan: () => state.setTab(1)),
+                const SizedBox(height: 16),
+              ] else if (state.lastScanConfidence != null) ...[
+                _ScanConfidenceBanner(metrics: state.lastScanConfidence!),
+                const SizedBox(height: 16),
+              ],
               _buildScoreSection(context, state),
               const SizedBox(height: 24),
               _buildPresetSelector(context, state),
@@ -40,7 +88,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context, RoomData room) {
+  Widget _buildHeader(BuildContext context, RoomData room, AppState state) {
     return Row(
       children: [
         Column(
@@ -67,6 +115,32 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
         const Spacer(),
+        if (state.hasSeenOnboarding)
+          GestureDetector(
+            onTap: () {
+              _onboardingPresented = false;
+              state.completeOnboarding(); // keep flag; reopen sheet manually
+              showModalBottomSheet<void>(
+                context: context,
+                backgroundColor: AppColors.surface,
+                isScrollControlled: true,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                builder: (ctx) => OnboardingSheet(
+                  onDone: () => Navigator.of(ctx).pop(),
+                  onJumpTab: (tab) {
+                    Navigator.of(ctx).pop();
+                    state.setTab(tab);
+                  },
+                ),
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Icon(Icons.help_outline_rounded, color: AppColors.textMuted, size: 22),
+            ),
+          ),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -291,6 +365,100 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _GettingStartedBanner extends StatelessWidget {
+  final VoidCallback onScan;
+  const _GettingStartedBanner({required this.onScan});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.cyan.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.cyan.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          SvgIcon(RoomSvg.scan, size: 22, color: AppColors.cyan),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'No scan loaded yet',
+                  style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Start with a room scan, or pick a preset and open Rig.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onScan,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.cyan.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text('Scan', style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w800, fontSize: 12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScanConfidenceBanner extends StatelessWidget {
+  final ScanConfidenceMetrics metrics;
+  const _ScanConfidenceBanner({required this.metrics});
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = (metrics.overallScore * 100).round();
+    final note = metrics.notes.isNotEmpty ? metrics.notes.first : 'Ready for Rig + Bench.';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.green.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.green.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          SvgIcon(RoomSvg.scan, size: 22, color: AppColors.green),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Last scan · $pct% confidence · ${metrics.objectCount} objects',
+                  style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  note,
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

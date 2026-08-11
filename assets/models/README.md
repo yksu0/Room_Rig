@@ -2,8 +2,11 @@
 
 Place on-device detection models in this folder.
 
-Expected current path used by scanner pipeline:
-- assets/models/yolo_roomrig.tflite
+Expected path used by the scanner pipeline:
+- `assets/models/yolo_roomrig.tflite`
 
-Optional labels file (future extension):
-- assets/models/yolo_roomrig_labels.txt
+Until that file is present, Room Rig uses `LumaStructureObjectDetector`
+(contrast blobs → desk / chair / window / door labels) via the hybrid fallback.
+
+Optional labels file (future):
+- `assets/models/yolo_roomrig_labels.txt`

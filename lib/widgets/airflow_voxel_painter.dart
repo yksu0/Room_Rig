@@ -260,6 +260,9 @@ class AirflowVoxelPainter extends CustomPainter {
       } else if (box.kind == 'sink') {
         color = AppColors.green;
         label = 'Window';
+      } else if (box.kind == 'door') {
+        color = AppColors.amber;
+        label = 'Door';
       } else if (box.kind == 'heat') {
         color = AppColors.red;
         label = 'PC';
@@ -434,6 +437,9 @@ class AirflowVoxelPainter extends CustomPainter {
       } else if (box.kind == 'sink') {
         color = AppColors.green;
         label = 'Window';
+      } else if (box.kind == 'door') {
+        color = AppColors.amber;
+        label = 'Door';
       } else if (box.kind == 'heat') {
         color = AppColors.red;
         label = 'PC';

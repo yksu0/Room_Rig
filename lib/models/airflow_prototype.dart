@@ -24,7 +24,7 @@ class AirflowPrototypeLayouts {
       'pc': (x: 2.2, y: 3.5),
       'ac': (x: 5.0, y: 6.8), // corner — covers almost nothing
       'window': (x: 0.0, y: 0.0),
-      'lamp': (x: 4.4, y: 5.8),
+      'door': (x: 0.0, y: 6.0), // entry — approach half-blocked by bed/shelf clutter
       'shelf': (x: 4.6, y: 3.6), // blocks residual throw
       'fan': (x: 5.0, y: 5.5), // corner — barely helps circulation
     };
@@ -41,12 +41,12 @@ class AirflowPrototypeLayouts {
     final positions = <String, ({double x, double y})>{
       'ac': (x: 5.0, y: 3.2), // mid long-wall — max coverage throw
       'window': (x: 0.5, y: 0.0), // return path, offset from throw axis
+      'door': (x: 0.0, y: 6.2), // entry on left wall with clear approach
       'desk': (x: 0.3, y: 2.4),
       'chair': (x: 0.4, y: 3.6),
       'pc': (x: 0.2, y: 2.0), // inside AC coverage so heat is scrubbed
       'bed': (x: 2.5, y: 5.8), // perimeter, below throw cone
       'shelf': (x: 0.2, y: 6.5), // far corner, out of primary sweep
-      'lamp': (x: 2.2, y: 1.2),
       'fan': (x: 0.15, y: 4.7), // wall by desk — keeps floor clear, aims into room
     };
     return _applyPositions(source, positions);
@@ -79,6 +79,6 @@ class AirflowPrototypeLayouts {
   static const optimizedNotes = [
     'AC mid-wall on the long side so cold throw covers most of the floor',
     'Stand fan on the desk wall (not mid-room) — oscillates into the open floor',
-    'Desk / PC inside coverage; bed on the perimeter; window as return',
+    'Desk / PC inside coverage; bed on the perimeter; door + window as openings',
   ];
 }

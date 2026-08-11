@@ -6,7 +6,9 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
 import '../models/scan_layout_model.dart';
+import '../services/layout_collision.dart';
 import '../theme/app_theme.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/room_icons.dart';
 
@@ -22,8 +24,6 @@ class RigCustomizerScreen extends StatefulWidget {
 
 class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  String? _selectedFurnitureId;
-  String? _selectedScanObjectId;
   _RigViewMode _viewMode = _RigViewMode.twoD;
   _OptimizeGoal _optimizeGoal = _OptimizeGoal.balanced;
   double _roomRotationRad = 0;
@@ -31,14 +31,17 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   double _cameraDistance = 15;
   double _scaleStartDistance = 15;
   final Map<int, Offset> _active3DPoints = {};
+  String _sidebarQuery = '';
+  String? _sidebarCategory; // null = all
+  double _sidebarMinConfidence = 0; // 0, 0.5, 0.7, 0.85
 
   double get _roomRotationRadians => _roomRotationRad;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final selectedFurniture = _selectedFurniture(state);
-    final selectedScanObject = _selectedScanObject(state);
+    final selectedFurniture = state.selectedFurniture;
+    final selectedScanObject = state.selectedScanObject;
 
     return Scaffold(
       key: _scaffoldKey,
@@ -57,8 +60,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       _buildOptimizationPanel(state),
                     ],
                   ),
-                  if (selectedFurniture != null) _buildFurnitureInfoCard(selectedFurniture),
-                  if (selectedScanObject != null) _buildScanInfoCard(selectedScanObject),
+                  if (selectedFurniture != null) _buildFurnitureInfoCard(state, selectedFurniture),
+                  if (selectedScanObject != null) _buildScanInfoCard(state, selectedScanObject),
                 ],
               ),
             ),
@@ -89,6 +92,20 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 ],
               ),
               const Spacer(),
+              _HistoryButton(
+                icon: Icons.undo_rounded,
+                enabled: state.canUndoLayout,
+                tooltip: 'Undo layout',
+                onTap: state.canUndoLayout ? state.undoLayout : null,
+              ),
+              const SizedBox(width: 6),
+              _HistoryButton(
+                icon: Icons.redo_rounded,
+                enabled: state.canRedoLayout,
+                tooltip: 'Redo layout',
+                onTap: state.canRedoLayout ? state.redoLayout : null,
+              ),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
                 child: Container(
@@ -109,6 +126,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               ),
             ],
           ),
+          if (state.layoutConflicts.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _ConflictBanner(conflicts: state.layoutConflicts),
+          ],
           const SizedBox(height: 10),
           Wrap(
             spacing: 10,
@@ -118,15 +139,28 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               SizedBox(width: 170, child: _buildRotationControl()),
               GestureDetector(
                 onTap: () {
-                  _applyGoalToState(state);
-                  state.runOptimization();
+                  final goal = switch (_optimizeGoal) {
+                    _OptimizeGoal.airflow => 'airflow',
+                    _OptimizeGoal.lighting => 'lighting',
+                    _OptimizeGoal.ergonomics => 'ergonomics',
+                    _OptimizeGoal.balanced => null,
+                  };
+                  // Balanced uses live slider mix; other chips apply their preset via goal.
+                  if (goal == null) {
+                    state.runOptimization();
+                  } else {
+                    state.runOptimization(goal: goal);
+                  }
+                  final mix = state.optimizeWeights.summaryLabel;
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Row(
                         children: [
                           SvgIcon(RoomSvg.star, size: 16, color: Colors.white),
                           const SizedBox(width: 8),
-                          const Text('Auto-Rig Optimization applied!'),
+                          Expanded(
+                            child: Text('Auto-Rig applied · $mix'),
+                          ),
                         ],
                       ),
                       backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
@@ -136,7 +170,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   );
                 },
                 child: Container(
-                  width: 110,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     gradient: AppColors.accentGradient,
@@ -144,6 +177,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     boxShadow: [BoxShadow(color: AppColors.cyan.withValues(alpha: 0.3), blurRadius: 12)],
                   ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       SvgIcon(RoomSvg.star, size: 16, color: Colors.white),
@@ -167,7 +201,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   );
                 },
                 child: Container(
-                  width: 160,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
                     color: AppColors.card,
@@ -175,6 +208,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     border: Border.all(color: AppColors.border),
                   ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Icon(Icons.science_rounded, size: 16, color: AppColors.cyan),
@@ -225,6 +259,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   Widget _buildRotationControl() {
+    final state = context.watch<AppState>();
+    final selected = state.selectedFurniture;
+    final rotatingItem = selected != null;
+    final labelDeg = rotatingItem
+        ? selected.yawDegrees.round()
+        : (_roomRotationRad * 180 / math.pi).round();
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 160;
@@ -242,10 +283,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               if (compact)
                 Row(
                   children: [
-                    const Icon(Icons.threesixty_rounded, size: 14, color: AppColors.textSecondary),
+                    Icon(
+                      rotatingItem ? Icons.crop_rotate_rounded : Icons.threesixty_rounded,
+                      size: 14,
+                      color: AppColors.textSecondary,
+                    ),
                     const SizedBox(width: 6),
                     Text(
-                      '${(_roomRotationRad * 180 / math.pi).round()}°',
+                      '$labelDeg°',
                       style: const TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w700),
                     ),
                   ],
@@ -254,17 +299,21 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Icon(Icons.threesixty_rounded, size: 14, color: AppColors.textSecondary),
+                    Icon(
+                      rotatingItem ? Icons.crop_rotate_rounded : Icons.threesixty_rounded,
+                      size: 14,
+                      color: AppColors.textSecondary,
+                    ),
                     const SizedBox(width: 6),
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        'Rotation',
+                        rotatingItem ? 'Item yaw' : 'Room orbit',
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1),
+                        style: const TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1),
                       ),
                     ),
                     Text(
-                      '${(_roomRotationRad * 180 / math.pi).round()} deg',
+                      '$labelDeg deg',
                       style: const TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w700),
                     ),
                   ],
@@ -275,18 +324,39 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 children: [
                   _RotationButton(
                     icon: Icons.rotate_left_rounded,
-                    tooltip: 'Rotate left',
-                    onTap: () => setState(() => _roomRotationRad = (_roomRotationRad - math.pi / 8).clamp(-math.pi, math.pi)),
+                    tooltip: rotatingItem ? 'Rotate item left 90°' : 'Orbit left',
+                    onTap: () {
+                      if (rotatingItem) {
+                        state.rotateFurniture(selected.id, deltaDegrees: -90);
+                      } else {
+                        setState(() => _roomRotationRad = (_roomRotationRad - math.pi / 8).clamp(-math.pi, math.pi));
+                      }
+                    },
                   ),
                   _RotationButton(
                     icon: Icons.center_focus_strong_rounded,
-                    tooltip: 'Reset rotation',
-                    onTap: () => setState(() => _roomRotationRad = 0),
+                    tooltip: rotatingItem ? 'Reset item yaw' : 'Reset orbit',
+                    onTap: () {
+                      if (rotatingItem) {
+                        final current = selected.yawDegrees;
+                        if (current.abs() > 0.01) {
+                          state.rotateFurniture(selected.id, deltaDegrees: -current);
+                        }
+                      } else {
+                        setState(() => _roomRotationRad = 0);
+                      }
+                    },
                   ),
                   _RotationButton(
                     icon: Icons.rotate_right_rounded,
-                    tooltip: 'Rotate right',
-                    onTap: () => setState(() => _roomRotationRad = (_roomRotationRad + math.pi / 8).clamp(-math.pi, math.pi)),
+                    tooltip: rotatingItem ? 'Rotate item right 90°' : 'Orbit right',
+                    onTap: () {
+                      if (rotatingItem) {
+                        state.rotateFurniture(selected.id, deltaDegrees: 90);
+                      } else {
+                        setState(() => _roomRotationRad = (_roomRotationRad + math.pi / 8).clamp(-math.pi, math.pi));
+                      }
+                    },
                   ),
                 ],
               ),
@@ -303,6 +373,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     }
 
     return GestureDetector(
+      onTap: () => state.clearSelection(),
       onHorizontalDragUpdate: (details) {
         setState(() {
           _roomRotationRad = (_roomRotationRad + details.delta.dx * 0.01).clamp(-math.pi, math.pi);
@@ -321,6 +392,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             builder: (context, constraints) {
               final cellW = constraints.maxWidth / state.currentRoomData.gridCols;
               final cellH = constraints.maxHeight / state.currentRoomData.gridRows;
+              final coverage = state.activeRoomLayout?.coverageGrid;
               return Stack(
                 children: [
                   Transform.rotate(
@@ -333,27 +405,43 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                           painter: _RoomGridPainter(
                             gridCols: state.currentRoomData.gridCols,
                             gridRows: state.currentRoomData.gridRows,
+                            coverage: coverage,
                           ),
                         ),
                         ..._buildSurfaceDetections2D(constraints.maxWidth, constraints.maxHeight),
-                        ...state.furniture.map((item) {
-                          final isSelected = _isFurnitureSelected(item.id);
+                        ...state.furniture.where((item) => !item.hidden).map((item) {
+                          final isSelected = state.selectedItemId == item.id && !state.selectedIsScanObject;
                           return Positioned(
                             left: item.gridX * cellW + cellW * 0.05,
                             top: item.gridY * cellH + cellH * 0.05,
                             width: item.width * cellW * 0.9,
                             height: item.height * cellH * 0.9,
                             child: GestureDetector(
-                              onTap: () => _toggleFurnitureSelection(item.id),
-                              onPanUpdate: (details) {
-                                final rotatedDelta = _rotateOffset(details.delta, -_roomRotationRadians);
-                                final newX = (item.gridX + rotatedDelta.dx / cellW)
-                                    .clamp(0.0, (state.currentRoomData.gridCols - item.width).toDouble());
-                                final newY = (item.gridY + rotatedDelta.dy / cellH)
-                                    .clamp(0.0, (state.currentRoomData.gridRows - item.height).toDouble());
-                                state.moveFurniture(item.id, newX, newY);
-                              },
-                              child: _FurnitureCell(item: item, isSelected: isSelected),
+                              onTap: () => state.selectFurniture(item.id, toggle: true),
+                              onPanStart: item.locked
+                                  ? null
+                                  : (_) {
+                                      state.selectFurniture(item.id);
+                                      state.beginFurnitureGesture();
+                                    },
+                              onPanUpdate: item.locked
+                                  ? null
+                                  : (details) {
+                                      final rotatedDelta = _rotateOffset(details.delta, -_roomRotationRadians);
+                                      final newX = item.gridX + rotatedDelta.dx / cellW;
+                                      final newY = item.gridY + rotatedDelta.dy / cellH;
+                                      state.moveFurniture(item.id, newX, newY);
+                                    },
+                              onPanEnd: item.locked ? null : (_) => state.endFurnitureGesture(),
+                              onPanCancel: item.locked ? null : () => state.endFurnitureGesture(),
+                              child: Opacity(
+                                opacity: item.locked ? 0.85 : 1,
+                                child: _FurnitureCell(
+                                  item: item,
+                                  isSelected: isSelected,
+                                  hasConflict: state.layoutConflicts.any((c) => c.itemIds.contains(item.id)),
+                                ),
+                              ),
                             ),
                           );
                         }),
@@ -393,6 +481,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / gridRows;
 
             final presetItems = state.furniture
+                .where((item) => !item.hidden)
                 .map(
                   (item) => _RoomRenderItem(
                     id: item.id,
@@ -401,7 +490,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     width: item.width,
                     depth: item.height,
                     color: _categoryColor(item.category),
-                    selected: _isFurnitureSelected(item.id),
+                    selected: state.selectedItemId == item.id && !state.selectedIsScanObject,
                     isScanObject: false,
                     label: item.name,
                     heightY: 0.95,
@@ -409,7 +498,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 )
                 .toList();
 
+            // Orphan scan detections only (avoid duplicating committed furniture).
+            final furnitureIds = state.furniture.map((f) => f.id).toSet();
             final detectedItems = state.detectedScanObjects
+                .where((obj) => !furnitureIds.contains(obj.id) && !obj.hidden)
                 .map(
                   (obj) => _RoomRenderItem(
                     id: 'scan_${obj.id}',
@@ -420,7 +512,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     width: (obj.sizeMeters.x / metersPerGridX).clamp(0.35, gridCols.toDouble()),
                     depth: (obj.sizeMeters.z / metersPerGridZ).clamp(0.35, gridRows.toDouble()),
                     color: _categoryColor(obj.category).withValues(alpha: 0.72),
-                    selected: _isScanSelected(obj.id),
+                    selected: state.selectedItemId == obj.id && state.selectedIsScanObject,
                     isScanObject: true,
                     label: obj.label,
                     heightY: obj.sizeMeters.y.clamp(0.4, 2.2),
@@ -473,10 +565,12 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   final picked = _pickItemIn3D(event.localPosition, canvasSize, state);
                   if (picked != null) {
                     if (picked.isScanObject) {
-                      _toggleScanSelection(picked.id);
+                      state.selectScanObject(picked.id, toggle: true);
                     } else {
-                      _toggleFurnitureSelection(picked.id);
+                      state.selectFurniture(picked.id, toggle: true);
                     }
+                  } else {
+                    state.clearSelection();
                   }
                 }
               },
@@ -584,6 +678,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     final metersPerGridX = roomLengthMeters <= 0 ? 1.0 : roomLengthMeters / state.currentRoomData.gridCols;
     final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / state.currentRoomData.gridRows;
 
+    final furnitureIds = state.furniture.map((f) => f.id).toSet();
     final pickItems = <_RoomRenderItem>[
       ...state.furniture.map(
         (item) => _RoomRenderItem(
@@ -599,7 +694,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
           label: item.name,
         ),
       ),
-      ...state.detectedScanObjects.map(
+      ...state.detectedScanObjects.where((obj) => !furnitureIds.contains(obj.id)).map(
         (obj) => _RoomRenderItem(
           id: obj.id,
           x: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
@@ -668,6 +763,33 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
   Widget _buildDetectedItemsDrawer(AppState state) {
     final scanObjects = state.detectedScanObjects;
+    final q = _sidebarQuery.trim().toLowerCase();
+    bool matchesQuery(String name, String category, String id) {
+      if (q.isEmpty) return true;
+      return name.toLowerCase().contains(q) ||
+          category.toLowerCase().contains(q) ||
+          id.toLowerCase().contains(q);
+    }
+
+    bool matchesCategory(String category) {
+      final filter = _sidebarCategory;
+      if (filter == null) return true;
+      return category.toLowerCase() == filter;
+    }
+
+    final layoutItems = state.furniture.where((item) {
+      if (!matchesQuery(item.name, item.category, item.id)) return false;
+      if (!matchesCategory(item.category)) return false;
+      final conf = state.confidenceForFurniture(item.id) ?? 0.95;
+      return conf >= _sidebarMinConfidence;
+    }).toList(growable: false);
+
+    final filteredScan = scanObjects.where((obj) {
+      if (!matchesQuery(obj.label, obj.category, obj.id)) return false;
+      if (!matchesCategory(obj.category)) return false;
+      return obj.confidence >= _sidebarMinConfidence;
+    }).toList(growable: false);
+
     return Drawer(
       backgroundColor: AppColors.surface,
       width: 320,
@@ -679,14 +801,76 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               child: Row(
                 children: [
                   Text(
-                    'DETECTED ITEMS',
+                    'ROOM ITEMS',
                     style: TextStyle(color: AppColors.cyan, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2),
                   ),
                   const Spacer(),
                   Text(
-                    '${state.furniture.length + scanObjects.length} total',
+                    '${layoutItems.length + filteredScan.length}/${state.furniture.length + scanObjects.length}',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
                   ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: TextField(
+                onChanged: (v) => setState(() => _sidebarQuery = v),
+                style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Search name or category',
+                  hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  prefixIcon: Icon(Icons.search_rounded, color: AppColors.textMuted, size: 18),
+                  isDense: true,
+                  filled: true,
+                  fillColor: AppColors.card,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: AppColors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: AppColors.border),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.7)),
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final cat in const [null, 'airflow', 'lighting', 'ergonomics', 'neutral'])
+                    _SidebarFilterChip(
+                      label: cat ?? 'All',
+                      active: _sidebarCategory == cat,
+                      onTap: () => setState(() => _sidebarCategory = cat),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final entry in const [
+                    (0.0, 'Any %'),
+                    (0.5, '≥50%'),
+                    (0.7, '≥70%'),
+                    (0.85, '≥85%'),
+                  ])
+                    _SidebarFilterChip(
+                      label: entry.$2,
+                      active: (_sidebarMinConfidence - entry.$1).abs() < 0.001,
+                      onTap: () => setState(() => _sidebarMinConfidence = entry.$1),
+                    ),
                 ],
               ),
             ),
@@ -700,20 +884,21 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5),
                   ),
                   const SizedBox(height: 8),
-                  ...state.furniture.asMap().entries.map((entry) {
-                    final i = entry.key;
-                    final item = entry.value;
-                    final isSelected = _isFurnitureSelected(item.id);
-                    final catColor = _categoryColor(item.category);
-                    final confidence = 86 + (i * 3) % 13;
+                  if (layoutItems.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text('No layout items match filters.', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                    )
+                  else
+                    ...layoutItems.map((item) {
+                      final isSelected = state.selectedItemId == item.id && !state.selectedIsScanObject;
+                      final catColor = _categoryColor(item.category);
+                      final conf = state.confidenceForFurniture(item.id);
+                      final confLabel = conf == null ? '—' : '${(conf * 100).round()}%';
+                      final canDelete = item.iconName != 'door' && item.iconName != 'window';
 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: GestureDetector(
-                        onTap: () {
-                          _toggleFurnitureSelection(item.id);
-                          Navigator.of(context).pop();
-                        },
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           padding: const EdgeInsets.all(10),
@@ -725,81 +910,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                               width: isSelected ? 1.4 : 1,
                             ),
                           ),
-                          child: Row(
+                          child: Column(
                             children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: catColor.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: SvgIcon(
-                                    furnitureSvgFor(item.iconName),
-                                    size: 18,
-                                    color: catColor,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(item.name, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      '${item.category.toUpperCase()}  •  ${item.gridX.toStringAsFixed(1)}, ${item.gridY.toStringAsFixed(1)}',
-                                      style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.green.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  '$confidence%',
-                                  style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.w700),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                  if (scanObjects.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      'SCAN OBJECTS',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5),
-                    ),
-                    const SizedBox(height: 8),
-                    ...scanObjects.map((obj) {
-                      final isSelected = _isScanSelected(obj.id);
-                      final catColor = _categoryColor(obj.category);
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: GestureDetector(
-                          onTap: () => _toggleScanSelection(obj.id),
-                          child: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: isSelected ? catColor.withValues(alpha: 0.12) : AppColors.card,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isSelected ? catColor : catColor.withValues(alpha: 0.55),
-                                width: isSelected ? 1.4 : 1,
-                              ),
-                            ),
-                            child: Column(
-                              children: [
-                                Row(
+                              GestureDetector(
+                                onTap: () {
+                                  state.selectFurniture(item.id, toggle: true);
+                                  Navigator.of(context).pop();
+                                },
+                                child: Row(
                                   children: [
                                     Container(
                                       width: 36,
@@ -809,7 +927,145 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                                         borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Center(
-                                        child: Icon(Icons.view_in_ar_rounded, size: 18, color: catColor),
+                                        child: Opacity(
+                                          opacity: item.hidden ? 0.35 : 1,
+                                          child: SvgIcon(
+                                            furnitureSvgFor(item.iconName),
+                                            size: 18,
+                                            color: catColor,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(item.name, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            '${item.category.toUpperCase()}  •  ${item.statusLabel}  •  $confLabel',
+                                            style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (item.locked)
+                                      const Padding(
+                                        padding: EdgeInsets.only(right: 4),
+                                        child: Icon(Icons.lock_rounded, size: 14, color: AppColors.amber),
+                                      ),
+                                    if (item.hidden)
+                                      const Icon(Icons.visibility_off_rounded, size: 14, color: AppColors.textMuted),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  _ScanActionButton(
+                                    icon: item.hidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                                    label: item.hidden ? 'Show' : 'Hide',
+                                    color: AppColors.textSecondary,
+                                    onTap: () => state.toggleFurnitureHidden(item.id),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _ScanActionButton(
+                                    icon: item.locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                                    label: item.locked ? 'Unlock' : 'Lock',
+                                    color: item.locked ? AppColors.amber : AppColors.textSecondary,
+                                    onTap: () => state.toggleFurnitureLock(item.id),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _ScanActionButton(
+                                    icon: Icons.copy_rounded,
+                                    label: 'Dup',
+                                    color: AppColors.cyan,
+                                    onTap: () {
+                                      state.duplicateFurniture(item.id);
+                                      Navigator.of(context).pop();
+                                    },
+                                  ),
+                                  if (canDelete) ...[
+                                    const SizedBox(width: 6),
+                                    _ScanActionButton(
+                                      icon: Icons.delete_outline_rounded,
+                                      label: 'Del',
+                                      color: AppColors.red,
+                                      onTap: () => state.deleteFurniture(item.id),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 6),
+                  Text(
+                    'SCAN OBJECTS',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5),
+                  ),
+                  const SizedBox(height: 8),
+                  if (filteredScan.isEmpty)
+                    EmptyState(
+                      iconSvg: RoomSvg.scan,
+                      title: scanObjects.isEmpty ? 'No scan objects yet' : 'No matches',
+                      message: scanObjects.isEmpty
+                          ? 'Run a room scan to detect furniture with confidence scores. Layout items stay available above.'
+                          : 'Try a different filter.',
+                      actionLabel: scanObjects.isEmpty ? 'Go to Scan' : null,
+                      onAction: scanObjects.isEmpty
+                          ? () {
+                              Navigator.of(context).pop();
+                              state.setTab(1);
+                            }
+                          : null,
+                    )
+                  else
+                    ...filteredScan.map((obj) {
+                      final isSelected = state.selectedItemId == obj.id && state.selectedIsScanObject;
+                      final catColor = _categoryColor(obj.category);
+                      final status = [
+                        if (obj.hidden) 'Hidden',
+                        if (obj.locked) 'Locked',
+                        if (!obj.hidden && !obj.locked) 'Active',
+                      ].join(' · ');
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: isSelected ? catColor.withValues(alpha: 0.12) : AppColors.card,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected ? catColor : catColor.withValues(alpha: 0.55),
+                              width: isSelected ? 1.4 : 1,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  state.selectScanObject(obj.id, toggle: true);
+                                  Navigator.of(context).pop();
+                                },
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: catColor.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Center(
+                                        child: Opacity(
+                                          opacity: obj.hidden ? 0.35 : 1,
+                                          child: Icon(Icons.view_in_ar_rounded, size: 18, color: catColor),
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 10),
@@ -820,7 +1076,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                                           Text(obj.label, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
                                           const SizedBox(height: 3),
                                           Text(
-                                            '${obj.sizeMeters.x.toStringAsFixed(2)}m × ${obj.sizeMeters.z.toStringAsFixed(2)}m × ${obj.sizeMeters.y.toStringAsFixed(2)}m',
+                                            '${obj.category.toUpperCase()}  •  $status',
                                             style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
                                           ),
                                         ],
@@ -839,38 +1095,58 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    _ScanActionButton(
-                                      icon: obj.locked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                                      label: obj.locked ? 'Unlock' : 'Lock',
-                                      color: obj.locked ? AppColors.amber : AppColors.textSecondary,
-                                      onTap: () => state.toggleDetectedScanObjectLock(obj.id),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    _ScanActionButton(
-                                      icon: Icons.swap_horiz_rounded,
-                                      label: 'Replace',
-                                      color: AppColors.cyan,
-                                      onTap: () => _showScanReplacePicker(state, obj),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    _ScanActionButton(
-                                      icon: Icons.delete_outline_rounded,
-                                      label: 'Delete',
-                                      color: AppColors.red,
-                                      onTap: () => _deleteScanObjectWithUndo(state, obj),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  _ScanActionButton(
+                                    icon: obj.hidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                                    label: obj.hidden ? 'Show' : 'Hide',
+                                    color: AppColors.textSecondary,
+                                    onTap: () => state.toggleDetectedScanObjectHidden(obj.id),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _ScanActionButton(
+                                    icon: obj.locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                                    label: obj.locked ? 'Unlock' : 'Lock',
+                                    color: obj.locked ? AppColors.amber : AppColors.textSecondary,
+                                    onTap: () => state.toggleDetectedScanObjectLock(obj.id),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _ScanActionButton(
+                                    icon: Icons.copy_rounded,
+                                    label: 'Dup',
+                                    color: AppColors.cyan,
+                                    onTap: () {
+                                      state.duplicateDetectedScanObject(obj.id);
+                                      Navigator.of(context).pop();
+                                    },
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  _ScanActionButton(
+                                    icon: Icons.swap_horiz_rounded,
+                                    label: 'Replace',
+                                    color: AppColors.cyan,
+                                    onTap: () => _showScanReplacePicker(state, obj),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _ScanActionButton(
+                                    icon: Icons.delete_outline_rounded,
+                                    label: 'Del',
+                                    color: AppColors.red,
+                                    onTap: () => _deleteScanObjectWithUndo(state, obj),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
                       );
                     }),
-                  ],
                 ],
               ),
             ),
@@ -878,48 +1154,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         ),
       ),
     );
-  }
-
-  bool _isFurnitureSelected(String id) => _selectedFurnitureId == id;
-
-  bool _isScanSelected(String id) => _selectedScanObjectId == id;
-
-  void _toggleFurnitureSelection(String id) {
-    setState(() {
-      if (_selectedFurnitureId == id) {
-        _selectedFurnitureId = null;
-      } else {
-        _selectedFurnitureId = id;
-        _selectedScanObjectId = null;
-      }
-    });
-  }
-
-  void _toggleScanSelection(String id) {
-    setState(() {
-      if (_selectedScanObjectId == id) {
-        _selectedScanObjectId = null;
-      } else {
-        _selectedScanObjectId = id;
-        _selectedFurnitureId = null;
-      }
-    });
-  }
-
-  FurnitureItem? _selectedFurniture(AppState state) {
-    final id = _selectedFurnitureId;
-    if (id == null) return null;
-    final matches = state.furniture.where((f) => f.id == id);
-    if (matches.isEmpty) return null;
-    return matches.first;
-  }
-
-  ScanObject? _selectedScanObject(AppState state) {
-    final id = _selectedScanObjectId;
-    if (id == null) return null;
-    final matches = state.detectedScanObjects.where((o) => o.id == id);
-    if (matches.isEmpty) return null;
-    return matches.first;
   }
 
   Future<void> _showScanReplacePicker(AppState state, ScanObject obj) async {
@@ -1051,6 +1285,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         child: _SurfaceBadge(icon: RoomSvg.window, label: 'Window'),
       ),
       Positioned(
+        left: 8,
+        top: h * 0.72,
+        child: _SurfaceBadge(icon: RoomSvg.door, label: 'Door'),
+      ),
+      Positioned(
         right: 10,
         top: h * 0.18,
         child: _SurfaceBadge(icon: RoomSvg.fan, label: 'AC'),
@@ -1064,6 +1303,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   Widget _buildOptimizationPanel(AppState state) {
+    final weights = state.optimizeWeights;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(
@@ -1082,83 +1322,116 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 label: 'Balanced',
                 color: AppColors.cyan,
                 active: _optimizeGoal == _OptimizeGoal.balanced,
-                onTap: () => setState(() => _optimizeGoal = _OptimizeGoal.balanced),
+                onTap: () {
+                  setState(() => _optimizeGoal = _OptimizeGoal.balanced);
+                  state.applyOptimizeGoalPreset('balanced');
+                },
               ),
               _GoalChip(
                 label: 'Airflow',
                 color: AppColors.airflowColor,
                 active: _optimizeGoal == _OptimizeGoal.airflow,
-                onTap: () => setState(() => _optimizeGoal = _OptimizeGoal.airflow),
+                onTap: () {
+                  setState(() => _optimizeGoal = _OptimizeGoal.airflow);
+                  state.applyOptimizeGoalPreset('airflow');
+                },
               ),
               _GoalChip(
                 label: 'Lighting',
                 color: AppColors.lightingColor,
                 active: _optimizeGoal == _OptimizeGoal.lighting,
-                onTap: () => setState(() => _optimizeGoal = _OptimizeGoal.lighting),
+                onTap: () {
+                  setState(() => _optimizeGoal = _OptimizeGoal.lighting);
+                  state.applyOptimizeGoalPreset('lighting');
+                },
               ),
               _GoalChip(
                 label: 'Ergonomics',
                 color: AppColors.ergonomicsColor,
                 active: _optimizeGoal == _OptimizeGoal.ergonomics,
-                onTap: () => setState(() => _optimizeGoal = _OptimizeGoal.ergonomics),
+                onTap: () {
+                  setState(() => _optimizeGoal = _OptimizeGoal.ergonomics);
+                  state.applyOptimizeGoalPreset('ergonomics');
+                },
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Text(
-            _goalDescription(_optimizeGoal),
+            'WEIGHT MIX  ·  ${weights.summaryLabel}',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.2),
+          ),
+          const SizedBox(height: 4),
+          _WeightSlider(
+            label: 'Airflow',
+            color: AppColors.airflowColor,
+            value: state.airflowSlider,
+            percent: (weights.airflowNorm * 100).round(),
+            onChanged: (v) {
+              setState(() => _optimizeGoal = _OptimizeGoal.balanced);
+              state.setAirflowSlider(v);
+            },
+          ),
+          _WeightSlider(
+            label: 'Lighting',
+            color: AppColors.lightingColor,
+            value: state.lightingSlider,
+            percent: (weights.lightingNorm * 100).round(),
+            onChanged: (v) {
+              setState(() => _optimizeGoal = _OptimizeGoal.balanced);
+              state.setLightingSlider(v);
+            },
+          ),
+          _WeightSlider(
+            label: 'Ergonomics',
+            color: AppColors.ergonomicsColor,
+            value: state.ergonomicsSlider,
+            percent: (weights.ergonomicsNorm * 100).round(),
+            onChanged: (v) {
+              setState(() => _optimizeGoal = _OptimizeGoal.balanced);
+              state.setErgonomicsSlider(v);
+            },
+          ),
+          const SizedBox(height: 4),
+          Text(
+            weights.dominantGoal == null
+                ? 'Blends independent proposals by weight (no sequential overwrite).'
+                : 'Dominant ${weights.dominantGoal} — runs that Auto-Rig path directly.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
           ),
+          if (state.lastOptimizeReasons.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ...state.lastOptimizeReasons.take(5).map(
+              (r) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.check_circle_outline, size: 12, color: AppColors.green),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        r,
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  String _goalDescription(_OptimizeGoal goal) {
-    switch (goal) {
-      case _OptimizeGoal.airflow:
-        return 'Prioritizes open AC-to-window paths and reduces airflow dead zones.';
-      case _OptimizeGoal.lighting:
-        return 'Prioritizes daylight exposure and low-glare task positioning.';
-      case _OptimizeGoal.ergonomics:
-        return 'Prioritizes posture comfort, reachability, and movement clearances.';
-      case _OptimizeGoal.balanced:
-        return 'Balances airflow, lighting, and ergonomics for an all-around setup.';
-    }
-  }
-
-  void _applyGoalToState(AppState state) {
-    switch (_optimizeGoal) {
-      case _OptimizeGoal.airflow:
-        state.setAirflowSlider(0.95);
-        state.setLightingSlider(0.45);
-        state.setErgonomicsSlider(0.45);
-        break;
-      case _OptimizeGoal.lighting:
-        state.setAirflowSlider(0.45);
-        state.setLightingSlider(0.95);
-        state.setErgonomicsSlider(0.45);
-        break;
-      case _OptimizeGoal.ergonomics:
-        state.setAirflowSlider(0.45);
-        state.setLightingSlider(0.45);
-        state.setErgonomicsSlider(0.95);
-        break;
-      case _OptimizeGoal.balanced:
-        state.setAirflowSlider(0.75);
-        state.setLightingSlider(0.75);
-        state.setErgonomicsSlider(0.75);
-        break;
-    }
-  }
-
-  Widget _buildFurnitureInfoCard(FurnitureItem item) {
+  Widget _buildFurnitureInfoCard(AppState state, FurnitureItem item) {
     return Positioned(
       bottom: 210,
       left: 16,
       right: 16,
       child: GestureDetector(
-        onTap: () => setState(() => _selectedFurnitureId = null),
+        onTap: () => state.clearSelection(),
         child: NeonBorderCard(
           glowColor: AppColors.cyan,
           child: Column(
@@ -1180,7 +1453,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(item.name, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 15)),
-                      Text(item.category.toUpperCase(), style: TextStyle(color: AppColors.cyan, fontSize: 10, letterSpacing: 2)),
+                      Text(
+                        '${item.category.toUpperCase()}  •  yaw ${item.yawDegrees.round()}°',
+                        style: TextStyle(color: AppColors.cyan, fontSize: 10, letterSpacing: 1.2),
+                      ),
                     ],
                   ),
                   const Spacer(),
@@ -1199,7 +1475,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Drag to reposition  •  Tap to deselect',
+                'Drag to move  •  Rotation buttons yaw ±90°  •  Tap to deselect'
+                '${item.locked ? '  •  Locked' : ''}'
+                '${item.hidden ? '  •  Hidden' : ''}',
                 style: TextStyle(color: AppColors.textMuted, fontSize: 11),
               ),
             ],
@@ -1209,14 +1487,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  Widget _buildScanInfoCard(ScanObject obj) {
+  Widget _buildScanInfoCard(AppState state, ScanObject obj) {
     final color = _categoryColor(obj.category);
     return Positioned(
       bottom: 210,
       left: 16,
       right: 16,
       child: GestureDetector(
-        onTap: () => setState(() => _selectedScanObjectId = null),
+        onTap: () => state.clearSelection(),
         child: NeonBorderCard(
           glowColor: color,
           child: Column(
@@ -1267,19 +1545,31 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 class _FurnitureCell extends StatelessWidget {
   final FurnitureItem item;
   final bool isSelected;
-  const _FurnitureCell({required this.item, required this.isSelected});
+  final bool hasConflict;
+  const _FurnitureCell({
+    required this.item,
+    required this.isSelected,
+    this.hasConflict = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final color = _categoryColor(item.category);
+    final color = hasConflict
+        ? AppColors.red
+        : switch (item.category) {
+            'airflow' => AppColors.airflowColor,
+            'lighting' => AppColors.lightingColor,
+            'ergonomics' => AppColors.ergonomicsColor,
+            _ => AppColors.textMuted,
+          };
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       decoration: BoxDecoration(
         color: color.withValues(alpha: isSelected ? 0.2 : 0.08),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: isSelected ? color : color.withValues(alpha: 0.35),
-          width: isSelected ? 1.8 : 1,
+          color: isSelected || hasConflict ? color : color.withValues(alpha: 0.35),
+          width: isSelected || hasConflict ? 1.8 : 1,
         ),
         boxShadow: isSelected
             ? [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 12)]
@@ -1289,19 +1579,80 @@ class _FurnitureCell extends StatelessWidget {
         child: SvgIcon(
           furnitureSvgFor(item.iconName),
           size: isSelected ? 24 : 20,
-          color: isSelected ? color : AppColors.textSecondary,
+          color: isSelected || hasConflict ? color : AppColors.textSecondary,
         ),
       ),
     );
   }
+}
 
-  Color _categoryColor(String cat) {
-    switch (cat) {
-      case 'airflow': return AppColors.airflowColor;
-      case 'lighting': return AppColors.lightingColor;
-      case 'ergonomics': return AppColors.ergonomicsColor;
-      default: return AppColors.textMuted;
-    }
+class _HistoryButton extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  const _HistoryButton({
+    required this.icon,
+    required this.enabled,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: enabled ? AppColors.border : AppColors.border.withValues(alpha: 0.5)),
+          ),
+          child: Icon(
+            icon,
+            size: 18,
+            color: enabled ? AppColors.textPrimary : AppColors.textMuted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConflictBanner extends StatelessWidget {
+  final List<LayoutConflict> conflicts;
+
+  const _ConflictBanner({required this.conflicts});
+
+  @override
+  Widget build(BuildContext context) {
+    final top = conflicts.take(2).map((c) => c.message).join(' · ');
+    final extra = conflicts.length > 2 ? ' (+${conflicts.length - 2} more)' : '';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.amber.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.amber.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.amber),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$top$extra',
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1343,24 +1694,46 @@ class _ImpactChip extends StatelessWidget {
 class _RoomGridPainter extends CustomPainter {
   final int gridCols;
   final int gridRows;
-  _RoomGridPainter({required this.gridCols, required this.gridRows});
+  final CoverageGrid? coverage;
+
+  _RoomGridPainter({
+    required this.gridCols,
+    required this.gridRows,
+    this.coverage,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final cellW = size.width / gridCols;
     final cellH = size.height / gridRows;
+
+    final cov = coverage;
+    if (cov != null && cov.cols == gridCols && cov.rows == gridRows) {
+      for (int row = 0; row < gridRows; row++) {
+        for (int col = 0; col < gridCols; col++) {
+          final v = cov.coverage[row * cov.cols + col].clamp(0.0, 1.0);
+          if (v < 0.05) continue;
+          final paint = Paint()
+            ..color = AppColors.cyan.withValues(alpha: 0.08 + v * 0.18);
+          canvas.drawRect(
+            Rect.fromLTWH(col * cellW, row * cellH, cellW, cellH),
+            paint,
+          );
+        }
+      }
+    }
+
     final gridPaint = Paint()
       ..color = AppColors.border.withValues(alpha: 0.45)
       ..strokeWidth = 0.5;
- 
+
     for (int col = 0; col <= gridCols; col++) {
       canvas.drawLine(Offset(col * cellW, 0), Offset(col * cellW, size.height), gridPaint);
     }
     for (int row = 0; row <= gridRows; row++) {
       canvas.drawLine(Offset(0, row * cellH), Offset(size.width, row * cellH), gridPaint);
     }
- 
-    // Room wall outline
+
     final wallPaint = Paint()
       ..color = AppColors.cyan.withValues(alpha: 0.25)
       ..strokeWidth = 2
@@ -1370,7 +1743,9 @@ class _RoomGridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RoomGridPainter old) =>
-      old.gridCols != gridCols || old.gridRows != gridRows;
+      old.gridCols != gridCols ||
+      old.gridRows != gridRows ||
+      old.coverage != coverage;
 }
 
 class _RoomRenderItem {
@@ -1671,6 +2046,43 @@ class _PickedEntity {
   const _PickedEntity({required this.id, required this.isScanObject});
 }
 
+class _SidebarFilterChip extends StatelessWidget {
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _SidebarFilterChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? AppColors.cyan.withValues(alpha: 0.18) : AppColors.card,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: active ? AppColors.cyan.withValues(alpha: 0.6) : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? AppColors.cyan : AppColors.textSecondary,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ScanActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1770,6 +2182,65 @@ class _RotationButton extends StatelessWidget {
             child: Icon(icon, size: 14, color: AppColors.textSecondary),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _WeightSlider extends StatelessWidget {
+  final String label;
+  final Color color;
+  final double value;
+  final int percent;
+  final ValueChanged<double> onChanged;
+
+  const _WeightSlider({
+    required this.label,
+    required this.color,
+    required this.value,
+    required this.percent,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 78,
+            child: Text(
+              label,
+              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+            ),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                activeTrackColor: color,
+                inactiveTrackColor: color.withValues(alpha: 0.18),
+                thumbColor: color,
+                overlayColor: color.withValues(alpha: 0.12),
+              ),
+              child: Slider(
+                value: value.clamp(0.0, 1.0),
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 36,
+            child: Text(
+              '$percent%',
+              textAlign: TextAlign.right,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -215,9 +215,10 @@ class AirflowSimulator {
     required bool optimized,
     int particleCount = 120,
     int ambientCount = 220,
+    bool demoBias = true,
   }) {
     final boxes = _buildBoxes(furniture);
-    final field = _solveField(boxes, optimized: optimized);
+    final field = _solveField(boxes, optimized: optimized, demoBias: demoBias);
     final metrics = _computeMetrics(field);
     final particles = _seedParticles(
       field,
@@ -627,6 +628,17 @@ class AirflowSimulator {
             kind: kind,
           ),
         );
+      } else if (kind == 'door') {
+        // Thin wall opening — marker only, not a solid blocker.
+        boxes.add(
+          AirflowBox(
+            min: AirflowVec3(f.gridX, 0.0, f.gridY),
+            max: AirflowVec3(f.gridX + max(f.width, 0.18), 2.1, f.gridY + f.height),
+            id: f.id,
+            label: f.name,
+            kind: kind,
+          ),
+        );
       } else if (kind == 'fan') {
         // Slim pedestal footprint; head ~1.1m.
         boxes.add(
@@ -659,6 +671,7 @@ class AirflowSimulator {
       return 'ac';
     }
     if (hay.contains('window')) return 'sink';
+    if (hay.contains('door')) return 'door';
     if (hay.contains('pc') || hay.contains('computer') || hay.contains('tower')) {
       return 'heat';
     }
@@ -682,7 +695,11 @@ class AirflowSimulator {
     }
   }
 
-  static AirflowVoxelField _solveField(List<AirflowBox> boxes, {required bool optimized}) {
+  static AirflowVoxelField _solveField(
+    List<AirflowBox> boxes, {
+    required bool optimized,
+    bool demoBias = true,
+  }) {
     final count = nx * ny * nz;
     final solid = List<bool>.filled(count, false);
     final vx = List<double>.filled(count, 0);
@@ -692,7 +709,7 @@ class AirflowSimulator {
     final speed = List<double>.filled(count, 0);
 
     for (final b in boxes) {
-      if (b.kind == 'ac' || b.kind == 'sink' || b.kind == 'fan') continue;
+      if (b.kind == 'ac' || b.kind == 'sink' || b.kind == 'fan' || b.kind == 'door') continue;
       _rasterizeSolid(solid, b);
     }
 
@@ -764,7 +781,8 @@ class AirflowSimulator {
           // Obstacle-aware: weaken flow that would punch through nearby solids.
           force = force + _fieldObstacleSteer(c, solid, x, y, z) * 0.9;
 
-          if (!optimized) {
+          // Baseline-only dramatic dead pocket for prototype viz (not used in scoring).
+          if (demoBias && !optimized) {
             final dead = const AirflowVec3(4.6, 0.7, 6.2);
             final dd = (c - dead).length;
             if (dd < 1.8) {
