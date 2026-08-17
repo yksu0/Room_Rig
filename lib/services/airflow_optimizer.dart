@@ -2,6 +2,8 @@
 // First-pass airflow auto-arrange: move furniture, then score via voxel sim.
 import '../models/room_model.dart';
 import 'airflow_simulator.dart';
+import 'layout_optimizer_common.dart';
+import 'layout_orientation.dart';
 
 class AirflowOptimizeResult {
   final List<FurnitureItem> furniture;
@@ -23,10 +25,9 @@ class AirflowOptimizer {
   static AirflowMetrics evaluate(List<FurnitureItem> furniture) {
     return AirflowSimulator.build(
       furniture: furniture,
-      optimized: true,
+      optimized: false,
       particleCount: 0,
       ambientCount: 0,
-      demoBias: false,
     ).metrics;
   }
 
@@ -56,10 +57,18 @@ class AirflowOptimizer {
       reasons.add('Moved AC to mid long-wall for maximum throw coverage');
     }
 
-    // 2) Window on front wall as return exhaust (offset from AC axis).
+    // 2) Window stays a daylight opening, not a fake exhaust.
     if (find('window') != null) {
       targets['window'] = (x: 0.5, y: 0.0);
-      reasons.add('Kept window as return exhaust, offset from the AC throw axis');
+      reasons.add('Kept the window as a pressure-neutral opening on the front wall');
+    }
+    if (find('intake') != null) {
+      targets['intake'] = (x: cols - 1, y: (rows * 0.15).clamp(0.2, rows - 2));
+      reasons.add('Parked the intake away from the extract so supply can pressurize the room');
+    }
+    if (find('exhaust') != null) {
+      targets['exhaust'] = (x: 0.0, y: (rows * 0.55).clamp(1.0, rows - 2));
+      reasons.add('Moved the exhaust opposite the AC throw so extract does not short-circuit');
     }
     if (find('door') != null) {
       targets['door'] = (x: 0.0, y: (rows - 1.8).clamp(4.0, rows - 1));
@@ -118,8 +127,22 @@ class AirflowOptimizer {
       targets['wardrobe'] = (x: 0.0, y: (rows * 0.55).clamp(2.0, rows - 2));
     }
 
-    var next = _applyTargets(furniture, targets, cols, rows);
+    final before = furniture.map((f) => f.copyWith()).toList(growable: false);
+    var next = LayoutOptimizerCommon.applyTargets(
+      source: furniture,
+      targets: targets,
+      cols: cols,
+      rows: rows,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
     next = _resolveOverlaps(next, cols, rows);
+    next = LayoutOrientation.apply(
+      furniture: next,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    LayoutOptimizerCommon.noteOrientation(reasons, before, next);
 
     final metrics = evaluate(next);
 
@@ -134,24 +157,6 @@ class AirflowOptimizer {
     );
   }
 
-  static List<FurnitureItem> _applyTargets(
-    List<FurnitureItem> source,
-    Map<String, ({double x, double y})> targets,
-    double cols,
-    double rows,
-  ) {
-    return source.map((item) {
-      final pos = targets[item.id];
-      if (pos == null) return item.copyWith();
-      final maxX = (cols - item.width).clamp(0.0, cols);
-      final maxY = (rows - item.height).clamp(0.0, rows);
-      return item.copyWith(
-        gridX: pos.x.clamp(0.0, maxX),
-        gridY: pos.y.clamp(0.0, maxY),
-      );
-    }).toList(growable: false);
-  }
-
   /// Lightweight overlap push so Auto-Rig doesn't stack solids.
   static List<FurnitureItem> _resolveOverlaps(
     List<FurnitureItem> items,
@@ -160,7 +165,7 @@ class AirflowOptimizer {
   ) {
     final mutable = items.map((f) => f.copyWith()).toList();
     // Fixed devices can stay; push movable solids apart.
-    const fixed = {'window', 'door', 'ac'};
+    const fixed = {'window', 'door', 'ac', 'intake', 'exhaust'};
     for (int iter = 0; iter < 8; iter++) {
       var moved = false;
       for (int i = 0; i < mutable.length; i++) {

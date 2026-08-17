@@ -52,16 +52,16 @@ void main() {
     final state = await pumpRig(tester);
     expect(find.text('RIG CUSTOMIZER'), findsOneWidget);
 
-    final before = state.furniture.firstWhere((f) => f.id == 'lamp');
+    final before = state.furniture.firstWhere((f) => f.id == 'fan');
     final beforeX = before.gridX;
     final beforeY = before.gridY;
 
     state.beginFurnitureGesture();
-    state.moveFurniture('lamp', 0.0, 7.0);
+    state.moveFurniture('fan', 0.0, 7.0);
     state.endFurnitureGesture();
     await tester.pump();
 
-    final after = state.furniture.firstWhere((f) => f.id == 'lamp');
+    final after = state.furniture.firstWhere((f) => f.id == 'fan');
     expect(after.gridX != beforeX || after.gridY != beforeY, isTrue);
     expect(state.canUndoLayout, isTrue);
 

@@ -101,11 +101,18 @@ class LightingSimulator {
   static const nx = 24;
   static const nz = 32;
 
+  /// Where the overhead fixture hangs, as a fraction of the room. The Rig views
+  /// draw the fixture from these so the plan agrees with what is being lit.
+  static const ceilingLightU = 0.5;
+  static const ceilingLightV = 0.45;
+
+  /// [optimized] only styles the painter ramps; the lux grid and every metric
+  /// come from [furniture] alone.
   static LightingSimSnapshot build({
     required List<FurnitureItem> furniture,
     required bool optimized,
   }) {
-    final lights = _buildLights(furniture, optimized: optimized);
+    final lights = _buildLights(furniture);
     final occluders = _buildOccluders(furniture);
     final lux = List<double>.filled(nx * nz, 0);
     final samples = <LightingSample>[];
@@ -151,19 +158,18 @@ class LightingSimulator {
     );
   }
 
-  static List<LightingLight> _buildLights(
-    List<FurnitureItem> furniture, {
-    required bool optimized,
-  }) {
+  static List<LightingLight> _buildLights(List<FurnitureItem> furniture) {
     final lights = <LightingLight>[];
 
-    // Soft ceiling fill — represents overhead fixtures (stronger when optimized).
+    // Overhead fixture, assumed on. Below ~0.4 the fill lands under the 0.18
+    // shadow cutoff across most of the floor, which would report a normally lit
+    // room as half in shadow no matter how the furniture is arranged.
     lights.add(
       LightingLight(
-        x: roomWidth * 0.5,
-        z: roomDepth * 0.45,
+        x: roomWidth * ceilingLightU,
+        z: roomDepth * ceilingLightV,
         y: roomHeight - 0.05,
-        intensity: optimized ? 0.42 : 0.22,
+        intensity: 0.42,
         kind: 'ceiling',
         label: 'Ceiling',
       ),
@@ -180,7 +186,7 @@ class LightingSimulator {
             x: cx,
             z: max(0.05, f.gridY + 0.05),
             y: 1.6,
-            intensity: optimized ? 1.15 : 1.0,
+            intensity: 1.0,
             kind: 'window',
             label: 'Window',
           ),
@@ -191,7 +197,7 @@ class LightingSimulator {
             x: cx,
             z: cz,
             y: 1.2,
-            intensity: optimized ? 0.85 : 0.7,
+            intensity: 0.7,
             kind: 'lamp',
             label: f.name,
           ),

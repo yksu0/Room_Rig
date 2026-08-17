@@ -163,7 +163,7 @@ class VisualOdometryEstimator {
 class CompositeTrackingProvider implements TrackingProvider {
   final MethodChannel channel;
   final VisualOdometryEstimator visual;
-  final RoomDimensions? roomBounds;
+  RoomDimensions? roomBounds;
 
   bool _nativeReady = false;
   String _nativeBackend = 'none';
@@ -233,7 +233,7 @@ class CompositeTrackingProvider implements TrackingProvider {
   @override
   Future<TrackingSample> update(ScanFrameInput frame) async {
     final attached = frame.attachedTracking;
-    if (attached != null) {
+    if (attached != null && attached.trackingStable && attached.confidence >= 0.4) {
       _last = attached;
       return attached;
     }
@@ -271,6 +271,8 @@ class CompositeTrackingProvider implements TrackingProvider {
               source: nativeSample.source,
               motionMeters: nativeSample.motionMeters,
               depthHintMeters: visualSample.depthHintMeters,
+              lookAtPosition: nativeSample.lookAtPosition,
+              hasFloorHit: nativeSample.hasFloorHit,
             )
           : nativeSample;
       _last = fused;
@@ -310,6 +312,8 @@ class CompositeTrackingProvider implements TrackingProvider {
         source: 'fused',
         motionMeters: max(nativeSample.motionMeters, visualSample.motionMeters),
         depthHintMeters: nativeSample.depthHintMeters ?? visualSample.depthHintMeters,
+        lookAtPosition: nativeSample.lookAtPosition,
+        hasFloorHit: nativeSample.hasFloorHit,
       );
       _last = fused;
       return fused;
@@ -347,6 +351,10 @@ class CompositeTrackingProvider implements TrackingProvider {
 TrackingSample trackingSampleFromNativeMap(Map<Object?, Object?> result) {
   final conf = (result['confidence'] as num?)?.toDouble() ??
       ((result['trackingStable'] as bool?) ?? true ? 0.8 : 0.25);
+  final lookX = (result['lookAtX'] as num?)?.toDouble();
+  final lookY = (result['lookAtY'] as num?)?.toDouble();
+  final lookZ = (result['lookAtZ'] as num?)?.toDouble();
+  final hasFloorHit = (result['hasFloorHit'] as bool?) ?? false;
   return TrackingSample(
     cameraPosition: Vec3(
       x: (result['x'] as num?)?.toDouble() ?? 0,
@@ -363,6 +371,10 @@ TrackingSample trackingSampleFromNativeMap(Map<Object?, Object?> result) {
     source: (result['backend'] as String?) ?? 'arcore',
     motionMeters: (result['motionMeters'] as num?)?.toDouble() ?? 0,
     depthHintMeters: (result['depthHintMeters'] as num?)?.toDouble(),
+    lookAtPosition: lookX == null || lookZ == null
+        ? null
+        : Vec3(x: lookX, y: lookY ?? 0, z: lookZ),
+    hasFloorHit: hasFloorHit,
   );
 }
 

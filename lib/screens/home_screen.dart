@@ -1,8 +1,10 @@
 // lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
+import '../models/room_scale.dart';
 import '../models/scan_layout_model.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
@@ -31,6 +33,34 @@ class _HomeScreenState extends State<HomeScreen> {
         _showOnboarding(context.read<AppState>());
       });
     }
+  }
+
+  Future<void> _confirmSelectPreset(
+    BuildContext context,
+    AppState state,
+    RoomPreset preset,
+  ) async {
+    if (preset == state.selectedPreset) return;
+    final hasWork = state.scanComplete || state.furniture.any((f) => f.id.startsWith('upg_'));
+    if (hasWork) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Text('Replace current layout?', style: TextStyle(color: AppColors.textPrimary)),
+          content: const Text(
+            'This saves your current room and starts a new lot from the preset.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Load preset')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    state.selectPreset(preset);
   }
 
   Future<void> _showOnboarding(AppState state) async {
@@ -68,13 +98,20 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildHeader(context, room, state),
               const SizedBox(height: 20),
               if (!state.scanComplete) ...[
-                _GettingStartedBanner(onScan: () => state.setTab(1)),
+                _GettingStartedBanner(
+                  onScan: () => state.setTab(1),
+                  onCreate: () => _showCreateRoomSheet(context, state),
+                ),
                 const SizedBox(height: 16),
               ] else if (state.lastScanConfidence != null) ...[
                 _ScanConfidenceBanner(metrics: state.lastScanConfidence!),
+                const SizedBox(height: 12),
+                _JourneySteps(state: state),
                 const SizedBox(height: 16),
               ],
               _buildScoreSection(context, state),
+              const SizedBox(height: 24),
+              _buildMyRooms(context, state),
               const SizedBox(height: 24),
               _buildPresetSelector(context, state),
               const SizedBox(height: 24),
@@ -200,15 +237,76 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              ScoreRing(score: state.airflowScore, size: 80, color: AppColors.airflowColor, label: 'Airflow'),
-              ScoreRing(score: state.overallScore, size: 110, color: AppColors.cyan, label: 'Overall'),
-              ScoreRing(score: state.lightingScore, size: 80, color: AppColors.lightingColor, label: 'Lighting'),
+              ScoreRing(score: state.airflowScore, size: 70, color: AppColors.airflowColor, label: 'Airflow'),
+              ScoreRing(score: state.overallScore, size: 104, color: AppColors.cyan, label: 'Overall'),
+              ScoreRing(score: state.lightingScore, size: 70, color: AppColors.lightingColor, label: 'Lighting'),
             ],
           ),
-          const SizedBox(height: 16),
-          ScoreRing(score: state.ergonomicsScore, size: 70, color: AppColors.ergonomicsColor, label: 'Ergonomics'),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              ScoreRing(score: state.ergonomicsScore, size: 64, color: AppColors.ergonomicsColor, label: 'Ergo'),
+              ScoreRing(score: state.spatialScore, size: 64, color: AppColors.spatialColor, label: 'Space'),
+            ],
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMyRooms(BuildContext context, AppState state) {
+    final rooms = [
+      for (final r in state.savedRooms) r,
+    ];
+    final activeListed = rooms.any((r) => r.id == state.activeRoomId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'MY ROOMS',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 2,
+              ),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => _showCreateRoomSheet(context, state),
+              child: const Text('New', style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (!activeListed)
+          _RoomSlotTile(
+            title: state.currentRoomData.name,
+            subtitle: 'Current lot',
+            selected: true,
+            onTap: () {},
+            onDuplicate: () => state.duplicateActiveRoom(),
+            onDelete: null,
+          ),
+        ...rooms.map(
+          (r) => _RoomSlotTile(
+            title: r.name,
+            subtitle: r.scanComplete
+                ? 'Scanned'
+                : (r.layout.scanSource == 'manual' ? 'Created' : 'Preset'),
+            selected: r.id == state.activeRoomId,
+            onTap: () => state.loadSavedRoom(r.id),
+            onDuplicate: () {
+              if (r.id != state.activeRoomId) state.loadSavedRoom(r.id);
+              state.duplicateActiveRoom();
+            },
+            onDelete: rooms.length > 1 ? () => state.deleteSavedRoom(r.id) : null,
+          ),
+        ),
+      ],
     );
   }
 
@@ -238,7 +336,7 @@ class _HomeScreenState extends State<HomeScreen> {
             final isSelected = state.selectedPreset == p.$1;
             return Expanded(
               child: GestureDetector(
-                onTap: () => state.selectPreset(p.$1),
+                onTap: () => _confirmSelectPreset(context, state, p.$1),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   margin: const EdgeInsets.only(right: 8),
@@ -304,6 +402,15 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 12),
             Expanded(
               child: _ActionButton(
+                svgString: RoomSvg.home,
+                label: 'Create',
+                color: AppColors.purple,
+                onTap: () => _showCreateRoomSheet(context, state),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _ActionButton(
                 svgString: RoomSvg.tune,
                 label: 'Customize',
                 color: AppColors.purple,
@@ -344,6 +451,12 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _SpecRow(svgString: RoomSvg.home, label: 'Rig Name', value: state.currentRoomData.name),
               const Divider(color: AppColors.border, height: 24),
+              _SpecRow(
+                svgString: RoomSvg.tune,
+                label: 'Size',
+                value: _roomSizeLabel(state),
+              ),
+              const Divider(color: AppColors.border, height: 24),
               _SpecRow(svgString: RoomSvg.tune, label: 'Components', value: '${state.furniture.length} items'),
               const Divider(color: AppColors.border, height: 24),
               _SpecRow(
@@ -361,17 +474,142 @@ class _HomeScreenState extends State<HomeScreen> {
                     : '—',
                 valueColor: AppColors.green,
               ),
+              if (state.hasCompareSnapshot) ...[
+                const Divider(color: AppColors.border, height: 24),
+                _SpecRow(
+                  svgString: RoomSvg.star,
+                  label: 'Compare',
+                  value: 'Original saved',
+                  valueColor: AppColors.cyan,
+                ),
+              ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (state.hasCompareSnapshot)
+                    TextButton(
+                      onPressed: state.restoreOriginalLayout,
+                      child: const Text('Restore original'),
+                    ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => Share.share(state.buildShareReport(), subject: 'Room Rig report'),
+                    child: const Text('Share report'),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
       ],
     );
   }
+
+  String _roomSizeLabel(AppState state) {
+    final room = state.currentRoomData;
+    final dims = state.activeRoomLayout?.dimensions;
+    final l = dims?.lengthMeters ?? RoomScale.metersFromCells(room.gridCols);
+    final w = dims?.widthMeters ?? RoomScale.metersFromCells(room.gridRows);
+    final h = dims?.heightMeters ?? room.heightMeters;
+    return '${RoomScale.formatMeters(l)} × ${RoomScale.formatMeters(w)} × ${RoomScale.formatMeters(h)}';
+  }
+
+  Future<void> _showCreateRoomSheet(BuildContext context, AppState state) async {
+    final nameCtrl = TextEditingController(text: 'My Room');
+    var length = 3.6;
+    var width = 4.8;
+    var height = 2.7;
+    final created = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: StatefulBuilder(
+            builder: (ctx, setLocal) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'CREATE ROOM',
+                    style: TextStyle(
+                      color: AppColors.cyan,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Fallback when the camera cannot scan. Empty rectangle plus a door and window.',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: nameCtrl,
+                    style: const TextStyle(color: AppColors.textPrimary),
+                    decoration: const InputDecoration(
+                      labelText: 'Name',
+                      labelStyle: TextStyle(color: AppColors.textMuted),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _MeterSlider(
+                    label: 'Length',
+                    value: length,
+                    onChanged: (v) => setLocal(() => length = v),
+                  ),
+                  _MeterSlider(
+                    label: 'Width',
+                    value: width,
+                    onChanged: (v) => setLocal(() => width = v),
+                  ),
+                  _MeterSlider(
+                    label: 'Height',
+                    value: height,
+                    min: 2.2,
+                    max: 3.6,
+                    onChanged: (v) => setLocal(() => height = v),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () {
+                        state.createManualRoom(
+                          name: nameCtrl.text,
+                          lengthMeters: length,
+                          widthMeters: width,
+                          heightMeters: height,
+                        );
+                        Navigator.pop(ctx, true);
+                      },
+                      child: const Text('Create empty room'),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+    nameCtrl.dispose();
+    if (created == true && context.mounted) {
+      state.setTab(2);
+    }
+  }
 }
 
 class _GettingStartedBanner extends StatelessWidget {
   final VoidCallback onScan;
-  const _GettingStartedBanner({required this.onScan});
+  final VoidCallback onCreate;
+  const _GettingStartedBanner({required this.onScan, required this.onCreate});
 
   @override
   Widget build(BuildContext context) {
@@ -397,23 +635,39 @@ class _GettingStartedBanner extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'Start with a room scan, or pick a preset and open Rig.',
+                  'Scan if the camera works, or create a room by hand.',
                   style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onScan,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.cyan.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(8),
+          Column(
+            children: [
+              GestureDetector(
+                onTap: onScan,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.cyan.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('Scan', style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w800, fontSize: 12)),
+                ),
               ),
-              child: Text('Scan', style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w800, fontSize: 12)),
-            ),
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: onCreate,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.purple.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('Create', style: TextStyle(color: AppColors.purple, fontWeight: FontWeight.w800, fontSize: 12)),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -458,6 +712,69 @@ class _ScanConfidenceBanner extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _JourneySteps extends StatelessWidget {
+  final AppState state;
+  const _JourneySteps({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _JourneyChip(
+            label: '1. Edit Rig',
+            color: AppColors.purple,
+            onTap: () => state.setTab(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _JourneyChip(
+            label: '2. Bench',
+            color: AppColors.amber,
+            onTap: () => state.setTab(3),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _JourneyChip(
+            label: '3. Upgrades',
+            color: AppColors.green,
+            onTap: () => state.setTab(4),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _JourneyChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _JourneyChip({required this.label, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800),
+        ),
       ),
     );
   }
@@ -523,6 +840,105 @@ class _SpecRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _MeterSlider extends StatelessWidget {
+  final String label;
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  const _MeterSlider({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.min = 2.6,
+    this.max = 8.5,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 64,
+          child: Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+        ),
+        Expanded(
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 48,
+          child: Text(
+            RoomScale.formatMeters(value),
+            textAlign: TextAlign.right,
+            style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RoomSlotTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onDuplicate;
+  final VoidCallback? onDelete;
+
+  const _RoomSlotTile({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+    required this.onDuplicate,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: selected ? AppColors.cyan.withValues(alpha: 0.12) : AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        child: ListTile(
+          onTap: onTap,
+          dense: true,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: selected ? AppColors.cyan : AppColors.border),
+          ),
+          title: Text(title, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
+          subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.copy_outlined, size: 18, color: AppColors.textMuted),
+                onPressed: onDuplicate,
+                tooltip: 'Duplicate',
+              ),
+              if (onDelete != null)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.textMuted),
+                  onPressed: onDelete,
+                  tooltip: 'Delete',
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -6,6 +6,23 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
+/// Rotate landscape sensor luma 90° CW so it matches a portrait phone.
+(Uint8List, int, int) rotateLuma90Cw(Uint8List src, int width, int height) {
+  if (width <= 0 || height <= 0 || src.length < width * height) {
+    return (src, width, height);
+  }
+  final outW = height;
+  final outH = width;
+  final out = Uint8List(outW * outH);
+  for (int y = 0; y < height; y++) {
+    final srcRow = y * width;
+    for (int x = 0; x < width; x++) {
+      out[x * outW + (height - 1 - y)] = src[srcRow + x];
+    }
+  }
+  return (out, outW, outH);
+}
+
 /// Live grayscale viewfinder from ARCore / camera luma frames.
 class ScanLumaPreview extends StatefulWidget {
   final Uint8List? bytes;
@@ -66,9 +83,19 @@ class _ScanLumaPreviewState extends State<ScanLumaPreview> {
     }
 
     final gen = ++_decodeGen;
-    final rgba = Uint8List(w * h * 4);
-    for (int i = 0; i < w * h; i++) {
-      final v = bytes[i];
+    var luma = bytes;
+    var decW = w;
+    var decH = h;
+    // Back-camera frames are landscape; the app is locked to portrait.
+    if (decW > decH) {
+      final rotated = rotateLuma90Cw(luma, decW, decH);
+      luma = rotated.$1;
+      decW = rotated.$2;
+      decH = rotated.$3;
+    }
+    final rgba = Uint8List(decW * decH * 4);
+    for (int i = 0; i < decW * decH; i++) {
+      final v = luma[i];
       final o = i * 4;
       rgba[o] = v;
       rgba[o + 1] = v;
@@ -79,8 +106,8 @@ class _ScanLumaPreviewState extends State<ScanLumaPreview> {
     final completer = Completer<ui.Image>();
     ui.decodeImageFromPixels(
       rgba,
-      w,
-      h,
+      decW,
+      decH,
       ui.PixelFormat.rgba8888,
       completer.complete,
     );

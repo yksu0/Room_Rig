@@ -77,13 +77,23 @@ void main() {
         width: 1,
         height: 1,
       ),
+      FurnitureItem(
+        id: 'c',
+        name: 'C',
+        iconName: 'pc',
+        category: 'airflow',
+        gridX: 1,
+        gridY: 1,
+        width: 1,
+        height: 1,
+      ),
     ];
     final next = LayoutCollision.rotatedItem(
       id: 'a',
       deltaDegrees: 90,
       furniture: furniture,
-      gridCols: 6,
-      gridRows: 8,
+      gridCols: 2,
+      gridRows: 2,
     );
     expect(next, isNull);
   });
@@ -105,7 +115,7 @@ void main() {
     await tester.tap(find.text('Gaming Chair').last);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('3D View'));
+    await tester.tap(find.text('3D'));
     await tester.pumpAndSettle();
     // Toggle cleared selection if drawer tap toggled off; re-select for assert.
     if (state.selectedItemId == null) {

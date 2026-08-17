@@ -4,6 +4,54 @@ import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
 import 'glass_card.dart';
 
+/// Verdict derived from the checks themselves, so the badge can never disagree
+/// with the rows underneath it.
+enum BenchVerdict { pass, needsWork, fail }
+
+extension BenchmarkValidationVerdict on BenchmarkValidation {
+  BenchVerdict get verdict {
+    if (failCount > 0) return BenchVerdict.fail;
+    if (checks.every((c) => c.status == BenchCheckStatus.pass)) return BenchVerdict.pass;
+    return BenchVerdict.needsWork;
+  }
+}
+
+/// Shared PASS / NEEDS WORK / FAIL pill used by every bench results header.
+class BenchResultBadge extends StatelessWidget {
+  final BenchmarkValidation validation;
+
+  const BenchResultBadge({super.key, required this.validation});
+
+  static Color colorFor(BenchVerdict v) => switch (v) {
+        BenchVerdict.pass => AppColors.green,
+        BenchVerdict.needsWork => AppColors.amber,
+        BenchVerdict.fail => AppColors.red,
+      };
+
+  static String labelFor(BenchVerdict v) => switch (v) {
+        BenchVerdict.pass => 'PASS',
+        BenchVerdict.needsWork => 'NEEDS WORK',
+        BenchVerdict.fail => 'FAIL',
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final verdict = validation.verdict;
+    final color = colorFor(verdict);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        labelFor(verdict),
+        style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12),
+      ),
+    );
+  }
+}
+
 class BenchmarkValidationCard extends StatelessWidget {
   final BenchmarkValidation validation;
 
@@ -11,7 +59,8 @@ class BenchmarkValidationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final badgeColor = validation.passed ? AppColors.green : AppColors.amber;
+    final verdict = validation.verdict;
+    final badgeColor = BenchResultBadge.colorFor(verdict);
     return GlassCard(
       borderColor: badgeColor.withValues(alpha: 0.35),
       child: Column(
@@ -20,7 +69,7 @@ class BenchmarkValidationCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                validation.passed ? Icons.verified_rounded : Icons.rule_rounded,
+                verdict == BenchVerdict.pass ? Icons.verified_rounded : Icons.rule_rounded,
                 color: badgeColor,
                 size: 20,
               ),
@@ -31,17 +80,7 @@ class BenchmarkValidationCard extends StatelessWidget {
                   style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 14),
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: badgeColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  validation.passed ? 'PASS' : 'NEEDS WORK',
-                  style: TextStyle(color: badgeColor, fontWeight: FontWeight.w800, fontSize: 11),
-                ),
-              ),
+              BenchResultBadge(validation: validation),
             ],
           ),
           const SizedBox(height: 6),

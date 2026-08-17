@@ -80,13 +80,29 @@ class SimulatedScanInputProvider implements ScanInputProvider {
   ScanFrameInput _buildFrame() {
     _frameIndex++;
     final bytes = Uint8List(width * height);
-    // Mild texture + brightness so BasicFrameQualityAnalyzer accepts most frames.
+    // Mild texture + furniture-shaped contrast so luma detection finds blobs.
     final base = 90 + ((_frameIndex * 3) % 40);
+    final pan = (_frameIndex % 40) / 40.0;
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
+        final nx = x / width;
+        final ny = y / height;
         final noise = _rng.nextInt(48);
         final stripe = ((x + _frameIndex) ~/ 12) % 2 == 0 ? 18 : 0;
-        bytes[y * width + x] = (base + noise + stripe).clamp(40, 220);
+        var v = base + noise + stripe;
+        // Window band (top, bright)
+        if (ny < 0.18 && nx > 0.25 && nx < 0.75) v += 70;
+        // Door (left, tall)
+        if (nx < 0.10 && ny > 0.20) v -= 45;
+        // Desk (lower-middle, wide)
+        if (ny > 0.55 && ny < 0.78 && nx > 0.22 + pan * 0.08 && nx < 0.72 + pan * 0.08) {
+          v -= 35;
+        }
+        // Chair (in front of desk)
+        if (ny > 0.72 && ny < 0.92 && nx > 0.38 && nx < 0.55) v -= 50;
+        // Lamp (upper-right)
+        if (ny > 0.12 && ny < 0.38 && nx > 0.72 && nx < 0.88) v += 55;
+        bytes[y * width + x] = v.clamp(40, 220);
       }
     }
 
@@ -161,6 +177,7 @@ class ArCoreOwnedScanInputProvider implements ScanInputProvider {
   void Function(ScanFrameInput frame)? _onFrame;
   bool _running = false;
   bool _polling = false;
+  int _failStreak = 0;
 
   ArCoreOwnedScanInputProvider({
     MethodChannel? channel,
@@ -237,16 +254,19 @@ class ArCoreOwnedScanInputProvider implements ScanInputProvider {
           ? height
           : (width > 0 ? max(1, bytes.length ~/ width) : max(1, bytes.length ~/ w));
 
+      final attachNative = tracking.trackingStable || _failStreak < 8;
+      _failStreak = 0;
       callback(
         ScanFrameInput(
           timestamp: DateTime.now().toUtc(),
           width: w,
           height: h,
           bytes: bytes,
-          attachedTracking: tracking,
+          attachedTracking: attachNative ? tracking : null,
         ),
       );
     } catch (_) {
+      _failStreak += 1;
       // Transient ARCore update failures are expected while GL warms up.
     } finally {
       _polling = false;

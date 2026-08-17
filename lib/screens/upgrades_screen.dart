@@ -104,7 +104,8 @@ class UpgradesScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  'Install upgrades below to see score impact',
+                  'Install an upgrade to drop it onto your Rig layout, then rescore in Bench',
+                  textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.textMuted, fontSize: 13),
                 ),
               ),
@@ -187,7 +188,35 @@ class UpgradesScreen extends StatelessWidget {
                   upgrade: u,
                   isAdded: isAdded,
                   categoryColor: cat.$3,
-                  onToggle: () => state.toggleUpgrade(i),
+                  onToggle: () {
+                    final adding = !(u['added'] as bool);
+                    final ok = state.toggleUpgrade(i);
+                    if (!ok) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('No free cell — move furniture in Rig first'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                      return;
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          adding
+                              ? '${u['name']} placed on Rig'
+                              : '${u['name']} removed from Rig',
+                        ),
+                        backgroundColor: cat.$3.withValues(alpha: 0.9),
+                        behavior: SnackBarBehavior.floating,
+                        action: SnackBarAction(
+                          label: 'OPEN RIG',
+                          textColor: Colors.black,
+                          onPressed: () => state.setTab(2),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               );
             }),

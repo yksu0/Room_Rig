@@ -1,25 +1,33 @@
 // lib/widgets/lighting_field_painter.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../models/room_model.dart';
 import '../services/lighting_simulator.dart';
 import '../theme/app_theme.dart';
+import 'bench_room_views.dart';
 
 enum LightingVizMode { topDown2D, orbit3D }
 
 class LightingFieldPainter extends CustomPainter {
   final LightingSimSnapshot snapshot;
+  final List<FurnitureItem> furniture;
   final LightingVizMode vizMode;
   final double yaw;
   final double pitch;
   final double distance;
+  final double? lookAtX;
+  final double? lookAtZ;
   final double pulse;
 
   LightingFieldPainter({
     required this.snapshot,
+    required this.furniture,
     required this.vizMode,
     required this.yaw,
     required this.pitch,
     required this.distance,
+    this.lookAtX,
+    this.lookAtZ,
     this.pulse = 0.5,
   });
 
@@ -43,8 +51,13 @@ class LightingFieldPainter extends CustomPainter {
   }
 
   void _paint2D(Canvas canvas, Size size) {
-    final pad = 16.0;
-    final rect = Rect.fromLTWH(pad, pad, size.width - pad * 2, size.height - pad * 2);
+    final gridCols = snapshot.roomWidth.round().clamp(1, 64);
+    final gridRows = snapshot.roomDepth.round().clamp(1, 64);
+    final rect = BenchRoom2DGeometry.fieldRectFor(
+      size: size,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(12)),
       Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.9),
@@ -71,7 +84,7 @@ class LightingFieldPainter extends CustomPainter {
           Rect.fromLTWH(rect.left + x * cellW, rect.top + z * cellH, cellW - 0.3, cellH - 0.3),
           Paint()..color = color.withValues(alpha: (0.2 + v * 0.65).clamp(0.15, 0.85)),
         );
-        if (v < 0.18 && !snapshot.optimized) {
+        if (v < 0.18) {
           canvas.drawRect(
             Rect.fromLTWH(rect.left + x * cellW, rect.top + z * cellH, cellW - 0.3, cellH - 0.3),
             Paint()..color = AppColors.red.withValues(alpha: 0.16),
@@ -80,25 +93,13 @@ class LightingFieldPainter extends CustomPainter {
       }
     }
 
-    // Occluders
-    for (final o in snapshot.occluders) {
-      final r = Rect.fromLTRB(
-        rect.left + (o.minX / snapshot.roomWidth) * rect.width,
-        rect.top + (o.minZ / snapshot.roomDepth) * rect.height,
-        rect.left + (o.maxX / snapshot.roomWidth) * rect.width,
-        rect.top + (o.maxZ / snapshot.roomDepth) * rect.height,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(r, const Radius.circular(4)),
-        Paint()..color = Colors.black.withValues(alpha: 0.35),
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(r, const Radius.circular(4)),
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.25)
-          ..style = PaintingStyle.stroke,
-      );
-    }
+    BenchFurnitureRenderer.paint2D(
+      canvas,
+      roomRect: rect,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      furniture: furniture,
+    );
 
     // Lights
     for (final light in snapshot.lights) {
@@ -133,49 +134,36 @@ class LightingFieldPainter extends CustomPainter {
   }
 
   void _paint3D(Canvas canvas, Size size) {
-    final cam = _Cam(
+    final gridCols = snapshot.roomWidth.round().clamp(1, 64);
+    final gridRows = snapshot.roomDepth.round().clamp(1, 64);
+    const roomHeight = 2.8;
+
+    BenchFurnitureRenderer.paint3DScene(
+      canvas,
+      size,
       roomWidth: snapshot.roomWidth,
       roomDepth: snapshot.roomDepth,
-      roomHeight: 2.8,
+      roomHeight: roomHeight,
+      gridCols: gridCols,
+      gridRows: gridRows,
       yaw: yaw,
       pitch: pitch,
       distance: distance,
+      lookAtX: lookAtX,
+      lookAtZ: lookAtZ,
+      furniture: furniture,
     );
 
-    // Room wireframe
-    final corners = [
-      const _V(0, 0, 0),
-      _V(snapshot.roomWidth, 0, 0),
-      _V(snapshot.roomWidth, 0, snapshot.roomDepth),
-      _V(0, 0, snapshot.roomDepth),
-      const _V(0, 2.8, 0),
-      _V(snapshot.roomWidth, 2.8, 0),
-      _V(snapshot.roomWidth, 2.8, snapshot.roomDepth),
-      _V(0, 2.8, snapshot.roomDepth),
-    ];
-    final projected = corners.map((v) => _project(v, size, cam)).toList();
-    final edge = Paint()
-      ..color = AppColors.border.withValues(alpha: 0.85)
-      ..strokeWidth = 1.2;
-    void line(int a, int b) {
-      final pa = projected[a];
-      final pb = projected[b];
-      if (pa == null || pb == null) return;
-      canvas.drawLine(pa.$1, pb.$1, edge);
-    }
-
-    line(0, 1);
-    line(1, 2);
-    line(2, 3);
-    line(3, 0);
-    line(4, 5);
-    line(5, 6);
-    line(6, 7);
-    line(7, 4);
-    line(0, 4);
-    line(1, 5);
-    line(2, 6);
-    line(3, 7);
+    final cam = _Cam(
+      roomWidth: snapshot.roomWidth,
+      roomDepth: snapshot.roomDepth,
+      roomHeight: roomHeight,
+      yaw: yaw,
+      pitch: pitch,
+      distance: distance,
+      lookAtX: lookAtX,
+      lookAtZ: lookAtZ,
+    );
 
     // Floor lux points
     for (int z = 0; z < snapshot.nz; z += 2) {
@@ -194,37 +182,6 @@ class LightingFieldPainter extends CustomPainter {
       }
     }
 
-    // Furniture boxes
-    for (final o in snapshot.occluders) {
-      final a = _project(_V(o.minX, 0, o.minZ), size, cam);
-      final b = _project(_V(o.maxX, 0, o.minZ), size, cam);
-      final c = _project(_V(o.maxX, 0, o.maxZ), size, cam);
-      final d = _project(_V(o.minX, 0, o.maxZ), size, cam);
-      final a2 = _project(_V(o.minX, o.height, o.minZ), size, cam);
-      final b2 = _project(_V(o.maxX, o.height, o.minZ), size, cam);
-      final c2 = _project(_V(o.maxX, o.height, o.maxZ), size, cam);
-      final d2 = _project(_V(o.minX, o.height, o.maxZ), size, cam);
-      if ([a, b, c, d, a2, b2, c2, d2].any((p) => p == null)) continue;
-      final top = Path()
-        ..moveTo(a2!.$1.dx, a2.$1.dy)
-        ..lineTo(b2!.$1.dx, b2.$1.dy)
-        ..lineTo(c2!.$1.dx, c2.$1.dy)
-        ..lineTo(d2!.$1.dx, d2.$1.dy)
-        ..close();
-      canvas.drawPath(top, Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.65));
-      final e = Paint()
-        ..color = AppColors.textMuted.withValues(alpha: 0.5)
-        ..strokeWidth = 1;
-      canvas.drawLine(a!.$1, b!.$1, e);
-      canvas.drawLine(b.$1, c!.$1, e);
-      canvas.drawLine(c.$1, d!.$1, e);
-      canvas.drawLine(d.$1, a.$1, e);
-      canvas.drawLine(a.$1, a2.$1, e);
-      canvas.drawLine(b.$1, b2.$1, e);
-      canvas.drawLine(c.$1, c2.$1, e);
-      canvas.drawLine(d.$1, d2.$1, e);
-    }
-
     for (final light in snapshot.lights) {
       final p = _project(_V(light.x, light.y, light.z), size, cam);
       if (p == null) continue;
@@ -241,10 +198,13 @@ class LightingFieldPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant LightingFieldPainter old) =>
       old.snapshot != snapshot ||
+      old.furniture != furniture ||
       old.vizMode != vizMode ||
       old.yaw != yaw ||
       old.pitch != pitch ||
       old.distance != distance ||
+      old.lookAtX != lookAtX ||
+      old.lookAtZ != lookAtZ ||
       old.pulse != pulse;
 }
 
@@ -256,6 +216,7 @@ class _V {
 
 class _Cam {
   final double roomWidth, roomDepth, roomHeight, yaw, pitch, distance;
+  final double? lookAtX, lookAtZ;
   _Cam({
     required this.roomWidth,
     required this.roomDepth,
@@ -263,7 +224,12 @@ class _Cam {
     required this.yaw,
     required this.pitch,
     required this.distance,
+    this.lookAtX,
+    this.lookAtZ,
   });
+
+  double get pivotX => lookAtX ?? roomWidth * 0.5;
+  double get pivotZ => lookAtZ ?? roomDepth * 0.5;
 }
 
 _V _cross(_V a, _V b) => _V(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
@@ -275,7 +241,7 @@ _V _norm(_V v) {
 }
 
 (Offset, double)? _project(_V p, Size size, _Cam cam) {
-  final center = _V(cam.roomWidth * 0.5, cam.roomHeight * 0.45, cam.roomDepth * 0.5);
+  final center = _V(cam.pivotX, cam.roomHeight * 0.45, cam.pivotZ);
   final horizontal = cam.distance * math.cos(cam.pitch);
   final eye = _V(
     center.x + horizontal * math.sin(cam.yaw),

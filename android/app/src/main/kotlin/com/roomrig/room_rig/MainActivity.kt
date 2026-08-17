@@ -81,9 +81,9 @@ class MainActivity : FlutterActivity() {
 
 		val manager = ArCoreSessionManager(this)
 		val view = GLSurfaceView(this)
-		view.layoutParams = FrameLayout.LayoutParams(1, 1)
+		view.layoutParams = FrameLayout.LayoutParams(64, 64)
 		view.alpha = 0f
-		// Keep in hierarchy so EGL context stays alive; 1x1 and transparent.
+		// Keep in hierarchy so EGL context stays alive; tiny and transparent.
 		addContentView(view, view.layoutParams)
 		manager.attachHiddenSurface(view)
 		hiddenGlView = view

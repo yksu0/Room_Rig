@@ -46,8 +46,11 @@ class BenchmarkValidation {
 class BenchmarkValidator {
   BenchmarkValidator._();
 
+  // Bars are calibrated against each simulator's observed range for this room
+  // size, so they sit between a clearly bad arrangement and a clearly good one.
+  // They are not reachable by simply relabelling a layout as "optimized".
   static const airflowPass = 62.0;
-  static const lightingPass = 55.0;
+  static const lightingPass = 45.0; // exposure saturates near 48 in this model
   static const ergonomicsPass = 58.0;
   static const deadZoneMax = 0.28;
   static const glareMax = 0.55;

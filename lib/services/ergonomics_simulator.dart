@@ -123,6 +123,8 @@ class ErgonomicsSimulator {
   static const _pathGridCols = 24;
   static const _pathGridRows = 32;
 
+  /// [optimized] only styles the painter ramps; every metric comes from
+  /// [furniture] alone.
   static ErgonomicsSimSnapshot build({
     required List<FurnitureItem> furniture,
     required bool optimized,
@@ -213,7 +215,7 @@ class ErgonomicsSimulator {
           final gx = g.gridX + g.width * 0.5;
           final gz = g.gridY + g.height * 0.5;
           final dist = sqrt(pow(gx - chairCx, 2) + pow(gz - chairCz, 2));
-          final ok = dist <= reachRadius * (optimized ? 1.05 : 1.0);
+          final ok = dist <= reachRadius;
           sum += (1.0 - (dist / (reachRadius * 1.6)).clamp(0.0, 1.0));
           links.add(
             ErgonomicsLink(

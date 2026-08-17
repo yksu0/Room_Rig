@@ -16,11 +16,14 @@ import '../services/scan_input_provider.dart';
 import '../services/scan_pipeline.dart';
 import '../services/scan_readiness.dart';
 import '../services/scan_pipeline_stubs.dart';
+import '../services/tflite_object_detector.dart';
 import '../services/scan_guidance.dart';
+import '../services/scan_setup.dart';
 import '../theme/app_theme.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/scan_guidance_banner.dart';
 import '../widgets/scan_luma_preview.dart';
+import '../widgets/scan_minimap.dart';
 import '../widgets/scan_pre_coach_sheet.dart';
 
 class ScannerScreen extends StatefulWidget {
@@ -36,10 +39,9 @@ class _ScannerScreenState extends State<ScannerScreen>
   static const String _readinessHintsExpandedPrefKey = 'room_rig.scanner.readiness_hints_expanded';
   static const String _logPanelCollapsedPrefKey = 'room_rig.scanner.log_panel_collapsed';
   static const String _logAutoScrollPrefKey = 'room_rig.scanner.log_auto_scroll';
-  static const double _requiredCoverageToFinish = 0.90;
-  static const int _requiredStableQualityFrames = 8;
+  static const double _requiredCoverageToFinish = 0.68;
+  static const int _requiredStableQualityFrames = 5;
 
-  late AnimationController _scanLineController;
   late AnimationController _pulseController;
   CameraController? _cameraController;
   ScanPipeline? _scanPipeline;
@@ -51,7 +53,6 @@ class _ScannerScreenState extends State<ScannerScreen>
   DateTime _lastFrameAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _qualityLogCooldown = 0;
   late final ScanFinishReadinessController _readiness;
-  bool _latestQualityAcceptable = false;
   List<ScanQualityIssue> _latestQualityIssues = const [];
   double _latestYawDegrees = 0;
   double _latestCamX = 1.4;
@@ -72,7 +73,11 @@ class _ScannerScreenState extends State<ScannerScreen>
   final Map<String, int> _logSuppressed = {};
   _ScanLogFilter _logFilter = _ScanLogFilter.all;
   bool _showReadinessHints = true;
-  bool _logPanelCollapsed = false;
+  bool _logPanelCollapsed = true;
+  DateTime _lastAppNotifyAt = DateTime.fromMillisecondsSinceEpoch(0);
+  RoomLayoutModel? _liveLayout;
+  int _previewTick = 0;
+  final ScanSetupController _setup = ScanSetupController();
   bool _logAutoScroll = true;
   final ScrollController _logScrollController = ScrollController();
   int _processedFrames = 0;
@@ -89,11 +94,6 @@ class _ScannerScreenState extends State<ScannerScreen>
   @override
   void initState() {
     super.initState();
-    _scanLineController = AnimationController(
-      duration: const Duration(seconds: 2),
-      vsync: this,
-    )..repeat();
-
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1200),
       vsync: this,
@@ -102,6 +102,8 @@ class _ScannerScreenState extends State<ScannerScreen>
     _readiness = ScanFinishReadinessController(
       requiredCoverage: _requiredCoverageToFinish,
       requiredStableQualityFrames: _requiredStableQualityFrames,
+      qualityEnterThreshold: 0.50,
+      qualityExitThreshold: 0.35,
     );
 
     unawaited(_restoreLogFilterPreference());
@@ -124,7 +126,6 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   @override
   void dispose() {
-    _scanLineController.dispose();
     _pulseController.dispose();
     unawaited(_stopInputProvider());
     unawaited(_stopCameraStream());
@@ -219,11 +220,12 @@ class _ScannerScreenState extends State<ScannerScreen>
     await pipeline.initialize(seedLayout);
     state.applyScannedRoomLayout(seedLayout);
 
+    _setup.reset();
+
     setState(() {
       _isScanning = true;
       _qualityLogCooldown = 0;
       _readiness.reset();
-      _latestQualityAcceptable = false;
       _latestQualityIssues = const [];
       _latestYawDegrees = 0;
       _latestCamX = 1.4;
@@ -253,7 +255,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       _detectedBoxes.clear();
       _logs.add(
         const _ScanLogEntry(
-          message: '> Scan session started. Move around slowly for full coverage.',
+          message: '> Setup first: lock tracking, then one walk to size the room.',
           severity: _ScanLogSeverity.info,
         ),
       );
@@ -268,6 +270,47 @@ class _ScannerScreenState extends State<ScannerScreen>
     _scheduleLogAutoScroll();
 
     await _startInputSource();
+    if (!_arCoreOwnsCamera) {
+      _skipSetupToPresetCapture(reason: 'no ARCore — using preset room size');
+    }
+  }
+
+  void _skipSetupToPresetCapture({required String reason}) {
+    _setup.skipToCapture();
+    _appendLog('> Setup skipped ($reason).', key: 'setup-skip');
+  }
+
+  void _beginMeasuredCapture() {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    final pipeline = _scanPipeline;
+    if (pipeline == null) return;
+
+    final seed = _setup.buildLayout(
+      roomName: state.currentRoomData.name,
+      fallback: RoomDimensions(
+        lengthMeters: state.currentRoomData.gridCols * 0.6,
+        widthMeters: state.currentRoomData.gridRows * 0.6,
+        heightMeters: 2.7,
+      ),
+    );
+    final fusion = pipeline.fusionEngine;
+    final origin = _setup.origin;
+    if (fusion is GridCoverageFusionEngine && origin != null) {
+      fusion.useWorldOrigin(origin);
+    }
+    pipeline.rebindLayout(seed);
+    final tracking = pipeline.trackingProvider;
+    if (tracking is CompositeTrackingProvider) {
+      tracking.roomBounds = seed.dimensions;
+    }
+    state.applyScannedRoomLayout(seed, persist: false);
+    _liveLayout = seed;
+    _appendLog(
+      '> Room sized ${seed.dimensions.lengthMeters.toStringAsFixed(1)}×${seed.dimensions.widthMeters.toStringAsFixed(1)} m. Capture started.',
+      key: 'setup-capture',
+    );
+    HapticFeedback.mediumImpact();
   }
 
   Future<void> _startInputSource() async {
@@ -397,22 +440,97 @@ class _ScannerScreenState extends State<ScannerScreen>
     final conf = state.lastScanConfidence;
     final confPct = conf == null ? '--' : '${(conf.overallScore * 100).round()}%';
     _appendLog(
-      '> Scan committed to Rig ($confPct confidence). Open Rig Customizer to edit.',
+      '> Scan committed to Rig ($confPct confidence). Opening Rig Customizer.',
       key: 'scan-finalized',
       minInterval: const Duration(seconds: 6),
     );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Scan saved · $confPct confidence — edit placements on Rig'),
+        backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'STAY',
+          textColor: Colors.black,
+          onPressed: () {},
+        ),
+      ),
+    );
+    state.setTab(2);
+  }
+
+  Future<void> _ingestSetupFrame(ScanFrameInput frame) async {
+    final pipeline = _scanPipeline;
+    if (pipeline == null) return;
+
+    final sample = await pipeline.sampleTrackingAndQuality(frame);
+    if (!mounted) return;
+    final tracking = sample.$1;
+    final quality = sample.$2;
+    final previous = _setup.phase;
+    _setup.observe(tracking);
+
+    Uint8List? previewBytes = _previewBytes;
+    var previewW = _previewWidth;
+    var previewH = _previewHeight;
+    _previewTick++;
+    if (_previewTick % 2 == 1 &&
+        frame.bytes.isNotEmpty &&
+        frame.width > 0 &&
+        frame.height > 0) {
+      previewBytes = frame.bytes is Uint8List
+          ? frame.bytes as Uint8List
+          : Uint8List.fromList(frame.bytes);
+      previewW = frame.width;
+      previewH = frame.height;
+    }
+
+    if (previous == ScanSessionPhase.lockTracking &&
+        _setup.phase == ScanSessionPhase.sizeRoom) {
+      HapticFeedback.selectionClick();
+      _appendLog('> Tracking locked. Walk toward the far wall.', key: 'setup-sized');
+    }
+
+    if (_setup.phase == ScanSessionPhase.capture) {
+      _beginMeasuredCapture();
+    }
+
+    setState(() {
+      _latestQualityIssues = quality.issues;
+      _latestYawDegrees = tracking.cameraEulerDegrees.y;
+      _latestCamX = tracking.cameraPosition.x;
+      _latestCamZ = tracking.cameraPosition.z;
+      _coachBanner = ScanGuidance.coachBanner(
+        issues: quality.issues,
+        trackingStable: tracking.trackingStable,
+        trackingConfidence: tracking.confidence,
+        coverageReadyForFinish: false,
+        canFinish: false,
+        stableQualityFrames: 0,
+        requiredStableQualityFrames: 1,
+      );
+      _previewBytes = previewBytes;
+      _previewWidth = previewW;
+      _previewHeight = previewH;
+    });
   }
 
   Future<void> _ingestFrame(ScanFrameInput frame) async {
     if (!_isScanning || _processingFrame || _scanPipeline == null) return;
 
     final now = DateTime.now();
-    if (now.difference(_lastFrameAt).inMilliseconds < 200) return;
+    if (now.difference(_lastFrameAt).inMilliseconds < 280) return;
 
     _processingFrame = true;
     _lastFrameAt = now;
 
     try {
+      if (_setup.phase != ScanSessionPhase.capture) {
+        await _ingestSetupFrame(frame);
+        return;
+      }
+
       final tick = await _scanPipeline!.processFrame(frame);
       if (!mounted) return;
 
@@ -435,9 +553,12 @@ class _ScannerScreenState extends State<ScannerScreen>
       }
 
       final state = context.read<AppState>();
-      state.applyScannedRoomLayout(tick.layout);
       final coverage = tick.layout.coverageGrid.ratio();
-      state.setScanProgress(max(state.scanProgress, coverage.clamp(0.0, 0.98)));
+      final progress = max(state.scanProgress, coverage.clamp(0.0, 0.98));
+      final shouldNotify = now.difference(_lastAppNotifyAt).inMilliseconds >= 500;
+      state.applyScannedRoomLayout(tick.layout, persist: false, notify: false);
+      state.setScanProgress(progress, notify: shouldNotify);
+      if (shouldNotify) _lastAppNotifyAt = now;
 
       final wasReady = _readiness.canFinish;
       final readiness = _readiness.update(
@@ -452,7 +573,6 @@ class _ScannerScreenState extends State<ScannerScreen>
         );
       }
 
-      _updateDetectionOverlays(tick.frameResult.detections);
       _maybeLogQuality(tick.frameResult.quality);
       _maybeLogPipelineDiagnostics(tick.diagnostics);
       if (coverage >= 0.9 && _qualityLogCooldown % 8 == 0) {
@@ -477,7 +597,11 @@ class _ScannerScreenState extends State<ScannerScreen>
       Uint8List? previewBytes = _previewBytes;
       var previewW = _previewWidth;
       var previewH = _previewHeight;
-      if (frame.bytes.isNotEmpty && frame.width > 0 && frame.height > 0) {
+      _previewTick++;
+      if (_previewTick % 2 == 1 &&
+          frame.bytes.isNotEmpty &&
+          frame.width > 0 &&
+          frame.height > 0) {
         previewBytes = frame.bytes is Uint8List
             ? frame.bytes as Uint8List
             : Uint8List.fromList(frame.bytes);
@@ -514,7 +638,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       );
 
       setState(() {
-        _latestQualityAcceptable = tick.frameResult.quality.acceptable;
+        _liveLayout = tick.layout;
         _latestQualityIssues = tick.frameResult.quality.issues;
         _latestYawDegrees = tracking.cameraEulerDegrees.y;
         _latestCamX = tracking.cameraPosition.x;
@@ -556,14 +680,14 @@ class _ScannerScreenState extends State<ScannerScreen>
     await controller.startImageStream((image) {
       final relay = _inputProvider;
       if (relay is! RelayScanInputProvider) return;
-      final planeBytes = image.planes.isNotEmpty ? image.planes.first.bytes : <int>[];
-      if (planeBytes.isEmpty) return;
+      final packed = _packedLumaPlane(image);
+      if (packed.isEmpty) return;
       relay.push(
         ScanFrameInput(
           timestamp: DateTime.now(),
           width: image.width,
           height: image.height,
-          bytes: planeBytes,
+          bytes: packed,
         ),
       );
     });
@@ -575,6 +699,28 @@ class _ScannerScreenState extends State<ScannerScreen>
     if (controller.value.isStreamingImages) {
       await controller.stopImageStream();
     }
+  }
+
+  Uint8List _packedLumaPlane(CameraImage image) {
+    if (image.planes.isEmpty) return Uint8List(0);
+    final plane = image.planes.first;
+    final w = image.width;
+    final h = image.height;
+    final src = plane.bytes;
+    final stride = plane.bytesPerRow;
+    if (w <= 0 || h <= 0 || src.isEmpty) return Uint8List(0);
+    if (stride <= w && src.length >= w * h) {
+      return src.length == w * h ? src : Uint8List.sublistView(src, 0, w * h);
+    }
+    final out = Uint8List(w * h);
+    for (int y = 0; y < h; y++) {
+      final srcOff = y * stride;
+      final dstOff = y * w;
+      final count = min(w, src.length - srcOff);
+      if (count <= 0) break;
+      out.setRange(dstOff, dstOff + count, src, srcOff);
+    }
+    return out;
   }
 
   void _updateDetectionOverlays(List<Detection2D> detections) {
@@ -610,7 +756,6 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   void _maybeLogQuality(ScanQualityReport quality) {
     _qualityLogCooldown++;
-    _latestQualityAcceptable = quality.acceptable;
     _latestQualityIssues = quality.issues;
 
     if (_qualityLogCooldown % 4 != 0) return;
@@ -731,35 +876,92 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   bool get _canFinishScan {
-    return _readiness.canFinish;
+    return _setup.phase == ScanSessionPhase.capture && _readiness.canFinish;
+  }
+
+  Widget _buildSetupActions() {
+    final snap = _setup.snapshot();
+    final isLock = _setup.phase == ScanSessionPhase.lockTracking;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: snap.canAdvance
+              ? () {
+                  if (isLock) {
+                    _setup.advanceFromLock();
+                    HapticFeedback.selectionClick();
+                    setState(() {});
+                  } else {
+                    _setup.advanceFromSize();
+                    _beginMeasuredCapture();
+                    setState(() {});
+                  }
+                }
+              : null,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              gradient: snap.canAdvance ? AppColors.accentGradient : null,
+              color: snap.canAdvance ? null : AppColors.card,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: snap.canAdvance ? Colors.transparent : AppColors.border),
+            ),
+            child: Text(
+              isLock
+                  ? (snap.canAdvance ? 'TRACKING LOCKED — CONTINUE' : 'PAN SLOWLY TO LOCK')
+                  : (snap.canAdvance ? 'SIZE LOOKS GOOD — START SCAN' : 'WALK TOWARD THE FAR WALL'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: snap.canAdvance ? Colors.white : AppColors.textMuted,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: () {
+            _skipSetupToPresetCapture(reason: 'user skipped sizing');
+            _beginMeasuredCapture();
+            setState(() {});
+          },
+          child: Text(
+            'Skip and use preset room size',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final size = MediaQuery.of(context).size;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           children: [
-            _buildTopBar(state),
             Expanded(
               child: Stack(
+                fit: StackFit.expand,
                 children: [
                   _buildCameraViewfinder(),
-                  _buildCoverageOverlay(size, state),
-                  if (_isScanning) _buildScanLine(size),
-                  ..._detectedBoxes.map((b) => _buildDetectionBox(b, size)),
-                  _buildCornerBrackets(size),
                   if (_isScanning) _buildCoachBannerOverlay(),
-                  if (_isScanning || state.scanComplete)
-                    _buildScanProgress(size, state),
+                  if (_isScanning && _setup.phase == ScanSessionPhase.capture)
+                    _buildScanHud(state),
+                  if (_isScanning && _setup.phase != ScanSessionPhase.capture)
+                    _buildSetupHud(),
+                  if (!_isScanning) _buildIdleHeader(state),
                 ],
               ),
             ),
-            _buildLogPanel(),
+            if (!_isScanning) _buildLogPanel(),
             _buildBottomBar(state),
           ],
         ),
@@ -767,12 +969,14 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  Widget _buildTopBar(AppState state) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+  Widget _buildIdleHeader(AppState state) {
+    return Positioned(
+      top: 12,
+      left: 16,
+      right: 16,
       child: Row(
         children: [
-          Text(
+          const Text(
             'ROOM SCANNER',
             style: TextStyle(
               color: AppColors.cyan,
@@ -782,24 +986,10 @@ class _ScannerScreenState extends State<ScannerScreen>
             ),
           ),
           const Spacer(),
-          AnimatedBuilder(
-            animation: _pulseController,
-            builder: (context, _) => Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _isScanning
-                    ? AppColors.green.withValues(alpha: 0.5 + _pulseController.value * 0.5)
-                    : AppColors.textMuted,
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
           Text(
-            _isScanning ? 'SCANNING' : (state.scanComplete ? 'COMPLETE' : 'READY'),
+            state.scanComplete ? 'COMPLETE' : 'READY',
             style: TextStyle(
-              color: _isScanning ? AppColors.green : AppColors.textSecondary,
+              color: state.scanComplete ? AppColors.green : AppColors.textSecondary,
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 2,
@@ -822,26 +1012,6 @@ class _ScannerScreenState extends State<ScannerScreen>
             placeholder: Container(
               color: const Color(0xFF020508),
               child: CustomPaint(painter: _GridPainter()),
-            ),
-          ),
-          Positioned(
-            left: 16,
-            bottom: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.45),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                _arCoreOwnsCamera ? 'ARCORE LIVE' : 'CAMERA PREVIEW',
-                style: TextStyle(
-                  color: AppColors.cyan,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                ),
-              ),
             ),
           ),
         ],
@@ -919,227 +1089,153 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  Widget _buildCoverageOverlay(Size size, AppState state) {
-    final layout = state.activeRoomLayout;
+  Widget _buildSetupHud() {
+    final snap = _setup.snapshot();
+    return Positioned(
+      left: 12,
+      right: 12,
+      bottom: 12,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.68),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.cyan.withValues(alpha: 0.35)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              snap.stepLabel,
+              style: const TextStyle(
+                color: AppColors.cyan,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              snap.headline,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              snap.detail,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.3,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 12),
+            LinearProgressIndicator(
+              value: snap.progress.clamp(0.05, 1.0),
+              minHeight: 6,
+              borderRadius: BorderRadius.circular(6),
+              backgroundColor: AppColors.border,
+              color: AppColors.cyan,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScanHud(AppState state) {
+    final layout = _liveLayout ?? state.activeRoomLayout;
     final grid = layout?.coverageGrid;
     if (layout == null || grid == null || grid.coverage.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final target = _isScanning
-        ? ScanGuidance.findWeakestSector(grid: grid, dimensions: layout.dimensions)
-        : null;
+    final coverageRatio = grid.ratio();
+    final target = ScanGuidance.findWeakestSector(
+      grid: grid,
+      dimensions: layout.dimensions,
+    );
+    final cue = target == null
+        ? null
+        : ScanGuidance.directionCue(
+            target: target,
+            cameraX: _latestCamX,
+            cameraZ: _latestCamZ,
+            yawDegrees: _latestYawDegrees,
+            coverageReadyForFinish: coverageRatio >= _requiredCoverageToFinish,
+          );
+    final corners = ScanGuidance.cornerChecklist(grid);
+    final cornersDone = corners.where((c) => c.done).length;
 
-    return Positioned(
-      left: 0,
-      top: 0,
-      width: size.width,
-      height: size.height * 0.65,
-      child: IgnorePointer(
-        child: CustomPaint(
-          painter: _CoverageGridPainter(
+    return Stack(
+      children: [
+        Positioned(
+          top: _coachBanner == null ? 12 : 88,
+          right: 12,
+          child: ScanMinimap(
             grid: grid,
-            guidance: target,
+            dimensions: layout.dimensions,
+            cameraX: _latestCamX,
+            cameraZ: _latestCamZ,
+            yawDegrees: _latestYawDegrees,
+            coverageRatio: coverageRatio,
+            target: target,
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildScanLine(Size size) {
-    return AnimatedBuilder(
-      animation: _scanLineController,
-      builder: (context, _) => Positioned(
-        top: _scanLineController.value * size.height * 0.65,
-        left: 0, right: 0,
-        child: Container(
-          height: 2,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.transparent,
-                AppColors.cyan.withValues(alpha: 0.3),
-                AppColors.cyan,
-                AppColors.cyan.withValues(alpha: 0.3),
-                Colors.transparent,
-              ],
-            ),
-            boxShadow: [BoxShadow(color: AppColors.cyan.withValues(alpha: 0.6), blurRadius: 12)],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetectionBox(_DetectedBox b, Size size) {
-    final h = size.height * 0.65;
-    final w = size.width;
-    return Positioned(
-      left: b.left * w,
-      top: b.top * h,
-      width: b.width * w,
-      height: b.height * h,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: 1),
-        duration: const Duration(milliseconds: 300),
-        builder: (context, v, child) => Opacity(
-          opacity: v,
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: b.color, width: 1.5),
-              borderRadius: BorderRadius.circular(4),
-              color: b.color.withValues(alpha: 0.08),
-            ),
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                color: b.color.withValues(alpha: 0.9),
-                child: const Text(
-                  'DETECTED',
-                  style: TextStyle(color: Colors.black, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 1),
+        Positioned(
+          left: 12,
+          right: 12,
+          bottom: 12,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (cue != null)
+                ScanDirectionCueCard(
+                  cue: cue,
+                  remainingCells: target?.remainingCells ?? 0,
+                  scannedCells: target?.scannedCells ?? 0,
+                  totalCells: target?.totalCells ?? 0,
+                ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      'Corners $cornersDone/4',
+                      style: TextStyle(
+                        color: cornersDone == 4 ? AppColors.green : Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _canFinishScan
+                          ? 'Ready to finish'
+                          : 'Cyan = done · amber = go here',
+                      style: TextStyle(
+                        color: _canFinishScan ? AppColors.green : AppColors.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
+            ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildCornerBrackets(Size size) {
-    const bSize = 24.0;
-    const bThick = 3.0;
-    final color = AppColors.cyan.withValues(alpha: 0.8);
-    final h = size.height * 0.65;
-    const margin = 20.0;
-
-    Widget bracket(bool flipH, bool flipV) => Transform.scale(
-      scaleX: flipH ? -1 : 1,
-      scaleY: flipV ? -1 : 1,
-      child: SizedBox(
-        width: bSize, height: bSize,
-        child: CustomPaint(painter: _BracketPainter(color: color, thickness: bThick)),
-      ),
-    );
-
-    return Positioned(
-      left: 0, top: 0, width: size.width, height: h,
-      child: Stack(
-        children: [
-          Positioned(left: margin, top: margin, child: bracket(false, false)),
-          Positioned(right: margin, top: margin, child: bracket(true, false)),
-          Positioned(left: margin, bottom: margin, child: bracket(false, true)),
-          Positioned(right: margin, bottom: margin, child: bracket(true, true)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScanProgress(Size size, AppState state) {
-    final layout = state.activeRoomLayout;
-    final grid = layout?.coverageGrid;
-    final coverageRatio = grid?.ratio() ?? 0;
-    final coveragePct = (coverageRatio * 100).toInt();
-    final qualityStatus = _readiness.smoothedQuality >= _readiness.qualityEnterThreshold
-        ? 'GOOD'
-        : 'NEEDS IMPROVEMENT';
-    final scannedObjects = state.activeRoomLayout?.objects.where((o) => o.source == 'scan-fusion').length ?? 0;
-    final stabilityRatio =
-        (_readiness.stableQualityFrames / _requiredStableQualityFrames).clamp(0.0, 1.0);
-    final readinessHints = _buildReadinessHints(
-      coverageRatio: coverageRatio,
-      qualityRatio: _readiness.smoothedQuality,
-      stabilityRatio: stabilityRatio,
-    );
-
-    ScanDirectionCue? directionCue;
-    ScanCoverageTarget? coverageTarget;
-    if (_isScanning && layout != null && grid != null) {
-      coverageTarget = ScanGuidance.findWeakestSector(
-        grid: grid,
-        dimensions: layout.dimensions,
-      );
-      if (coverageTarget != null) {
-        directionCue = ScanGuidance.directionCue(
-          target: coverageTarget,
-          cameraX: _latestCamX,
-          cameraZ: _latestCamZ,
-          yawDegrees: _latestYawDegrees,
-          coverageReadyForFinish: coverageRatio >= _requiredCoverageToFinish,
-        );
-      }
-    }
-
-    return Positioned(
-      bottom: 16, left: 0, right: 0,
-      child: Column(
-        children: [
-          Text(
-            '${(state.scanProgress * 100).toInt()}%',
-            style: TextStyle(color: AppColors.cyan, fontSize: 32, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: LinearProgressIndicator(
-              value: state.scanProgress,
-              backgroundColor: AppColors.border,
-              valueColor: const AlwaysStoppedAnimation(AppColors.cyan),
-              minHeight: 3,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Coverage: $coveragePct%',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Objects Captured: $scannedObjects',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Quality: $qualityStatus  Stable Frames: ${_readiness.stableQualityFrames}',
-            style: TextStyle(
-              color: _latestQualityAcceptable ? AppColors.green : AppColors.amber,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (_isScanning && directionCue != null && coverageTarget != null) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              child: ScanDirectionCueCard(
-                cue: directionCue,
-                remainingCells: coverageTarget.remainingCells,
-                scannedCells: coverageTarget.scannedCells,
-                totalCells: coverageTarget.totalCells,
-              ),
-            ),
-          ],
-          if (_isScanning && grid != null) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              child: _buildCornerChecklist(grid),
-            ),
-          ],
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 30),
-            child: _buildReadinessMeter(
-              coverageRatio: coverageRatio,
-              qualityRatio: _readiness.smoothedQuality,
-              stabilityRatio: stabilityRatio,
-              hints: readinessHints,
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -1658,7 +1754,9 @@ class _ScannerScreenState extends State<ScannerScreen>
   Widget _buildBottomBar(AppState state) {
     return Container(
       padding: const EdgeInsets.all(20),
-      child: _isScanning
+      child: _isScanning && _setup.phase != ScanSessionPhase.capture
+          ? _buildSetupActions()
+          : _isScanning
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1711,58 +1809,62 @@ class _ScannerScreenState extends State<ScannerScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 GestureDetector(
-                  onTap: () => _exportScanBundle(state),
+                  onTap: _requestStartScan,
                   child: Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
-                      color: AppColors.card,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.border),
+                      color: AppColors.cyan.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.cyan, width: 1.5),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.ios_share_rounded, color: AppColors.cyan, size: 18),
-                        const SizedBox(width: 8),
+                        SvgIcon(RoomSvg.camera, size: 20, color: AppColors.cyan),
+                        const SizedBox(width: 10),
                         const Text(
-                          'EXPORT SCAN BUNDLE',
-                          style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w800, letterSpacing: 1.2),
+                          'SCAN AGAIN',
+                          style: TextStyle(
+                            color: AppColors.cyan,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 2,
+                            fontSize: 13,
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
-                if (_lastExportFolder != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      'Export ready: $_lastExportFolder',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 10),
-                    ),
-                  ),
+                const SizedBox(height: 8),
                 GestureDetector(
                   onTap: () => context.read<AppState>().setTab(2),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
-                      gradient: AppColors.accentGradient,
+                      color: AppColors.card,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: AppColors.cyan.withValues(alpha: 0.4), blurRadius: 20)],
+                      border: Border.all(color: AppColors.border),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        SvgIcon(RoomSvg.tune, size: 18, color: Colors.white),
+                        SvgIcon(RoomSvg.tune, size: 18, color: AppColors.textSecondary),
                         const SizedBox(width: 8),
                         const Text(
-                          'OPEN RIG CUSTOMIZER',
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 2),
+                          'OPEN RIG',
+                          style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w800, letterSpacing: 2),
                         ),
                       ],
                     ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => _exportScanBundle(state),
+                  child: const Text(
+                    'Export scan bundle',
+                    style: TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
@@ -2070,72 +2172,3 @@ class _GridPainter extends CustomPainter {
   @override bool shouldRepaint(_) => false;
 }
 
-class _BracketPainter extends CustomPainter {
-  final Color color;
-  final double thickness;
-  const _BracketPainter({required this.color, required this.thickness});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = thickness
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.square;
-    canvas.drawLine(const Offset(0, 0), Offset(size.width, 0), paint);
-    canvas.drawLine(const Offset(0, 0), Offset(0, size.height), paint);
-  }
-  @override bool shouldRepaint(_) => false;
-}
-
-class _CoverageGridPainter extends CustomPainter {
-  final CoverageGrid grid;
-  final ScanCoverageTarget? guidance;
-
-  const _CoverageGridPainter({required this.grid, this.guidance});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (grid.cols == 0 || grid.rows == 0) return;
-
-    final cellW = size.width / grid.cols;
-    final cellH = size.height / grid.rows;
-
-    for (int row = 0; row < grid.rows; row++) {
-      for (int col = 0; col < grid.cols; col++) {
-        final idx = row * grid.cols + col;
-        if (idx >= grid.coverage.length) continue;
-        final v = grid.coverage[idx].clamp(0, 1).toDouble();
-        final color = Color.lerp(AppColors.red.withValues(alpha: 0.16), AppColors.green.withValues(alpha: 0.20), v)!;
-        canvas.drawRect(
-          Rect.fromLTWH(col * cellW, row * cellH, cellW - 1, cellH - 1),
-          Paint()..color = color,
-        );
-      }
-    }
-
-    final target = guidance;
-    if (target != null && grid.cols > 0 && grid.rows > 0) {
-      final left = target.startCol * cellW;
-      final top = target.startRow * cellH;
-      final width = (target.endColExclusive - target.startCol) * cellW;
-      final height = (target.endRowExclusive - target.startRow) * cellH;
-      final focusRect = Rect.fromLTWH(left, top, width, height);
-
-      final overlay = Paint()
-        ..color = AppColors.cyan.withValues(alpha: 0.08)
-        ..style = PaintingStyle.fill;
-      canvas.drawRect(focusRect, overlay);
-
-      final border = Paint()
-        ..color = AppColors.cyan.withValues(alpha: 0.85)
-        ..strokeWidth = 2
-        ..style = PaintingStyle.stroke;
-      canvas.drawRect(focusRect.deflate(1), border);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _CoverageGridPainter oldDelegate) =>
-      oldDelegate.grid != grid || oldDelegate.guidance != guidance;
-}

@@ -6,30 +6,37 @@ import 'airflow_simulator.dart';
 import 'ergonomics_optimizer.dart';
 import 'ergonomics_simulator.dart';
 import 'layout_collision.dart';
+import 'layout_orientation.dart';
 import 'lighting_optimizer.dart';
 import 'lighting_simulator.dart';
+import 'spatial_analyzer.dart';
 
 class MultiObjectiveWeights {
   final double airflow;
   final double lighting;
   final double ergonomics;
+  final double spatial;
 
   const MultiObjectiveWeights({
     required this.airflow,
     required this.lighting,
     required this.ergonomics,
+    this.spatial = 0,
   });
 
-  double get total => max(0.001, airflow + lighting + ergonomics);
+  double get total => max(0.001, airflow + lighting + ergonomics + spatial);
 
   double get airflowNorm => airflow / total;
   double get lightingNorm => lighting / total;
   double get ergonomicsNorm => ergonomics / total;
+  double get spatialNorm => spatial / total;
 
   String get summaryLabel {
     final a = (airflowNorm * 100).round();
     final l = (lightingNorm * 100).round();
     final e = (ergonomicsNorm * 100).round();
+    final s = (spatialNorm * 100).round();
+    if (spatial > 0) return 'Air $a% · Light $l% · Ergo $e% · Space $s%';
     return 'Air $a% · Light $l% · Ergo $e%';
   }
 
@@ -37,6 +44,7 @@ class MultiObjectiveWeights {
         airflow: airflowNorm,
         lighting: lightingNorm,
         ergonomics: ergonomicsNorm,
+        spatial: spatialNorm,
       );
 
   /// Dominant objective if one weight owns ≥62% of the mix.
@@ -45,6 +53,7 @@ class MultiObjectiveWeights {
     if (n.airflow >= 0.62) return 'airflow';
     if (n.lighting >= 0.62) return 'lighting';
     if (n.ergonomics >= 0.62) return 'ergonomics';
+    if (n.spatial >= 0.62) return 'spatial';
     return null;
   }
 }
@@ -123,6 +132,19 @@ class MultiObjectiveOptimizer {
         reasons: reasons,
       );
     }
+    if (dominant == 'spatial') {
+      final space = SpatialOptimizer.optimize(
+        furniture: baseline,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      );
+      reasons.addAll(space.reasons.take(4));
+      return _pack(
+        furniture: space.furniture,
+        weights: w,
+        reasons: reasons,
+      );
+    }
 
     final air = AirflowOptimizer.optimize(
       furniture: baseline,
@@ -145,12 +167,28 @@ class MultiObjectiveOptimizer {
     if (w.lightingNorm >= 0.2) reasons.addAll(light.reasons.take(2).map((r) => 'Lighting: $r'));
     if (w.ergonomicsNorm >= 0.2) reasons.addAll(ergo.reasons.take(2).map((r) => 'Ergo: $r'));
 
-    final blended = _blendLayouts(
+    var blended = _blendLayouts(
       baseline: baseline,
       airflow: air.furniture,
       lighting: light.furniture,
       ergonomics: ergo.furniture,
       weights: w,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+
+    if (w.spatialNorm >= 0.15) {
+      final space = SpatialOptimizer.optimize(
+        furniture: blended,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      );
+      blended = space.furniture;
+      reasons.addAll(space.reasons.take(2).map((r) => 'Space: $r'));
+    }
+
+    blended = LayoutOrientation.apply(
+      furniture: blended,
       gridCols: gridCols,
       gridRows: gridRows,
     );

@@ -34,6 +34,8 @@ class TrackingSample {
   final String source;
   final double motionMeters;
   final double? depthHintMeters;
+  final Vec3? lookAtPosition;
+  final bool hasFloorHit;
 
   const TrackingSample({
     required this.cameraPosition,
@@ -43,6 +45,8 @@ class TrackingSample {
     this.source = 'unknown',
     this.motionMeters = 0,
     this.depthHintMeters,
+    this.lookAtPosition,
+    this.hasFloorHit = false,
   });
 }
 
@@ -148,6 +152,39 @@ class ScanPipeline {
     _state = fusionEngine.initialize(seedLayout);
   }
 
+  /// Swap the fusion layout without tearing down ARCore / tracking.
+  void rebindLayout(RoomLayoutModel seedLayout) {
+    _state = fusionEngine.initialize(seedLayout);
+  }
+
+  Future<(TrackingSample, ScanQualityReport)> sampleTrackingAndQuality(
+    ScanFrameInput frame,
+  ) async {
+    TrackingSample tracking;
+    try {
+      tracking = await trackingProvider.update(frame);
+      _lastTrackingSample = tracking;
+    } catch (_) {
+      tracking = _lastTrackingSample ??
+          const TrackingSample(
+            cameraPosition: Vec3(x: 0, y: 1.5, z: 0),
+            cameraEulerDegrees: Vec3(x: 0, y: 0, z: 0),
+            trackingStable: false,
+          );
+    }
+
+    ScanQualityReport baseQuality;
+    try {
+      baseQuality = await qualityAnalyzer.analyze(frame);
+    } catch (_) {
+      baseQuality = const ScanQualityReport(
+        acceptable: false,
+        issues: [ScanQualityIssue.lowTexture],
+      );
+    }
+    return (tracking, _mergeTrackingQuality(baseQuality, tracking));
+  }
+
   Future<ScanPipelineTick> processFrame(ScanFrameInput frame) async {
     final current = _state;
     if (current == null) {
@@ -240,7 +277,7 @@ class ScanPipeline {
     }
 
     final trackingOk = tracking.trackingStable && tracking.confidence >= 0.35;
-    final acceptable = trackingOk && base.acceptable && mergedIssues.length < 2;
+    final acceptable = trackingOk && base.acceptable;
     return ScanQualityReport(acceptable: acceptable, issues: mergedIssues);
   }
 

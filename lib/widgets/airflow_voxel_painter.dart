@@ -1,29 +1,41 @@
 // lib/widgets/airflow_voxel_painter.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../models/room_model.dart';
 import '../services/airflow_simulator.dart';
 import '../theme/app_theme.dart';
+import 'bench_room_views.dart';
 
 enum AirflowVizMode { topDown2D, orbit3D }
 
 /// Renders voxel temperature/speed field + live hot/cold particles.
 class AirflowVoxelPainter extends CustomPainter {
   final AirflowSimSnapshot snapshot;
+  final List<FurnitureItem> furniture;
   final AirflowVizMode vizMode;
   final double yaw;
   final double pitch;
   final double distance;
+  final double? lookAtX;
+  final double? lookAtZ;
   final double time;
   final bool showVoxels;
   final bool showDeadZones;
+  final int gridCols;
+  final int gridRows;
 
   AirflowVoxelPainter({
     required this.snapshot,
+    required this.furniture,
     required this.vizMode,
     required this.yaw,
     required this.pitch,
     required this.distance,
     required this.time,
+    required this.gridCols,
+    required this.gridRows,
+    this.lookAtX,
+    this.lookAtZ,
     this.showVoxels = true,
     this.showDeadZones = true,
   });
@@ -49,8 +61,11 @@ class AirflowVoxelPainter extends CustomPainter {
 
   void _paint2D(Canvas canvas, Size size) {
     final field = snapshot.field;
-    final pad = 16.0;
-    final rect = Rect.fromLTWH(pad, pad, size.width - pad * 2, size.height - pad * 2);
+    final rect = BenchRoom2DGeometry.fieldRectFor(
+      size: size,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(12)),
@@ -72,18 +87,13 @@ class AirflowVoxelPainter extends CustomPainter {
       for (int z = 0; z < field.nz; z++) {
         for (int x = 0; x < field.nx; x++) {
           final i = field.index(x, ySlice, z);
-          if (field.solid[i]) {
-            canvas.drawRect(
-              Rect.fromLTWH(rect.left + x * cellW, rect.top + z * cellH, cellW - 0.4, cellH - 0.4),
-              Paint()..color = AppColors.textMuted.withValues(alpha: 0.45),
-            );
-            continue;
-          }
+          if (field.solid[i]) continue;
 
-          final temp = field.temperature[i];
+          // Blend floor cold pools + mid-room mix + ceiling hot layer for top-down realism.
+          final temp = _compositeFloorTemp(field, x, z);
           final speed = field.speed[i];
           final color = Color.lerp(AppColors.cyan, AppColors.red, ((temp + 1) / 2).clamp(0.0, 1.0))!;
-          final alpha = (0.08 + speed * 0.35 + temp.abs() * 0.12).clamp(0.05, 0.55);
+          final alpha = (0.08 + speed * 0.38 + temp.abs() * 0.14).clamp(0.05, 0.58);
           canvas.drawRect(
             Rect.fromLTWH(rect.left + x * cellW, rect.top + z * cellH, cellW - 0.4, cellH - 0.4),
             Paint()..color = color.withValues(alpha: alpha),
@@ -99,36 +109,13 @@ class AirflowVoxelPainter extends CustomPainter {
       }
     }
 
-    // Furniture as solid blockers (filled so collisions are obvious).
-    for (final box in snapshot.boxes) {
-      if (box.kind == 'ac' || box.kind == 'sink' || box.kind == 'fan') continue;
-      final r = Rect.fromLTRB(
-        rect.left + (box.min.x / field.roomWidth) * rect.width,
-        rect.top + (box.min.z / field.roomDepth) * rect.height,
-        rect.left + (box.max.x / field.roomWidth) * rect.width,
-        rect.top + (box.max.z / field.roomDepth) * rect.height,
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(r, const Radius.circular(4)),
-        Paint()..color = AppColors.textPrimary.withValues(alpha: 0.22),
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(r, const Radius.circular(4)),
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.45)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2,
-      );
-      final label = TextPainter(
-        text: TextSpan(
-          text: box.label,
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.55), fontSize: 8, fontWeight: FontWeight.w600),
-        ),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-      )..layout(maxWidth: (r.width - 4).clamp(12, 80));
-      label.paint(canvas, Offset(r.left + 3, r.top + 3));
-    }
+    BenchFurnitureRenderer.paint2D(
+      canvas,
+      roomRect: rect,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      furniture: furniture,
+    );
 
     // Flow arrows on a coarse subsample.
     final arrowPaint = Paint()
@@ -220,16 +207,30 @@ class AirflowVoxelPainter extends CustomPainter {
       }
 
       final o = map2d(p.position);
+      final yFrac = (p.position.y / AirflowSimulator.roomHeight).clamp(0.0, 1.0);
       final radius = p.isAmbient
           ? 1.35
-          : (1.4 + p.intensity * 2.4) * (p.isCold ? 0.95 : 1.05);
+          : (1.4 + p.intensity * 2.4) *
+              (p.isCold ? (0.92 + (1.0 - yFrac) * 0.18) : (0.95 + yFrac * 0.22));
       canvas.drawCircle(o, radius, Paint()..color = color.withValues(alpha: alpha));
     }
 
     _drawAnchors2D(canvas, rect, field);
   }
 
+  /// Top-down view: weight floor cold pools heavier than ceiling hot layers.
+  double _compositeFloorTemp(AirflowVoxelField field, int x, int z) {
+    final yFloor = 1.clamp(0, field.ny - 1);
+    final yMid = field.ny ~/ 2;
+    final yCeil = (field.ny - 2).clamp(0, field.ny - 1);
+    final tFloor = field.temperature[field.index(x, yFloor, z)];
+    final tMid = field.temperature[field.index(x, yMid, z)];
+    final tCeil = field.temperature[field.index(x, yCeil, z)];
+    return tFloor * 0.4 + tMid * 0.38 + tCeil * 0.22;
+  }
+
   Color _parcelColor(AirflowParticle p) {
+    final yFrac = (p.position.y / AirflowSimulator.roomHeight).clamp(0.0, 1.0);
     if (p.isAmbient) {
       // Smoke tracers: neutral gray, lightly tinted if they picked up heat/cold.
       final tint = Color.lerp(
@@ -241,9 +242,10 @@ class AirflowVoxelPainter extends CustomPainter {
       return Color.lerp(const Color(0xFFB8C0CC), tint, p.temperature.abs().clamp(0.0, 0.7))!;
     }
     final hotCold = Color.lerp(
-          AppColors.cyan,
-          AppColors.red,
-          ((p.temperature + 1) / 2).clamp(0.0, 1.0),
+          p.isCold ? const Color(0xFF4FC3F7) : const Color(0xFFFF8A65),
+          p.isCold ? const Color(0xFF0288D1) : const Color(0xFFE53935),
+          ((p.temperature.abs()) * (p.isCold ? (1.0 - yFrac * 0.35) : (0.65 + yFrac * 0.35)))
+              .clamp(0.0, 1.0),
         ) ??
         AppColors.cyan;
     // As intensity drops, fade toward neutral room air (not stuck neon cyan).
@@ -252,31 +254,14 @@ class AirflowVoxelPainter extends CustomPainter {
 
   void _drawAnchors2D(Canvas canvas, Rect rect, AirflowVoxelField field) {
     for (final box in snapshot.boxes) {
-      Color? color;
-      String? label;
-      if (box.kind == 'ac') {
-        color = AppColors.cyan;
-        label = 'AC';
-      } else if (box.kind == 'sink') {
-        color = AppColors.green;
-        label = 'Window';
-      } else if (box.kind == 'door') {
-        color = AppColors.amber;
-        label = 'Door';
-      } else if (box.kind == 'heat') {
-        color = AppColors.red;
-        label = 'PC';
-      } else if (box.kind == 'fan') {
-        color = AppColors.airflowColor;
-        label = 'Fan';
-      }
-      if (color == null || label == null) continue;
+      final tagged = _anchorTag(box);
+      if (tagged == null) continue;
       final c = box.center;
       final o = Offset(
         rect.left + (c.x / field.roomWidth) * rect.width,
         rect.top + (c.z / field.roomDepth) * rect.height,
       );
-      _drawAnchor(canvas, o, color, label);
+      _drawAnchor(canvas, o, tagged.$1, tagged.$2);
     }
   }
 
@@ -289,48 +274,25 @@ class AirflowVoxelPainter extends CustomPainter {
       yaw: yaw,
       pitch: pitch,
       distance: distance,
+      lookAtX: lookAtX,
+      lookAtZ: lookAtZ,
     );
 
-    // Room wireframe.
-    final corners = [
-      const _V(0, 0, 0),
-      _V(field.roomWidth, 0, 0),
-      _V(field.roomWidth, 0, field.roomDepth),
-      _V(0, 0, field.roomDepth),
-      _V(0, field.roomHeight, 0),
-      _V(field.roomWidth, field.roomHeight, 0),
-      _V(field.roomWidth, field.roomHeight, field.roomDepth),
-      _V(0, field.roomHeight, field.roomDepth),
-    ];
-    final projected = corners.map((v) => _project(v, size, cam)).toList();
-    final edge = Paint()
-      ..color = AppColors.border.withValues(alpha: 0.8)
-      ..strokeWidth = 1.2;
-    void line(int a, int b) {
-      final pa = projected[a];
-      final pb = projected[b];
-      if (pa == null || pb == null) return;
-      canvas.drawLine(pa.$1, pb.$1, edge);
-    }
-
-    line(0, 1);
-    line(1, 2);
-    line(2, 3);
-    line(3, 0);
-    line(4, 5);
-    line(5, 6);
-    line(6, 7);
-    line(7, 4);
-    line(0, 4);
-    line(1, 5);
-    line(2, 6);
-    line(3, 7);
-
-    // Furniture boxes — more opaque so particles visibly wrap.
-    for (final box in snapshot.boxes) {
-      if (box.kind == 'ac' || box.kind == 'sink' || box.kind == 'fan') continue;
-      _drawBox(canvas, size, cam, box.min, box.max, AppColors.surfaceAlt.withValues(alpha: 0.72));
-    }
+    BenchFurnitureRenderer.paint3DScene(
+      canvas,
+      size,
+      roomWidth: field.roomWidth,
+      roomDepth: field.roomDepth,
+      roomHeight: field.roomHeight,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      yaw: yaw,
+      pitch: pitch,
+      distance: distance,
+      lookAtX: lookAtX,
+      lookAtZ: lookAtZ,
+      furniture: furniture,
+    );
 
     // Mid-height voxel points (subsampled).
     if (showVoxels) {
@@ -340,7 +302,7 @@ class AirflowVoxelPainter extends CustomPainter {
           final i = field.index(x, ySlice, z);
           if (field.solid[i]) continue;
           final s = field.speed[i];
-          final t = field.temperature[i];
+          final t = _compositeFloorTemp(field, x, z);
           if (s < 0.05 && t.abs() < 0.15) continue;
           final c = field.voxelCenter(x, ySlice, z);
           final p = _project(_V(c.x, c.y, c.z), size, cam);
@@ -352,15 +314,34 @@ class AirflowVoxelPainter extends CustomPainter {
       }
     }
 
-    // Dead zone blobs for baseline.
-    if (showDeadZones && !snapshot.optimized) {
-      final dead = _project(const _V(4.6, 0.9, 6.2), size, cam);
-      if (dead != null) {
-        canvas.drawCircle(dead.$1, 34, Paint()..color = AppColors.red.withValues(alpha: 0.16));
-      }
-      final heat = _project(const _V(2.4, 1.1, 3.6), size, cam);
-      if (heat != null) {
-        canvas.drawCircle(heat.$1, 28, Paint()..color = AppColors.orange.withValues(alpha: 0.14));
+    // Mark the voxels the metrics actually counted as stagnant or heat-trapped,
+    // so the overlay can never disagree with the reported dead-zone ratio.
+    if (showDeadZones) {
+      final field = snapshot.field;
+      final yMid = field.ny ~/ 2;
+      final deadPaint = Paint()..color = AppColors.red.withValues(alpha: 0.16);
+      final heatPaint = Paint()..color = AppColors.orange.withValues(alpha: 0.14);
+      for (int z = 0; z < field.nz; z += 2) {
+        for (int x = 0; x < field.nx; x += 2) {
+          final i = field.index(x, yMid, z);
+          if (field.solid[i]) continue;
+          final s = field.speed[i];
+          final t = field.temperature[i];
+          final isHeat = t > 0.45 && s < 0.28;
+          final isDead = s < 0.12;
+          if (!isDead && !isHeat) continue;
+          final p = _project(
+            _V(
+              (x + 0.5) * AirflowSimulator.roomWidth / field.nx,
+              (yMid + 0.5) * AirflowSimulator.roomHeight / field.ny,
+              (z + 0.5) * AirflowSimulator.roomDepth / field.nz,
+            ),
+            size,
+            cam,
+          );
+          if (p == null) continue;
+          canvas.drawCircle(p.$1, isDead ? 9 : 7, isDead ? deadPaint : heatPaint);
+        }
       }
     }
 
@@ -408,7 +389,7 @@ class AirflowVoxelPainter extends CustomPainter {
       canvas.drawCircle(p.$1, radius, Paint()..color = color.withValues(alpha: alpha));
     }
 
-    // Fan aim indicator in 3D.
+    // Fan aim indicator in 3D (wall/floor fittings are drawn by BenchFurnitureRenderer).
     for (final box in snapshot.boxes.where((b) => b.kind == 'fan')) {
       final aim = AirflowSimulator.fanAimDirection(box, time);
       final c = box.center;
@@ -425,73 +406,32 @@ class AirflowVoxelPainter extends CustomPainter {
             ..strokeCap = StrokeCap.round,
         );
       }
-      if (a != null) _drawAnchor(canvas, a.$1, AppColors.airflowColor, 'Fan');
-    }
-
-    for (final box in snapshot.boxes) {
-      Color? color;
-      String? label;
-      if (box.kind == 'ac') {
-        color = AppColors.cyan;
-        label = 'AC';
-      } else if (box.kind == 'sink') {
-        color = AppColors.green;
-        label = 'Window';
-      } else if (box.kind == 'door') {
-        color = AppColors.amber;
-        label = 'Door';
-      } else if (box.kind == 'heat') {
-        color = AppColors.red;
-        label = 'PC';
-      }
-      if (color == null || label == null) continue;
-      final c = box.center;
-      final p = _project(_V(c.x, c.y, c.z), size, cam);
-      if (p != null) _drawAnchor(canvas, p.$1, color, label);
     }
   }
 
-  void _drawBox(Canvas canvas, Size size, _Cam3 cam, AirflowVec3 min, AirflowVec3 max, Color fill) {
-    final corners = [
-      _V(min.x, min.y, min.z),
-      _V(max.x, min.y, min.z),
-      _V(max.x, min.y, max.z),
-      _V(min.x, min.y, max.z),
-      _V(min.x, max.y, min.z),
-      _V(max.x, max.y, min.z),
-      _V(max.x, max.y, max.z),
-      _V(min.x, max.y, max.z),
-    ];
-    final p = corners.map((v) => _project(v, size, cam)).toList();
-    if (p[4] != null && p[5] != null && p[6] != null && p[7] != null) {
-      final path = Path()
-        ..moveTo(p[4]!.$1.dx, p[4]!.$1.dy)
-        ..lineTo(p[5]!.$1.dx, p[5]!.$1.dy)
-        ..lineTo(p[6]!.$1.dx, p[6]!.$1.dy)
-        ..lineTo(p[7]!.$1.dx, p[7]!.$1.dy)
-        ..close();
-      canvas.drawPath(path, Paint()..color = fill);
+  (Color, String)? _anchorTag(AirflowBox box) {
+    switch (box.kind) {
+      case 'ac':
+        return (AppColors.cyan, 'AC');
+      case 'intake':
+        return (AppColors.green, 'In');
+      case 'exhaust':
+        return (AppColors.orange, 'Out');
+      case 'opening':
+        if (box.leakSign > 0.01) return (AppColors.amber, 'Out');
+        if (box.leakSign < -0.01) return (AppColors.green, 'In');
+        return (AppColors.textMuted, 'Win');
+      case 'door':
+        if (box.leakSign > 0.01) return (AppColors.amber, 'Out');
+        if (box.leakSign < -0.01) return (AppColors.green, 'In');
+        return (AppColors.textMuted, 'Door');
+      case 'heat':
+        return (AppColors.red, 'PC');
+      case 'fan':
+        return (AppColors.airflowColor, 'Fan');
+      default:
+        return null;
     }
-    final edge = Paint()
-      ..color = AppColors.textMuted.withValues(alpha: 0.5)
-      ..strokeWidth = 1;
-    void e(int a, int b) {
-      if (p[a] == null || p[b] == null) return;
-      canvas.drawLine(p[a]!.$1, p[b]!.$1, edge);
-    }
-
-    e(0, 1);
-    e(1, 2);
-    e(2, 3);
-    e(3, 0);
-    e(4, 5);
-    e(5, 6);
-    e(6, 7);
-    e(7, 4);
-    e(0, 4);
-    e(1, 5);
-    e(2, 6);
-    e(3, 7);
   }
 
   void _drawAnchor(Canvas canvas, Offset center, Color color, String label) {
@@ -520,10 +460,15 @@ class AirflowVoxelPainter extends CustomPainter {
       old.yaw != yaw ||
       old.pitch != pitch ||
       old.distance != distance ||
+      old.lookAtX != lookAtX ||
+      old.lookAtZ != lookAtZ ||
       old.vizMode != vizMode ||
       old.snapshot != snapshot ||
+      old.furniture != furniture ||
       old.showVoxels != showVoxels ||
-      old.showDeadZones != showDeadZones;
+      old.showDeadZones != showDeadZones ||
+      old.gridCols != gridCols ||
+      old.gridRows != gridRows;
 }
 
 class _V {
@@ -534,6 +479,7 @@ class _V {
 
 class _Cam3 {
   final double roomWidth, roomDepth, roomHeight, yaw, pitch, distance;
+  final double? lookAtX, lookAtZ;
   _Cam3({
     required this.roomWidth,
     required this.roomDepth,
@@ -541,7 +487,12 @@ class _Cam3 {
     required this.yaw,
     required this.pitch,
     required this.distance,
+    this.lookAtX,
+    this.lookAtZ,
   });
+
+  double get pivotX => lookAtX ?? roomWidth * 0.5;
+  double get pivotZ => lookAtZ ?? roomDepth * 0.5;
 }
 
 _V _cross(_V a, _V b) => _V(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
@@ -553,7 +504,7 @@ _V _norm(_V v) {
 }
 
 (Offset, double)? _project(_V p, Size size, _Cam3 cam) {
-  final center = _V(cam.roomWidth * 0.5, cam.roomHeight * 0.45, cam.roomDepth * 0.5);
+  final center = _V(cam.pivotX, cam.roomHeight * 0.45, cam.pivotZ);
   final horizontal = cam.distance * math.cos(cam.pitch);
   final eye = _V(
     center.x + horizontal * math.sin(cam.yaw),

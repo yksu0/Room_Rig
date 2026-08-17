@@ -91,6 +91,33 @@ void main() {
     expect(sample.confidence, 0.91);
   });
 
+  test('CompositeTrackingProvider ignores weak attachedTracking', () async {
+    final provider = CompositeTrackingProvider(
+      roomBounds: const RoomDimensions(lengthMeters: 3.6, widthMeters: 4.8, heightMeters: 2.7),
+    );
+    await provider.initialize();
+
+    const attached = TrackingSample(
+      cameraPosition: Vec3(x: 0, y: 1.5, z: 0),
+      cameraEulerDegrees: Vec3(x: 0, y: 0, z: 0),
+      trackingStable: false,
+      confidence: 0.2,
+      source: 'arcore-s10',
+    );
+    final sample = await provider.update(
+      ScanFrameInput(
+        timestamp: DateTime.utc(2026, 7, 22),
+        width: 32,
+        height: 24,
+        bytes: Uint8List(32 * 24),
+        attachedTracking: attached,
+      ),
+    );
+    await provider.dispose();
+
+    expect(sample.source, isNot('arcore-s10'));
+  });
+
   test('ScanPipeline diagnostics expose tracking source and confidence', () async {
     final pipeline = ScanPipeline(
       trackingProvider: CompositeTrackingProvider(

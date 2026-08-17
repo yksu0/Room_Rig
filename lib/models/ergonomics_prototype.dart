@@ -35,7 +35,7 @@ class ErgonomicsPrototypeLayouts {
       'chair': (x: 1.9, y: 3.15),
       'pc': (x: 0.4, y: 2.0),
       'lamp': (x: 3.2, y: 2.0),
-      'bed': (x: 3.5, y: 5.5),
+      'bed': (x: 2.6, y: 5.5),
       'shelf': (x: 5.0, y: 5.5),
       'ac': (x: 5.0, y: 2.5),
       'fan': (x: 0.15, y: 4.5),

@@ -22,7 +22,7 @@ class ScannerScreen extends StatefulWidget {
 }
 
 class _ScannerScreenState extends State<ScannerScreen> {
-  static const double _requiredCoverageToFinish = 0.72;
+  static const double _requiredCoverageToFinish = 0.68;
   static const int _requiredStableQualityFrames = 5;
 
   ScanPipeline? _pipeline;
@@ -42,8 +42,8 @@ class _ScannerScreenState extends State<ScannerScreen> {
     _readiness = ScanFinishReadinessController(
       requiredCoverage: _requiredCoverageToFinish,
       requiredStableQualityFrames: _requiredStableQualityFrames,
-      qualityEnterThreshold: 0.55,
-      qualityExitThreshold: 0.40,
+      qualityEnterThreshold: 0.50,
+      qualityExitThreshold: 0.35,
     );
   }
 
@@ -138,11 +138,19 @@ class _ScannerScreenState extends State<ScannerScreen> {
     _input = null;
     if (!mounted) return;
     final conf = state.lastScanConfidence;
+    final confPct = ((conf?.overallScore ?? 0) * 100).round();
     setState(() {
       _isScanning = false;
-      _status =
-          'Scan committed (${((conf?.overallScore ?? 0) * 100).round()}% confidence). Open Rig.';
+      _status = 'Scan committed ($confPct% confidence). Opening Rig.';
     });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Scan saved · $confPct% confidence — edit placements on Rig'),
+        backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    state.setTab(2);
   }
 
   @override

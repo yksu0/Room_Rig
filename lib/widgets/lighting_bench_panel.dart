@@ -1,13 +1,12 @@
 // lib/widgets/lighting_bench_panel.dart
-import 'dart:math';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
-import '../models/lighting_prototype.dart';
 import '../models/room_model.dart';
+import '../services/bench_layouts.dart';
 import '../services/lighting_simulator.dart';
+import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
 import 'bench_room_views.dart';
 import 'benchmark_validation_card.dart';
@@ -17,7 +16,6 @@ import 'room_icons.dart';
 import 'score_ring.dart';
 
 enum _LightStep { layout, simulate, results }
-enum _Variant { current, improved, myRig }
 enum _View { twoD, threeD }
 
 class LightingBenchPanel extends StatefulWidget {
@@ -31,17 +29,14 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulse;
   _LightStep _step = _LightStep.layout;
-  _Variant _layoutVariant = _Variant.current;
-  _Variant _simVariant = _Variant.current;
+  BenchLayoutKind _layoutVariant = BenchLayoutKind.myRoom;
+  BenchLayoutKind _simVariant = BenchLayoutKind.myRoom;
   _View _roomView = _View.twoD;
   LightingVizMode _simViz = LightingVizMode.topDown2D;
 
-  double _yaw = 0.7;
-  double _pitch = 0.4;
-  double _distance = 16;
   bool _orbitDragging = false;
-  int? _orbitPointer;
-  Offset? _lastOrbitPos;
+  int _layoutOrbitResetNonce = 0;
+  int _simOrbitResetNonce = 0;
   String? _selectedFurnitureId;
 
   static const _defaultYaw = 0.7;
@@ -53,21 +48,18 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   bool _showResults = false;
   bool _ready = false;
 
-  late List<FurnitureItem> _baseline;
-  late List<FurnitureItem> _improved;
-  LightingSimSnapshot? _baseSim;
-  LightingSimSnapshot? _optSim;
-  LightingSimSnapshot? _myRigSim;
-  String _myRigFingerprint = '';
-  List<FurnitureItem> _myRigFurniture = const [];
-  bool _myRigPushedToRig = false;
+  BenchLayouts? _layouts;
+  int _seenFocusToken = 0;
+  LightingSimSnapshot? _myRoomSim;
+  LightingSimSnapshot? _improvedSim;
+  LightingSimSnapshot? _sampleSim;
 
   @override
   void initState() {
     super.initState();
     _pulse = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AppState>().loadSimulatedPrototypeBaseline(mode: 'lighting');
+      // The bench reads the Rig; opening this tab must never write to it.
       _rebuild();
     });
   }
@@ -79,123 +71,130 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   }
 
   void _rebuild() {
-    final source = RoomPresets.getPreset(RoomPreset.gamingSetup).furniture;
-    _baseline = LightingPrototypeLayouts.baseline(source);
-    _improved = LightingPrototypeLayouts.optimized(source);
-    _baseSim = LightingSimulator.build(furniture: _baseline, optimized: false);
-    _optSim = LightingSimulator.build(furniture: _improved, optimized: true);
-    _seedMyRigFromBench(context.read<AppState>(), pushToRig: false);
+    _recompute(context.read<AppState>());
+    if (mounted) setState(() {});
+  }
+
+  /// Rebuilds the lighting fields from the furniture that is in the Rig.
+  /// Safe to call during build: it only touches fields.
+  void _recompute(AppState state, {bool resetStep = true}) {
+    final room = state.currentRoomData;
+    final layouts = BenchLayoutBuilder.build(
+      mode: BenchMode.lighting,
+      roomFurniture: state.furniture,
+      gridCols: room.gridCols,
+      gridRows: room.gridRows,
+    );
+    _layouts = layouts;
+    _myRoomSim = LightingSimulator.build(furniture: layouts.myRoom, optimized: false);
+    _improvedSim = LightingSimulator.build(furniture: layouts.improved, optimized: true);
+    _sampleSim = LightingSimulator.build(furniture: layouts.sample, optimized: false);
     _ready = true;
-    _step = _LightStep.layout;
-    _layoutVariant = _Variant.current;
-    _simVariant = _Variant.current;
-    _showResults = false;
-    setState(() {});
-  }
-
-  String _fingerprint(List<FurnitureItem> items) {
-    return items
-        .map((f) =>
-            '${f.id}:${f.gridX.toStringAsFixed(2)},${f.gridY.toStringAsFixed(2)},'
-            '${f.width},${f.height},${f.hidden}')
-        .join('|');
-  }
-
-  void _seedMyRigFromBench(AppState state, {bool pushToRig = true}) {
-    _myRigFurniture = _baseline.map((f) => f.copyWith()).toList(growable: false);
-    if (pushToRig) {
-      state.applyFurnitureLayout(_myRigFurniture);
-      _myRigPushedToRig = true;
-    } else {
-      _myRigPushedToRig = false;
-    }
-    _rebuildMyRigSim();
-  }
-
-  void _rebuildMyRigSim() {
-    final items = _myRigFurniture.where((f) => !f.hidden).toList(growable: false);
-    _myRigFingerprint = _fingerprint(items);
-    _myRigSim = LightingSimulator.build(furniture: items, optimized: false);
-  }
-
-  void _syncMyRig(AppState state) {
-    if (_layoutVariant != _Variant.myRig && _simVariant != _Variant.myRig) return;
-    final items = state.furniture.where((f) => !f.hidden).toList(growable: false);
-    final fp = _fingerprint(items);
-    if (fp == _myRigFingerprint && _myRigSim != null) return;
-    _myRigFurniture = items.map((f) => f.copyWith()).toList(growable: false);
-    _rebuildMyRigSim();
-  }
-
-  List<FurnitureItem> _layoutFurnitureFor(AppState state) {
-    switch (_layoutVariant) {
-      case _Variant.improved:
-        return _improved;
-      case _Variant.myRig:
-        return _myRigFurniture.where((f) => !f.hidden).toList(growable: false);
-      case _Variant.current:
-        return _baseline;
+    if (resetStep) {
+      _step = _LightStep.layout;
+      // A pending focus request (the Rig's "Sim Prototype" button) wins once;
+      // after that a reset lands back on the user's own room.
+      final pending = state.benchLayoutFocusToken != _seenFocusToken;
+      final kind = pending ? state.benchLayoutFocus : BenchLayoutKind.myRoom;
+      _seenFocusToken = state.benchLayoutFocusToken;
+      _layoutVariant = kind;
+      _simVariant = kind;
+      _showResults = false;
     }
   }
+
+  /// Picks up Rig edits so the light field always describes the current room.
+  /// Called from build, so it must not call setState.
+  void _syncFromState(AppState state) {
+    if (state.currentTab != benchTabIndex) return;
+    if (state.benchLayoutFocusToken != _seenFocusToken) {
+      _seenFocusToken = state.benchLayoutFocusToken;
+      _layoutVariant = state.benchLayoutFocus;
+      _simVariant = state.benchLayoutFocus;
+      _selectedFurnitureId = null;
+    }
+    final fp = BenchLayoutBuilder.fingerprintOf(
+      state.furniture.where((f) => !f.hidden).toList(growable: false),
+    );
+    if (_layouts != null && fp == _layouts!.fingerprint) return;
+    _recompute(state, resetStep: false);
+  }
+
+  List<FurnitureItem> _furnitureFor(BenchLayoutKind kind) =>
+      _layouts?.forKind(kind) ?? const [];
+
+  List<FurnitureItem> _layoutFurnitureFor(AppState state) => _furnitureFor(_layoutVariant);
 
   LightingSimSnapshot? get _activeSim {
     switch (_simVariant) {
-      case _Variant.improved:
-        return _optSim;
-      case _Variant.myRig:
-        return _myRigSim;
-      case _Variant.current:
-        return _baseSim;
+      case BenchLayoutKind.improved:
+        return _improvedSim;
+      case BenchLayoutKind.sample:
+        return _sampleSim;
+      case BenchLayoutKind.myRoom:
+        return _myRoomSim;
     }
   }
 
-  Future<void> _runBench({bool fromMyRig = false}) async {
+  List<String> _notesFor(BenchLayoutKind kind) {
+    switch (kind) {
+      case BenchLayoutKind.myRoom:
+        if (_layouts?.fellBackToSample ?? false) {
+          return const [
+            'Nothing in the Rig yet — showing the reference room',
+            'Add furniture on the Rig tab and this bench follows it',
+          ];
+        }
+        return const [
+          'Windows, lamps and blockers all come from your Rig',
+          'Move something on the Rig tab and the light field rebuilds here',
+        ];
+      case BenchLayoutKind.improved:
+        final reasons = _layouts?.improvedReasons ?? const <String>[];
+        return reasons.isEmpty
+            ? const ['No rearrange found that lights your room better']
+            : reasons;
+      case BenchLayoutKind.sample:
+        return const [
+          'Reference room used to sanity-check the simulator',
+          'Dark task zone — daylight blocked, lamp misplaced',
+        ];
+    }
+  }
+
+  Future<void> _runBench() async {
+    // Always start from the room as it stands right now.
+    _recompute(context.read<AppState>(), resetStep: false);
     setState(() {
       _running = true;
       _showResults = false;
       _progress = 0;
       _step = _LightStep.simulate;
-      _simVariant = fromMyRig ? _Variant.myRig : _Variant.current;
+      _simVariant = BenchLayoutKind.myRoom;
     });
-    if (fromMyRig) {
-      _syncMyRig(context.read<AppState>());
-      _rebuildMyRigSim();
-      for (int i = 1; i <= 14; i++) {
-        await Future.delayed(const Duration(milliseconds: 90));
-        if (!mounted) return;
-        setState(() => _progress = i / 14);
-      }
-      if (!mounted) return;
-      setState(() {
-        _running = false;
-        _showResults = true;
-        _step = _LightStep.results;
-        _simVariant = _Variant.myRig;
-      });
-      return;
-    }
     for (int i = 1; i <= 20; i++) {
       await Future.delayed(const Duration(milliseconds: 90));
       if (!mounted) return;
       setState(() {
         _progress = i / 20;
-        if (i == 10) _simVariant = _Variant.improved;
+        if (i == 10) _simVariant = BenchLayoutKind.improved;
       });
     }
     if (!mounted) return;
-    context.read<AppState>().applyFurnitureLayout(_improved, markOptimized: true);
+    // Bench → Rig only happens on the explicit Apply action below the results,
+    // so finishing a run never silently replaces the user's layout.
     setState(() {
       _running = false;
       _showResults = true;
       _step = _LightStep.results;
-      _simVariant = _Variant.improved;
+      _simVariant = BenchLayoutKind.improved;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    _syncMyRig(state);
+    if (_ready) _syncFromState(state);
     if (!_ready) {
       return const Padding(
         padding: EdgeInsets.all(40),
@@ -212,15 +211,15 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
           _layoutSection(state),
           const SizedBox(height: 16),
           _primaryButton(
-            _layoutVariant == _Variant.myRig ? 'RUN MY RIG LIGHTING' : 'RUN LIGHTING BENCH',
+            'RUN LIGHTING BENCH',
             RoomSvg.scan,
-            _running ? null : () => _runBench(fromMyRig: _layoutVariant == _Variant.myRig),
+            _running ? null : () => _runBench(),
           ),
           const SizedBox(height: 8),
           Text(
-            _layoutVariant == _Variant.myRig
-                ? 'Starts from Bench lighting layout (fan included), pushes into Rig — edit there, then re-run.'
-                : 'Compare a dark task zone vs a daylight + task-lamp rearrange, then score exposure.',
+            _layouts?.fellBackToSample ?? false
+                ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
+                : 'Lights the furniture in your Rig right now, then compares it against an optimized rearrange of the same room.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
           ),
         ],
@@ -240,21 +239,16 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
             children: [
               Expanded(
                 child: _primaryButton(
-                  _simVariant == _Variant.myRig ? 'APPLY MY RIG TO RIG' : 'APPLY IMPROVED LAYOUT',
+                  'APPLY IMPROVED LAYOUT',
                   RoomSvg.star,
                   () {
-                    if (_simVariant == _Variant.myRig) {
-                      state.applyFurnitureLayout(_myRigFurniture);
-                    } else {
-                      state.applyFurnitureLayout(_improved, markOptimized: true);
-                    }
+                    state.applyFurnitureLayout(
+                      _furnitureFor(BenchLayoutKind.improved),
+                      markOptimized: true,
+                    );
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(
-                          _simVariant == _Variant.myRig
-                              ? 'My Rig layout applied to Rig'
-                              : 'Improved lighting layout applied to Rig',
-                        ),
+                        content: const Text('Improved lighting layout applied to Rig'),
                         backgroundColor: AppColors.lightingColor.withValues(alpha: 0.9),
                         behavior: SnackBarBehavior.floating,
                         action: SnackBarAction(
@@ -268,10 +262,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                 ),
               ),
               const SizedBox(width: 8),
-              _iconButton(() {
-                state.loadSimulatedPrototypeBaseline(mode: 'lighting');
-                _rebuild();
-              }),
+              _iconButton(_rebuild),
             ],
           ),
         ],
@@ -318,15 +309,19 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     );
   }
 
+  /// Switching layouts only changes what is displayed — it never writes to the
+  /// Rig. Pushing a layout back is the explicit Apply action under the results.
+  void _setLayoutVariant(BenchLayoutKind next) {
+    if (_layoutVariant == next) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _layoutVariant = next;
+      _selectedFurnitureId = null;
+    });
+  }
+
   Widget _layoutSection(AppState state) {
-    final notes = switch (_layoutVariant) {
-      _Variant.improved => LightingPrototypeLayouts.optimizedNotes,
-      _Variant.myRig => const [
-          'Seeded from Bench Current — includes the stand fan',
-          'Pushed into Rig so you can drag furniture there',
-        ],
-      _Variant.current => LightingPrototypeLayouts.baselineNotes,
-    };
+    final notes = _notesFor(_layoutVariant);
     final room = state.currentRoomData;
     final furniture = _layoutFurnitureFor(state);
 
@@ -334,50 +329,20 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'LIGHTING LAYOUT PROTOTYPE',
+          'LIGHTING LAYOUT',
           style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
         ),
         const SizedBox(height: 10),
         Row(
           children: [
-            _chip('Current', _layoutVariant == _Variant.current, AppColors.amber, () {
-              if (_layoutVariant == _Variant.current) return;
-              HapticFeedback.selectionClick();
-              setState(() {
-                _layoutVariant = _Variant.current;
-                _selectedFurnitureId = null;
-              });
-            }),
+            _chip('My Room', _layoutVariant == BenchLayoutKind.myRoom, AppColors.cyan,
+                () => _setLayoutVariant(BenchLayoutKind.myRoom)),
             const SizedBox(width: 8),
-            _chip('Improved', _layoutVariant == _Variant.improved, AppColors.green, () {
-              if (_layoutVariant == _Variant.improved) return;
-              HapticFeedback.selectionClick();
-              setState(() {
-                _layoutVariant = _Variant.improved;
-                _selectedFurnitureId = null;
-              });
-            }),
+            _chip('Improved', _layoutVariant == BenchLayoutKind.improved, AppColors.green,
+                () => _setLayoutVariant(BenchLayoutKind.improved)),
             const SizedBox(width: 8),
-            _chip('My Rig', _layoutVariant == _Variant.myRig, AppColors.cyan, () {
-              if (_layoutVariant == _Variant.myRig) return;
-              HapticFeedback.selectionClick();
-              if (!_myRigPushedToRig) {
-                if (_myRigFurniture.isEmpty) {
-                  _seedMyRigFromBench(state, pushToRig: true);
-                } else {
-                  state.applyFurnitureLayout(_myRigFurniture);
-                  _myRigPushedToRig = true;
-                  _rebuildMyRigSim();
-                }
-              } else {
-                _myRigFurniture = state.furniture.map((f) => f.copyWith()).toList(growable: false);
-                _rebuildMyRigSim();
-              }
-              setState(() {
-                _layoutVariant = _Variant.myRig;
-                _selectedFurnitureId = null;
-              });
-            }),
+            _chip('Sample', _layoutVariant == BenchLayoutKind.sample, AppColors.amber,
+                () => _setLayoutVariant(BenchLayoutKind.sample)),
             const Spacer(),
             _chip('2D', _roomView == _View.twoD, AppColors.lightingColor, () {
               setState(() => _roomView = _View.twoD);
@@ -395,9 +360,11 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
             children: [
               Text(
                 switch (_layoutVariant) {
-                  _Variant.current => 'Dark task zone — daylight blocked, lamp misplaced',
-                  _Variant.improved => 'Daylight desk + task lamp — shelf cleared from the window path',
-                  _Variant.myRig => 'Bench → Rig — fan layout seeded, edit on Rig',
+                  BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
+                      ? 'Reference room — your Rig is empty'
+                      : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
+                  BenchLayoutKind.improved => 'Improved — your room, rearranged for light',
+                  BenchLayoutKind.sample => 'Sample room — daylight blocked, lamp misplaced',
                 },
                 style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 14),
               ),
@@ -411,7 +378,9 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 220),
                       child: KeyedSubtree(
-                        key: ValueKey('${_layoutVariant.name}_${_roomView.name}_$_myRigFingerprint'),
+                        key: ValueKey(
+                          '${_layoutVariant.name}_${_roomView.name}_${_layouts?.fingerprint ?? ''}',
+                        ),
                         child: _roomView == _View.twoD
                             ? LayoutBuilder(
                                 builder: (context, constraints) {
@@ -449,16 +418,28 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                                 },
                               )
                             : _orbit(
-                                child: CustomPaint(
+                                key: const ValueKey('lighting_layout_orbit'),
+                                resetNonce: _layoutOrbitResetNonce,
+                                onDoubleTap: () {
+                                  HapticFeedback.lightImpact();
+                                  setState(() => _layoutOrbitResetNonce++);
+                                },
+                                lookAtX: room.gridCols * 0.5,
+                                lookAtZ: room.gridRows * 0.5,
+                                roomWidth: room.gridCols.toDouble(),
+                                roomDepth: room.gridRows.toDouble(),
+                                builder: (cam) => CustomPaint(
                                   painter: BenchRoom3DPainter(
-                                    roomWidth: 6,
-                                    roomDepth: 8,
+                                    roomWidth: room.gridCols.toDouble(),
+                                    roomDepth: room.gridRows.toDouble(),
                                     roomHeight: 2.8,
                                     gridCols: room.gridCols,
                                     gridRows: room.gridRows,
-                                    yaw: _yaw,
-                                    pitch: _pitch,
-                                    distance: _distance,
+                                    yaw: cam.yaw,
+                                    pitch: cam.pitch,
+                                    distance: cam.distance,
+                                    lookAtX: cam.lookAtX,
+                                    lookAtZ: cam.lookAtZ,
                                     furniture: furniture,
                                   ),
                                   child: const SizedBox.expand(),
@@ -534,11 +515,15 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        _layoutVariant == _Variant.improved
-                            ? Icons.check_circle_outline
-                            : Icons.warning_amber_rounded,
+                        _layoutVariant == BenchLayoutKind.sample
+                            ? Icons.warning_amber_rounded
+                            : Icons.check_circle_outline,
                         size: 14,
-                        color: _layoutVariant == _Variant.improved ? AppColors.green : AppColors.amber,
+                        color: switch (_layoutVariant) {
+                          BenchLayoutKind.sample => AppColors.amber,
+                          BenchLayoutKind.myRoom => AppColors.cyan,
+                          BenchLayoutKind.improved => AppColors.green,
+                        },
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -556,7 +541,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   }
 
   Widget _simSection(AppState state) {
-    _syncMyRig(state);
+    _syncFromState(state);
     final sim = _activeSim;
     if (sim == null) return const SizedBox.shrink();
     final m = sim.metrics;
@@ -573,16 +558,14 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
           spacing: 8,
           runSpacing: 8,
           children: [
-            _chip('Current', _simVariant == _Variant.current, AppColors.amber, () {
-              setState(() => _simVariant = _Variant.current);
+            _chip('My Room', _simVariant == BenchLayoutKind.myRoom, AppColors.cyan, () {
+              setState(() => _simVariant = BenchLayoutKind.myRoom);
             }),
-            _chip('Improved', _simVariant == _Variant.improved, AppColors.green, () {
-              setState(() => _simVariant = _Variant.improved);
+            _chip('Improved', _simVariant == BenchLayoutKind.improved, AppColors.green, () {
+              setState(() => _simVariant = BenchLayoutKind.improved);
             }),
-            _chip('My Rig', _simVariant == _Variant.myRig, AppColors.cyan, () {
-              _syncMyRig(state);
-              _rebuildMyRigSim();
-              setState(() => _simVariant = _Variant.myRig);
+            _chip('Sample', _simVariant == BenchLayoutKind.sample, AppColors.amber, () {
+              setState(() => _simVariant = BenchLayoutKind.sample);
             }),
             _chip('2D', _simViz == LightingVizMode.topDown2D, AppColors.lightingColor, () {
               setState(() => _simViz = LightingVizMode.topDown2D);
@@ -601,23 +584,47 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
             border: Border.all(color: AppColors.border),
           ),
           clipBehavior: Clip.antiAlias,
-          child: AnimatedBuilder(
-            animation: _pulse,
-            builder: (context, child) => _orbit(
-              enabled: _simViz == LightingVizMode.orbit3D,
-              child: CustomPaint(
-                painter: LightingFieldPainter(
-                  snapshot: sim,
-                  vizMode: _simViz,
-                  yaw: _yaw,
-                  pitch: _pitch,
-                  distance: _distance,
-                  pulse: _pulse.value,
+          child: _simViz == LightingVizMode.topDown2D
+              ? AnimatedBuilder(
+                  animation: _pulse,
+                  builder: (context, child) => CustomPaint(
+                    painter: LightingFieldPainter(
+                      snapshot: sim,
+                      furniture: _furnitureFor(_simVariant),
+                      vizMode: _simViz,
+                      yaw: _defaultYaw,
+                      pitch: _defaultPitch,
+                      distance: _defaultDistance,
+                      pulse: _pulse.value,
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                )
+              : _orbit(
+                  key: const ValueKey('lighting_sim_orbit'),
+                  resetNonce: _simOrbitResetNonce,
+                  onDoubleTap: () {
+                    HapticFeedback.lightImpact();
+                    setState(() => _simOrbitResetNonce++);
+                  },
+                  builder: (cam) => AnimatedBuilder(
+                    animation: _pulse,
+                    builder: (context, child) => CustomPaint(
+                      painter: LightingFieldPainter(
+                        snapshot: sim,
+                        furniture: _furnitureFor(_simVariant),
+                        vizMode: _simViz,
+                        yaw: cam.yaw,
+                        pitch: cam.pitch,
+                        distance: cam.distance,
+                        lookAtX: cam.lookAtX,
+                        lookAtZ: cam.lookAtZ,
+                        pulse: _pulse.value,
+                      ),
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
                 ),
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ),
         ),
         const SizedBox(height: 12),
         Row(
@@ -633,12 +640,25 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     );
   }
 
+  /// Validate the layout the results header is actually showing, so the badge,
+  /// the score rings, and the check rows all describe the same furniture.
+  BenchmarkValidation _validationForSimVariant(AppState state) {
+    return BenchmarkValidator.validateLayout(
+      furniture: _furnitureFor(_simVariant),
+      gridCols: state.currentRoomData.gridCols,
+      gridRows: state.currentRoomData.gridRows,
+      mode: 'lighting',
+    );
+  }
+
   Widget _results(AppState state) {
-    final base = _baseSim!.metrics;
-    final opt = _optSim!.metrics;
-    final mine = _myRigSim?.metrics;
+    final validation = _validationForSimVariant(state);
+    // Before / after are your room and the optimizer's rearrange of it.
+    final base = _myRoomSim!.metrics;
+    final opt = _improvedSim!.metrics;
+    final sample = _sampleSim?.metrics;
     return GlassCard(
-      borderColor: AppColors.green.withValues(alpha: 0.4),
+      borderColor: BenchResultBadge.colorFor(validation.verdict).withValues(alpha: 0.4),
       child: Column(
         children: [
           Row(
@@ -646,26 +666,19 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
               SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
               const SizedBox(width: 10),
               const Expanded(
-                child: Text('Lighting Exposure Pass', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
+                child: Text('Lighting Exposure Bench', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.green.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text('PASS', style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w800, fontSize: 12)),
-              ),
+              BenchResultBadge(validation: validation),
             ],
           ),
           const SizedBox(height: 18),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              ScoreRing(score: base.exposureScore, size: 78, color: AppColors.amber, label: 'Before'),
-              ScoreRing(score: opt.exposureScore, size: 78, color: AppColors.lightingColor, label: 'After'),
-              if (mine != null)
-                ScoreRing(score: mine.exposureScore, size: 78, color: AppColors.cyan, label: 'My Rig')
+              ScoreRing(score: base.exposureScore, size: 78, color: AppColors.cyan, label: 'My Room'),
+              ScoreRing(score: opt.exposureScore, size: 78, color: AppColors.lightingColor, label: 'Improved'),
+              if (sample != null)
+                ScoreRing(score: sample.exposureScore, size: 78, color: AppColors.amber, label: 'Sample')
               else
                 ScoreRing(score: state.lightingScore, size: 78, color: AppColors.green, label: 'Score'),
             ],
@@ -677,9 +690,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
             style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13),
           ),
           const SizedBox(height: 14),
-          BenchmarkValidationCard(
-            validation: state.validateActiveLayout(mode: 'lighting'),
-          ),
+          BenchmarkValidationCard(validation: validation),
         ],
       ),
     );
@@ -707,49 +718,31 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     );
   }
 
-  Widget _orbit({required Widget child, bool enabled = true}) {
-    if (!enabled) return SizedBox.expand(child: child);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onDoubleTap: () {
-        HapticFeedback.lightImpact();
-        setState(() {
-          _yaw = _defaultYaw;
-          _pitch = _defaultPitch;
-          _distance = _defaultDistance;
-        });
+  Widget _orbit({
+    Key? key,
+    required Widget Function(BenchOrbitCamera cam) builder,
+    required int resetNonce,
+    VoidCallback? onDoubleTap,
+    double lookAtX = 3,
+    double lookAtZ = 4,
+    double roomWidth = 6,
+    double roomDepth = 8,
+  }) {
+    return BenchOrbitShell(
+      key: key,
+      initialYaw: _defaultYaw,
+      initialPitch: _defaultPitch,
+      initialDistance: _defaultDistance,
+      initialLookAtX: lookAtX,
+      initialLookAtZ: lookAtZ,
+      roomWidth: roomWidth,
+      roomDepth: roomDepth,
+      resetNonce: resetNonce,
+      onDoubleTap: onDoubleTap,
+      onDragChanged: (dragging) {
+        if (_orbitDragging != dragging) setState(() => _orbitDragging = dragging);
       },
-      child: Listener(
-        behavior: HitTestBehavior.opaque,
-        onPointerDown: (e) {
-          _orbitPointer = e.pointer;
-          _lastOrbitPos = e.localPosition;
-          setState(() => _orbitDragging = true);
-        },
-        onPointerMove: (e) {
-          if (e.pointer != _orbitPointer || _lastOrbitPos == null) return;
-          final delta = e.localPosition - _lastOrbitPos!;
-          _lastOrbitPos = e.localPosition;
-          setState(() {
-            _yaw = (_yaw + delta.dx * 0.01).clamp(-pi, pi);
-            _pitch = (_pitch - delta.dy * 0.008).clamp(0.08, 1.15);
-          });
-        },
-        onPointerUp: (_) => setState(() {
-          _orbitDragging = false;
-          _orbitPointer = null;
-        }),
-        onPointerCancel: (_) => setState(() {
-          _orbitDragging = false;
-          _orbitPointer = null;
-        }),
-        onPointerSignal: (signal) {
-          if (signal is PointerScrollEvent) {
-            setState(() => _distance = (_distance + signal.scrollDelta.dy * 0.02).clamp(10.0, 28.0));
-          }
-        },
-        child: SizedBox.expand(child: ColoredBox(color: Colors.transparent, child: child)),
-      ),
+      builder: builder,
     );
   }
 

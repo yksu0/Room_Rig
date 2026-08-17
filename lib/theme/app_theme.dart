@@ -25,6 +25,7 @@ class AppColors {
   static const airflowColor = Color(0xFF00E5FF);
   static const lightingColor = Color(0xFFFFE57F);
   static const ergonomicsColor = Color(0xFF69FF47);
+  static const spatialColor = Color(0xFFB388FF);
 
   static LinearGradient get accentGradient => const LinearGradient(
     colors: [cyan, purple],

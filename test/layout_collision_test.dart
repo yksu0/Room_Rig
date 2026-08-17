@@ -65,17 +65,17 @@ void main() {
     test('resolveMove allows free space with snap', () {
       final room = RoomPresets.getPreset(RoomPreset.gamingSetup);
       final furniture = room.furniture.map((f) => f.copyWith()).toList();
-      final lampMove = LayoutCollision.resolveMove(
-        id: 'lamp',
+      final fanMove = LayoutCollision.resolveMove(
+        id: 'fan',
         proposedX: 0.12,
         proposedY: 6.88,
         furniture: furniture,
         gridCols: room.gridCols,
         gridRows: room.gridRows,
       );
-      expect(lampMove.blocked, isFalse);
-      expect(lampMove.gridX, 0.0);
-      expect(lampMove.gridY, 7.0);
+      expect(fanMove.blocked, isFalse);
+      expect(fanMove.gridX, 0.0);
+      expect(fanMove.gridY, 7.0);
     });
 
     test('findConflicts reports overlaps', () {
@@ -90,6 +90,54 @@ void main() {
         gridRows: room.gridRows,
       );
       expect(conflicts.any((c) => c.kind == LayoutConflictKind.overlap), isTrue);
+    });
+
+    test('monitor on a desk does not fight the desk; two desktop items do', () {
+      final desk = FurnitureItem(
+        id: 'desk',
+        name: 'Desk',
+        iconName: 'desk',
+        category: 'ergonomics',
+        gridX: 2,
+        gridY: 2,
+        width: 2,
+      );
+      final monitor = FurnitureItem(
+        id: 'monitor',
+        name: 'Monitor',
+        iconName: 'monitor',
+        category: 'ergonomics',
+        gridX: 2,
+        gridY: 2,
+      );
+      final lamp = FurnitureItem(
+        id: 'lamp',
+        name: 'Task Lamp',
+        iconName: 'lamp',
+        category: 'lighting',
+        gridX: 2,
+        gridY: 2,
+      );
+      final pc = FurnitureItem(
+        id: 'pc',
+        name: 'PC Tower',
+        iconName: 'pc',
+        category: 'airflow',
+        gridX: 0,
+        gridY: 2,
+      );
+      final chair = FurnitureItem(
+        id: 'chair',
+        name: 'Chair',
+        iconName: 'chair',
+        category: 'ergonomics',
+        gridX: 0,
+        gridY: 2,
+      );
+
+      expect(LayoutCollision.itemCollides(monitor, [desk, monitor]), isFalse);
+      expect(LayoutCollision.itemCollides(lamp, [desk, monitor, lamp]), isTrue);
+      expect(LayoutCollision.itemCollides(pc, [desk, pc, chair]), isTrue);
     });
   });
 }

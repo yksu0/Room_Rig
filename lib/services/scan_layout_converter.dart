@@ -251,7 +251,7 @@ class ScanLayoutConverter {
         return k;
       }
     }
-    return 'desk';
+    return hay.contains('furniture') ? 'shelf' : 'desk';
   }
 
   static String _slug(String raw) {

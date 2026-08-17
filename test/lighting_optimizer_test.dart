@@ -28,7 +28,7 @@ void main() {
     });
 
     test('optimize places lamp near the desk', () {
-      final room = RoomPresets.getPreset(RoomPreset.gamingSetup);
+      final room = RoomPresets.getPreset(RoomPreset.homeOffice);
       final baseline = LightingPrototypeLayouts.baseline(room.furniture);
       final result = LightingOptimizer.optimize(
         furniture: baseline,

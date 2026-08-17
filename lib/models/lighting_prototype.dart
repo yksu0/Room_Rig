@@ -30,10 +30,10 @@ class LightingPrototypeLayouts {
     final positions = <String, ({double x, double y})>{
       'window': (x: 2.0, y: 0.0),
       'door': (x: 0.0, y: 6.2),
-      'desk': (x: 1.0, y: 1.8), // in daylight, slightly offset
-      'chair': (x: 1.2, y: 2.9),
-      'pc': (x: 0.3, y: 1.8),
-      'lamp': (x: 2.6, y: 1.8), // task light at desk
+      'desk': (x: 0.5, y: 1.8), // in daylight, offset off the window axis to cut glare
+      'chair': (x: 1.0, y: 2.9),
+      'pc': (x: 2.8, y: 1.8),
+      'lamp': (x: 2.2, y: 1.8), // task light at desk
       'shelf': (x: 5.0, y: 5.5), // out of daylight corridor
       'bed': (x: 3.0, y: 5.5),
       'ac': (x: 5.0, y: 2.5),

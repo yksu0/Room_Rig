@@ -174,4 +174,12 @@ void main() {
       await pipeline.dispose();
     });
   });
+
+  test('CoverageGrid.markCell keeps the stronger value', () {
+    var grid = CoverageGrid.empty(cols: 3, rows: 3).markCell(1, 1, 1.0);
+    grid = grid.markCell(1, 1, 0.45);
+    expect(grid.coverage[4], 1.0);
+    grid = grid.markCell(1, 1, 0.9);
+    expect(grid.coverage[4], 1.0);
+  });
 }

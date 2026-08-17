@@ -1,6 +1,8 @@
 // lib/services/ergonomics_optimizer.dart
 import '../models/room_model.dart';
 import 'ergonomics_simulator.dart';
+import 'layout_optimizer_common.dart';
+import 'layout_orientation.dart';
 
 class ErgonomicsOptimizeResult {
   final List<FurnitureItem> furniture;
@@ -18,7 +20,7 @@ class ErgonomicsOptimizer {
   ErgonomicsOptimizer._();
 
   static ErgonomicsMetrics evaluate(List<FurnitureItem> furniture) {
-    return ErgonomicsSimulator.build(furniture: furniture, optimized: true).metrics;
+    return ErgonomicsSimulator.build(furniture: furniture, optimized: false).metrics;
   }
 
   static ErgonomicsOptimizeResult optimize({
@@ -109,8 +111,22 @@ class ErgonomicsOptimizer {
       targets['plant'] = (x: cols - 1, y: 2.0);
     }
 
-    var next = _applyTargets(furniture, targets, cols, rows);
+    final before = furniture.map((f) => f.copyWith()).toList(growable: false);
+    var next = LayoutOptimizerCommon.applyTargets(
+      source: furniture,
+      targets: targets,
+      cols: cols,
+      rows: rows,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
     next = _resolveOverlaps(next, cols, rows);
+    next = LayoutOrientation.apply(
+      furniture: next,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    LayoutOptimizerCommon.noteOrientation(reasons, before, next);
     final metrics = evaluate(next);
 
     if (reasons.isEmpty) {
@@ -122,24 +138,6 @@ class ErgonomicsOptimizer {
       metrics: metrics,
       reasons: reasons,
     );
-  }
-
-  static List<FurnitureItem> _applyTargets(
-    List<FurnitureItem> source,
-    Map<String, ({double x, double y})> targets,
-    double cols,
-    double rows,
-  ) {
-    return source.map((item) {
-      final pos = targets[item.id];
-      if (pos == null) return item.copyWith();
-      final maxX = (cols - item.width).clamp(0.0, cols);
-      final maxY = (rows - item.height).clamp(0.0, rows);
-      return item.copyWith(
-        gridX: pos.x.clamp(0.0, maxX),
-        gridY: pos.y.clamp(0.0, maxY),
-      );
-    }).toList(growable: false);
   }
 
   static List<FurnitureItem> _resolveOverlaps(

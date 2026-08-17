@@ -7,11 +7,13 @@ import android.media.Image
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.os.SystemClock
 import android.util.Log
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Camera
 import com.google.ar.core.Config
 import com.google.ar.core.Frame
+import com.google.ar.core.Plane
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.CameraNotAvailableException
@@ -32,8 +34,9 @@ class ArCoreSessionManager(
 ) : GLSurfaceView.Renderer {
 	companion object {
 		private const val TAG = "ArCoreSessionManager"
-		private const val FRAME_MAX_SIDE = 240
+		private const val FRAME_MAX_SIDE = 160
 		private const val REQUEST_CAMERA = 9910
+		private const val LUMA_MIN_INTERVAL_MS = 180L
 	}
 
 	private var session: Session? = null
@@ -58,6 +61,8 @@ class ArCoreSessionManager(
 
 	@Volatile
 	private var latestFrameHeight = 0
+
+	private var lastLumaAtMs = 0L
 
 	private var surfaceView: GLSurfaceView? = null
 
@@ -123,6 +128,7 @@ class ArCoreSessionManager(
 			val config = Config(newSession)
 			config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
 			config.focusMode = Config.FocusMode.AUTO
+			config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
 
 			// S10+ : depth-from-motion / ToF when ARCore reports support.
 			if (newSession.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
@@ -240,41 +246,33 @@ class ArCoreSessionManager(
 			)
 		}
 
-		return try {
-			synchronized(this) {
-				s.setCameraTextureName(glTextureId)
-				val frame = s.update()
-				val camera = frame.camera
-				val poseMap = poseFromCamera(camera, frame)
-				latestPose = poseMap
-
-				tryAcquireLuma(frame)
-
-				val withFrame = poseMap.toMutableMap()
-				val bytes = latestFrameBytes
-				if (bytes != null && latestFrameWidth > 0 && latestFrameHeight > 0) {
-					withFrame["frameWidth"] = latestFrameWidth
-					withFrame["frameHeight"] = latestFrameHeight
-					withFrame["frameY"] = bytes
-				}
-				withFrame["timestampMs"] = timestampMs
-				withFrame
+		synchronized(this) {
+			val poseMap = latestPose
+			if (poseMap.isEmpty()) {
+				return mapOf(
+					"x" to lastX,
+					"y" to lastY,
+					"z" to lastZ,
+					"yaw" to 0.0,
+					"pitch" to 0.0,
+					"roll" to 0.0,
+					"trackingStable" to false,
+					"confidence" to 0.2,
+					"motionMeters" to 0.0,
+					"backend" to "arcore-s10",
+					"reason" to "waiting_first_gl_frame",
+					"timestampMs" to timestampMs,
+				)
 			}
-		} catch (e: CameraNotAvailableException) {
-			mapOf(
-				"trackingStable" to false,
-				"confidence" to 0.1,
-				"backend" to "arcore-s10",
-				"reason" to "camera_not_available",
-			)
-		} catch (e: Exception) {
-			Log.w(TAG, "updateTracking failed", e)
-			mapOf(
-				"trackingStable" to false,
-				"confidence" to 0.15,
-				"backend" to "arcore-s10",
-				"reason" to (e.message ?: "update_failed"),
-			)
+			val withFrame = poseMap.toMutableMap()
+			val bytes = latestFrameBytes
+			if (bytes != null && latestFrameWidth > 0 && latestFrameHeight > 0) {
+				withFrame["frameWidth"] = latestFrameWidth
+				withFrame["frameHeight"] = latestFrameHeight
+				withFrame["frameY"] = bytes
+			}
+			withFrame["timestampMs"] = timestampMs
+			return withFrame
 		}
 	}
 
@@ -322,12 +320,8 @@ class ArCoreSessionManager(
 			else -> 0.15
 		}
 
-		var depthHint: Double? = null
-		// S10+ may expose depth-from-motion/ToF via ARCore Depth API; sampling the
-		// full depth image every tick is expensive, so use a stable near-field hint.
-		if (stable) {
-			depthHint = (2.0 + motion * 2.2).coerceIn(0.9, 4.2)
-		}
+		val hit = if (stable) raycastFloor(tx, ty, tz, forward) else null
+		val depthHint = hit?.get(3)
 
 		return mapOf(
 			"x" to tx,
@@ -340,12 +334,46 @@ class ArCoreSessionManager(
 			"confidence" to confidence,
 			"motionMeters" to motion,
 			"depthHintMeters" to depthHint,
+			"lookAtX" to hit?.get(0),
+			"lookAtY" to hit?.get(1),
+			"lookAtZ" to hit?.get(2),
+			"hasFloorHit" to (hit != null),
 			"backend" to "arcore-s10",
 			"trackingState" to state.name,
 		)
 	}
 
+	/** Intersect camera forward with the lowest tracked horizontal plane (or a 1.5m floor guess). */
+	private fun raycastFloor(tx: Double, ty: Double, tz: Double, forward: FloatArray): DoubleArray? {
+		val s = session
+		var floorY = ty - 1.45
+		if (s != null) {
+			val floors = s.getAllTrackables(Plane::class.java).filter {
+				it.trackingState == TrackingState.TRACKING &&
+					it.type == Plane.Type.HORIZONTAL_UPWARD_FACING
+			}
+			if (floors.isNotEmpty()) {
+				floorY = floors.minOf { it.centerPose.ty().toDouble() }
+			}
+		}
+
+		val fy = forward[1].toDouble()
+		if (kotlin.math.abs(fy) < 0.04) return null
+		val t = (floorY - ty) / fy
+		if (t < 0.45 || t > 7.0) return null
+		return doubleArrayOf(
+			tx + forward[0] * t,
+			floorY,
+			tz + forward[2] * t,
+			t,
+		)
+	}
+
 	private fun tryAcquireLuma(frame: Frame) {
+		val now = SystemClock.elapsedRealtime()
+		if (now - lastLumaAtMs < LUMA_MIN_INTERVAL_MS) return
+		lastLumaAtMs = now
+
 		var image: Image? = null
 		try {
 			image = frame.acquireCameraImage()
@@ -411,7 +439,23 @@ class ArCoreSessionManager(
 	}
 
 	override fun onDrawFrame(gl: GL10?) {
-		// Pose/frame pulled on-demand from Flutter via updateTracking.
+		val s = session
+		if (s == null || !running || !glReady || glTextureId == -1) {
+			GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+			return
+		}
+		try {
+			synchronized(this) {
+				s.setCameraTextureName(glTextureId)
+				val frame = s.update()
+				latestPose = poseFromCamera(frame.camera, frame)
+				tryAcquireLuma(frame)
+			}
+		} catch (e: CameraNotAvailableException) {
+			Log.w(TAG, "Camera not available during GL update", e)
+		} catch (e: Exception) {
+			Log.w(TAG, "onDrawFrame update failed", e)
+		}
 		GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
 	}
 }

@@ -1,6 +1,4 @@
 import 'dart:math';
-import 'package:flutter/services.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../models/item_detection.dart';
 import '../models/scan_layout_model.dart';
@@ -41,14 +39,13 @@ class BasicFrameQualityAnalyzer implements FrameQualityAnalyzer {
     if (avgBrightness < 35) {
       issues.add(ScanQualityIssue.poorLighting);
     }
-    if (avgContrast < 12) {
-      issues.add(ScanQualityIssue.motionBlur);
-    }
-    if (avgContrast < 8) {
+    if (avgContrast < 10) {
       issues.add(ScanQualityIssue.lowTexture);
     }
 
-    return ScanQualityReport(acceptable: issues.length < 2, issues: issues);
+    final acceptable = issues.isEmpty ||
+        (issues.length == 1 && issues.contains(ScanQualityIssue.lowTexture));
+    return ScanQualityReport(acceptable: acceptable, issues: issues);
   }
 }
 
@@ -122,7 +119,7 @@ class LumaStructureObjectDetector implements ObjectDetector {
       if (visited[i] || energy[i] < threshold) continue;
       final cluster = <int>[];
       _flood(i, energy, threshold, visited, cluster);
-      if (cluster.length < 2) continue;
+      if (cluster.length < 3) continue;
 
       var minX = _grid, minY = _grid, maxX = 0, maxY = 0;
       var avgBright = 0.0;
@@ -144,7 +141,7 @@ class LumaStructureObjectDetector implements ObjectDetector {
       final top = (minY / _grid).clamp(0.0, 0.92);
       final width = (((maxX - minX + 1) / _grid)).clamp(0.08, 1.0 - left);
       final height = (((maxY - minY + 1) / _grid)).clamp(0.08, 1.0 - top);
-      final labeled = _labelBlob(
+      final labeled = _stickyLabel(
         left: left,
         top: top,
         width: width,
@@ -163,7 +160,7 @@ class LumaStructureObjectDetector implements ObjectDetector {
           height: height,
         ),
       );
-      if (detections.length >= 5) break;
+      if (detections.length >= 3) break;
     }
 
     if (detections.isEmpty) {
@@ -171,14 +168,14 @@ class LumaStructureObjectDetector implements ObjectDetector {
     }
 
     detections.sort((a, b) => b.confidence.compareTo(a.confidence));
-    _last = detections.take(4).toList(growable: false);
+    _last = detections.take(6).toList(growable: false);
     return _last;
   }
 
   double _adaptiveThreshold(List<double> energy) {
     final sorted = List<double>.from(energy)..sort();
     final p70 = sorted[(sorted.length * 0.70).floor().clamp(0, sorted.length - 1)];
-    return max(12.0, p70 * 0.92);
+    return max(12.0, p70 * 0.95);
   }
 
   void _flood(
@@ -236,174 +233,39 @@ class LumaStructureObjectDetector implements ObjectDetector {
     if (energy > 28 && cy < 0.5) {
       return ('Monitor', 'ergonomics');
     }
-    return ('Furniture', 'neutral');
+    return ('Desk', 'ergonomics');
+  }
+
+  (String, String) _stickyLabel({
+    required double left,
+    required double top,
+    required double width,
+    required double height,
+    required double brightness,
+    required double energy,
+  }) {
+    final fresh = _labelBlob(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      brightness: brightness,
+      energy: energy,
+    );
+    final cx = left + width / 2;
+    final cy = top + height / 2;
+    for (final prev in _last) {
+      final px = prev.left + prev.width / 2;
+      final py = prev.top + prev.height / 2;
+      final overlap = (cx - px).abs() < 0.22 && (cy - py).abs() < 0.22;
+      if (overlap) {
+        return (prev.label, prev.category);
+      }
+    }
+    return fresh;
   }
 
   bool rightish(double cx) => cx > 0.62;
-}
-
-class TfliteObjectDetectorPlaceholder implements ObjectDetector {
-  final String modelAssetPath;
-  final double scoreThreshold;
-  final double iouThreshold;
-  final int maxDetections;
-  final List<String> classLabels;
-
-  bool _initAttempted = false;
-  Interpreter? _interpreter;
-  int _inputWidth = 640;
-  int _inputHeight = 640;
-  bool _inputIsNhwc = true;
-
-  TfliteObjectDetectorPlaceholder({
-    required this.modelAssetPath,
-    this.scoreThreshold = 0.35,
-    this.iouThreshold = 0.45,
-    this.maxDetections = 12,
-    this.classLabels = const [
-      'chair',
-      'desk',
-      'sofa',
-      'bed',
-      'table',
-      'monitor',
-      'tv',
-      'lamp',
-      'window',
-      'door',
-      'shelf',
-      'cabinet',
-      'fan',
-      'plant',
-      'ac',
-    ],
-  });
-
-  @override
-  Future<List<Detection2D>> detect(ScanFrameInput frame) async {
-    await _ensureInterpreter();
-    final interpreter = _interpreter;
-    if (interpreter == null) {
-      return const [];
-    }
-
-    if (frame.bytes.isEmpty) {
-      return const [];
-    }
-
-    try {
-      final input = _buildInputTensor(frame.bytes, frame.width, frame.height);
-      final outputTensor = interpreter.getOutputTensor(0);
-      final outputShape = outputTensor.shape;
-      final output = _createZeros(outputShape);
-
-      interpreter.run(input, output);
-
-      return YoloLikePostProcessor.decode(
-        rawOutput: output,
-        outputShape: outputShape,
-        labels: classLabels,
-        inputWidth: _inputWidth,
-        inputHeight: _inputHeight,
-        scoreThreshold: scoreThreshold,
-        iouThreshold: iouThreshold,
-        maxDetections: maxDetections,
-      );
-    } catch (_) {
-      // Let HybridObjectDetector fallback path handle failures.
-      return const [];
-    }
-  }
-
-  Future<void> _ensureInterpreter() async {
-    if (_initAttempted) return;
-    _initAttempted = true;
-
-    try {
-      await rootBundle.load(modelAssetPath);
-
-      final options = InterpreterOptions()..threads = 2;
-      final interpreter = await Interpreter.fromAsset(modelAssetPath, options: options);
-
-      final inputTensor = interpreter.getInputTensor(0);
-      final shape = inputTensor.shape;
-      if (shape.length == 4) {
-        if (shape[3] == 3) {
-          _inputIsNhwc = true;
-          _inputHeight = shape[1];
-          _inputWidth = shape[2];
-        } else if (shape[1] == 3) {
-          _inputIsNhwc = false;
-          _inputHeight = shape[2];
-          _inputWidth = shape[3];
-        }
-      }
-
-      _interpreter = interpreter;
-    } catch (_) {
-      _interpreter = null;
-    }
-  }
-
-  dynamic _buildInputTensor(List<int> lumaBytes, int srcWidth, int srcHeight) {
-    final srcW = srcWidth > 0 ? srcWidth : max(1, sqrt(lumaBytes.length).round());
-    final srcH = srcHeight > 0 ? srcHeight : max(1, lumaBytes.length ~/ srcW);
-
-    if (_inputIsNhwc) {
-      final input = List.generate(
-        1,
-        (_) => List.generate(
-          _inputHeight,
-          (y) => List.generate(_inputWidth, (x) {
-            final pixel = _sampleLuma(lumaBytes, x, y, _inputWidth, _inputHeight, srcW, srcH) / 255.0;
-            return <double>[pixel, pixel, pixel];
-          }),
-        ),
-      );
-      return input;
-    }
-
-    final input = List.generate(
-      1,
-      (_) => List.generate(
-        3,
-        (_) => List.generate(_inputHeight, (y) {
-          return List.generate(_inputWidth, (x) {
-            final pixel = _sampleLuma(lumaBytes, x, y, _inputWidth, _inputHeight, srcW, srcH) / 255.0;
-            return pixel;
-          });
-        }),
-      ),
-    );
-    return input;
-  }
-
-  int _sampleLuma(
-    List<int> bytes,
-    int x,
-    int y,
-    int dstW,
-    int dstH,
-    int srcW,
-    int srcH,
-  ) {
-    if (bytes.isEmpty || srcW <= 0 || srcH <= 0) return 0;
-    final sx = ((x + 0.5) * srcW / dstW).floor().clamp(0, srcW - 1);
-    final sy = ((y + 0.5) * srcH / dstH).floor().clamp(0, srcH - 1);
-    final idx = sy * srcW + sx;
-    if (idx < 0 || idx >= bytes.length) return 0;
-    return bytes[idx];
-  }
-
-  dynamic _createZeros(List<int> shape) {
-    if (shape.isEmpty) {
-      return 0.0;
-    }
-    if (shape.length == 1) {
-      return List<double>.filled(shape.first, 0.0);
-    }
-    return List.generate(shape.first, (_) => _createZeros(shape.sublist(1)));
-  }
 }
 
 class YoloLikePostProcessor {
@@ -652,14 +514,49 @@ class HybridObjectDetector implements ObjectDetector {
 }
 
 class GridCoverageFusionEngine implements ScanFusionEngine {
-  static const double _staleDecayPerFrame = 0.035;
-  static const double _minConfidenceToKeep = 0.18;
+  static const double _staleDecayPerFrame = 0.012;
+  static const double _minConfidenceToKeep = 0.16;
   int _frameIndex = 0;
+  Vec3? _poseOrigin;
+  Vec3? _seedOrigin;
+
+  /// Pin the room origin to a measured world point (center of the size-walk).
+  void useWorldOrigin(Vec3 origin) {
+    _seedOrigin = origin;
+  }
 
   @override
   ScanFusionState initialize(RoomLayoutModel seedLayout) {
     _frameIndex = 0;
+    _poseOrigin = _seedOrigin;
     return ScanFusionState(layout: seedLayout);
+  }
+
+  Vec3 _mapWorldPoint(Vec3 pose, RoomDimensions dimensions) {
+    _poseOrigin ??= Vec3(x: pose.x, y: pose.y, z: pose.z);
+    final x = (pose.x - _poseOrigin!.x) + dimensions.lengthMeters * 0.5;
+    final z = (pose.z - _poseOrigin!.z) + dimensions.widthMeters * 0.5;
+    return Vec3(
+      x: x.clamp(0.15, dimensions.lengthMeters - 0.15),
+      y: pose.y,
+      z: z.clamp(0.15, dimensions.widthMeters - 0.15),
+    );
+  }
+
+  TrackingSample _mappedTracking(TrackingSample tracking, RoomDimensions dimensions) {
+    final mapped = _mapWorldPoint(tracking.cameraPosition, dimensions);
+    final look = tracking.lookAtPosition;
+    return TrackingSample(
+      cameraPosition: mapped,
+      cameraEulerDegrees: tracking.cameraEulerDegrees,
+      trackingStable: tracking.trackingStable,
+      confidence: tracking.confidence,
+      source: tracking.source,
+      motionMeters: tracking.motionMeters,
+      depthHintMeters: tracking.depthHintMeters,
+      lookAtPosition: look == null ? null : _mapWorldPoint(look, dimensions),
+      hasFloorHit: tracking.hasFloorHit,
+    );
   }
 
   @override
@@ -675,34 +572,39 @@ class GridCoverageFusionEngine implements ScanFusionEngine {
       return current;
     }
 
-    final nx = (frame.tracking.cameraPosition.x / max(0.001, layout.dimensions.lengthMeters)).clamp(0.0, 0.9999);
-    final nz = (frame.tracking.cameraPosition.z / max(0.001, layout.dimensions.widthMeters)).clamp(0.0, 0.9999);
+    final tracking = _mappedTracking(frame.tracking, layout.dimensions);
+    final aim = tracking.lookAtPosition ?? tracking.cameraPosition;
+    final nx = (aim.x / max(0.001, layout.dimensions.lengthMeters)).clamp(0.0, 0.9999);
+    final nz = (aim.z / max(0.001, layout.dimensions.widthMeters)).clamp(0.0, 0.9999);
 
     final col = (nx * grid.cols).floor().clamp(0, grid.cols - 1);
     final row = (nz * grid.rows).floor().clamp(0, grid.rows - 1);
 
-    var nextGrid = grid.markCell(col, row, 1.0);
-
-    final localBoost = frame.quality.acceptable ? 0.75 : 0.45;
-    for (int dx = -1; dx <= 1; dx++) {
-      for (int dy = -1; dy <= 1; dy++) {
-        if (dx == 0 && dy == 0) continue;
-        nextGrid = nextGrid.markCell(col + dx, row + dy, localBoost);
-      }
-    }
-
-    for (final d in frame.detections) {
-      final dCol = (d.left * grid.cols).floor().clamp(0, grid.cols - 1);
-      final dRow = (d.top * grid.rows).floor().clamp(0, grid.rows - 1);
-      nextGrid = nextGrid.markCell(dCol, dRow, 1.0);
+    // Mark what the camera is looking at — not a wide blob under the user's feet.
+    var nextGrid = grid.markCell(col, row, tracking.hasFloorHit || frame.quality.acceptable ? 1.0 : 0.45);
+    if (frame.quality.acceptable) {
+      nextGrid = nextGrid.markCell(col - 1, row, 0.55);
+      nextGrid = nextGrid.markCell(col + 1, row, 0.55);
+      nextGrid = nextGrid.markCell(col, row - 1, 0.55);
+      nextGrid = nextGrid.markCell(col, row + 1, 0.55);
     }
 
     final nextObjects = _fuseObjects(
       currentObjects: layout.objects,
       detections: frame.detections,
-      tracking: frame.tracking,
+      tracking: tracking,
       dimensions: layout.dimensions,
     );
+
+    for (final obj in nextObjects) {
+      final oCol = ((obj.center.x / max(0.001, layout.dimensions.lengthMeters)) * grid.cols)
+          .floor()
+          .clamp(0, grid.cols - 1);
+      final oRow = ((obj.center.z / max(0.001, layout.dimensions.widthMeters)) * grid.rows)
+          .floor()
+          .clamp(0, grid.rows - 1);
+      nextGrid = nextGrid.markCell(oCol, oRow, 1.0);
+    }
 
     final itemDetections = <ItemDetection>[
       for (int i = 0; i < frame.detections.length; i++)
@@ -744,15 +646,19 @@ class GridCoverageFusionEngine implements ScanFusionEngine {
     final updatedIndices = <int>{};
 
     for (final det in detections) {
+      if (det.confidence < 0.55) continue;
       final candidate = _estimateObject(det, tracking, dimensions);
 
       int bestIndex = -1;
-      double bestDist = 1.25;
+      double bestDist = 0.95;
       for (int i = 0; i < next.length; i++) {
         final obj = next[i];
-        if (obj.label.toLowerCase() != candidate.label.toLowerCase()) continue;
+        final sameLabel = obj.label.toLowerCase() == candidate.label.toLowerCase();
+        final generic = obj.label.toLowerCase() == 'furniture' ||
+            candidate.label.toLowerCase() == 'furniture';
         final dist = _distanceMeters(obj.center, candidate.center);
-        if (dist < bestDist) {
+        final limit = sameLabel || generic ? 0.95 : 0.55;
+        if (dist < limit && dist < bestDist) {
           bestDist = dist;
           bestIndex = i;
         }
@@ -806,20 +712,34 @@ class GridCoverageFusionEngine implements ScanFusionEngine {
   }
 
   ScanObject _estimateObject(Detection2D det, TrackingSample tracking, RoomDimensions dimensions) {
-    final cxNorm = (det.left + det.width / 2).clamp(0.0, 1.0);
-    final czNorm = (det.top + det.height / 2).clamp(0.0, 1.0);
+    final cx = ((det.left + det.width / 2) - 0.5).clamp(-0.5, 0.5);
+    final yawRad = tracking.cameraEulerDegrees.y * pi / 180.0;
+    final look = tracking.lookAtPosition;
+    final depth = (tracking.depthHintMeters ?? 1.8).clamp(0.7, 5.5);
+    late final double worldX;
+    late final double worldZ;
+    if (look != null && tracking.hasFloorHit) {
+      final rightX = cos(yawRad);
+      final rightZ = -sin(yawRad);
+      final lateral = cx * depth * 0.35;
+      worldX = (look.x + rightX * lateral).clamp(0.15, dimensions.lengthMeters - 0.15);
+      worldZ = (look.z + rightZ * lateral).clamp(0.15, dimensions.widthMeters - 0.15);
+    } else {
+      final forwardX = sin(yawRad);
+      final forwardZ = cos(yawRad);
+      final rightX = cos(yawRad);
+      final rightZ = -sin(yawRad);
+      final lateral = cx * depth * 0.55;
+      worldX = (tracking.cameraPosition.x + forwardX * depth + rightX * lateral)
+          .clamp(0.15, dimensions.lengthMeters - 0.15);
+      worldZ = (tracking.cameraPosition.z + forwardZ * depth + rightZ * lateral)
+          .clamp(0.15, dimensions.widthMeters - 0.15);
+    }
 
-    final depth = tracking.depthHintMeters ?? 2.2;
-    final depthWeight = (1.4 / depth).clamp(0.55, 1.35);
-
-    final worldX = ((cxNorm * dimensions.lengthMeters) * 0.65 + tracking.cameraPosition.x * 0.35)
-        .clamp(0.0, dimensions.lengthMeters);
-    final worldZ = ((czNorm * dimensions.widthMeters) * 0.65 + tracking.cameraPosition.z * 0.35)
-        .clamp(0.0, dimensions.widthMeters);
-
-    final estWidth = (det.width * dimensions.lengthMeters * depthWeight).clamp(0.25, 2.4);
-    final estDepth = (det.height * dimensions.widthMeters * depthWeight).clamp(0.25, 2.4);
-    final estHeight = ((det.height * dimensions.heightMeters) * 0.95 * depthWeight).clamp(0.35, 2.2);
+    final depthWeight = (1.6 / depth).clamp(0.55, 1.35);
+    final estWidth = (det.width * dimensions.lengthMeters * 0.45 * depthWeight).clamp(0.35, 1.8);
+    final estDepth = (det.height * dimensions.widthMeters * 0.35 * depthWeight).clamp(0.35, 1.8);
+    final estHeight = ((det.height * dimensions.heightMeters) * 0.85 * depthWeight).clamp(0.4, 2.0);
 
     final id = '${det.label.toLowerCase().replaceAll(' ', '_')}_${worldX.toStringAsFixed(1)}_${worldZ.toStringAsFixed(1)}';
     final confBoost = tracking.confidence.clamp(0.0, 1.0);

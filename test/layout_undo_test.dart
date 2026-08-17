@@ -16,24 +16,24 @@ void main() {
       // Let restore attempt settle against the mock prefs.
       await Future<void>.delayed(Duration.zero);
 
-      final before = state.furniture.firstWhere((f) => f.id == 'lamp');
+      final before = state.furniture.firstWhere((f) => f.id == 'fan');
       final beforeX = before.gridX;
       final beforeY = before.gridY;
 
       state.beginFurnitureGesture();
-      state.moveFurniture('lamp', 0.0, 7.0);
-      expect(state.furniture.firstWhere((f) => f.id == 'lamp').gridY, 7.0);
+      state.moveFurniture('fan', 0.0, 7.0);
+      expect(state.furniture.firstWhere((f) => f.id == 'fan').gridY, 7.0);
       expect(state.canUndoLayout, isTrue);
 
       state.endFurnitureGesture();
       state.undoLayout();
-      final after = state.furniture.firstWhere((f) => f.id == 'lamp');
+      final after = state.furniture.firstWhere((f) => f.id == 'fan');
       expect(after.gridX, beforeX);
       expect(after.gridY, beforeY);
       expect(state.canRedoLayout, isTrue);
 
       state.redoLayout();
-      expect(state.furniture.firstWhere((f) => f.id == 'lamp').gridY, 7.0);
+      expect(state.furniture.firstWhere((f) => f.id == 'fan').gridY, 7.0);
     });
 
     test('collision prevents overlapping desk and chair', () async {
@@ -42,8 +42,11 @@ void main() {
       final desk = state.furniture.firstWhere((f) => f.id == 'desk');
       state.beginFurnitureGesture();
       state.moveFurniture('chair', desk.gridX + 0.5, desk.gridY);
+      expect(state.dragPoseBlocked, isTrue);
+      state.endFurnitureGesture();
       final chair = state.furniture.firstWhere((f) => f.id == 'chair');
-      expect(LayoutCollision.overlaps(chair, desk), isFalse);
+      final deskAfter = state.furniture.firstWhere((f) => f.id == 'desk');
+      expect(LayoutCollision.overlaps(chair, deskAfter), isFalse);
     });
   });
 }

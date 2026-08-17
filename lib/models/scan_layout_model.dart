@@ -268,7 +268,8 @@ class CoverageGrid {
     if (col < 0 || row < 0 || col >= cols || row >= rows) return this;
     final next = List<double>.from(coverage);
     final idx = row * cols + col;
-    next[idx] = value.clamp(0, 1).toDouble();
+    final incoming = value.clamp(0, 1).toDouble();
+    next[idx] = next[idx] > incoming ? next[idx] : incoming;
     return CoverageGrid(cols: cols, rows: rows, coverage: next);
   }
 
@@ -348,6 +349,23 @@ class RoomLayoutModel {
       detections: const <ItemDetection>[],
       updatedAt: DateTime.now().toUtc(),
       scanSource: 'scan-seed',
+    );
+  }
+
+  RoomLayoutModel copyMeta({
+    String? roomName,
+    RoomDimensions? dimensions,
+    String? scanSource,
+  }) {
+    return RoomLayoutModel(
+      roomName: roomName ?? this.roomName,
+      dimensions: dimensions ?? this.dimensions,
+      coverageGrid: coverageGrid,
+      objects: objects,
+      detections: detections,
+      updatedAt: DateTime.now().toUtc(),
+      scanSource: scanSource ?? this.scanSource,
+      confidence: confidence,
     );
   }
 

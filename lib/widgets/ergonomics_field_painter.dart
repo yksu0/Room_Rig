@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../services/ergonomics_simulator.dart';
 import '../theme/app_theme.dart';
+import 'bench_room_views.dart';
+import 'furniture_shapes.dart';
 
 enum ErgonomicsVizMode { topDown2D, orbit3D }
 
@@ -12,6 +14,8 @@ class ErgonomicsFieldPainter extends CustomPainter {
   final double yaw;
   final double pitch;
   final double distance;
+  final double? lookAtX;
+  final double? lookAtZ;
   final double pulse;
 
   ErgonomicsFieldPainter({
@@ -20,6 +24,8 @@ class ErgonomicsFieldPainter extends CustomPainter {
     required this.yaw,
     required this.pitch,
     required this.distance,
+    this.lookAtX,
+    this.lookAtZ,
     this.pulse = 0.5,
   });
 
@@ -55,9 +61,13 @@ class ErgonomicsFieldPainter extends CustomPainter {
   }
 
   void _paint2D(Canvas canvas, Size size) {
-    final pad = 14.0;
-    final legendW = 118.0;
-    final rect = Rect.fromLTWH(pad, pad, size.width - pad * 2 - legendW, size.height - pad * 2);
+    final gridCols = snapshot.roomWidth.round().clamp(1, 64);
+    final gridRows = snapshot.roomDepth.round().clamp(1, 64);
+    final rect = BenchRoom2DGeometry.fieldRectFor(
+      size: size,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(12)),
       Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.92),
@@ -74,28 +84,22 @@ class ErgonomicsFieldPainter extends CustomPainter {
           rect.top + (z / snapshot.roomDepth) * rect.height,
         );
 
-    // Furniture as quiet silhouettes — labels only on path anchors.
+    // Furniture silhouettes + anchor labels on key path nodes.
     const anchorIds = {'bed', 'desk', 'pc', 'chair', 'window', 'door'};
+    BenchFurnitureRenderer.paint2D(
+      canvas,
+      roomRect: rect,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      furniture: snapshot.furniture,
+    );
     for (final f in snapshot.furniture) {
-      final r = Rect.fromPoints(
-        map(f.gridX, f.gridY),
-        map(f.gridX + f.width, f.gridY + f.height),
-      );
-      final isAnchor = anchorIds.contains(f.id);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(r.deflate(1.5), const Radius.circular(5)),
-        Paint()
-          ..color = isAnchor
-              ? Colors.white.withValues(alpha: 0.14)
-              : Colors.black.withValues(alpha: 0.22),
-      );
-      if (!isAnchor) continue;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(r.deflate(1.5), const Radius.circular(5)),
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.28)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1,
+      if (!anchorIds.contains(f.id)) continue;
+      final r = FurnitureShapes.planCell(
+        room: rect,
+        item: f,
+        roomWidth: snapshot.roomWidth,
+        roomDepth: snapshot.roomDepth,
       );
       final tp = TextPainter(
         text: TextSpan(
@@ -108,7 +112,7 @@ class ErgonomicsFieldPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: r.width);
-      tp.paint(canvas, Offset(r.center.dx - tp.width / 2, r.center.dy - tp.height / 2));
+      tp.paint(canvas, Offset(r.center.dx - tp.width / 2, r.bottom - tp.height - 2));
     }
 
     final paths = _focusPaths;
@@ -151,88 +155,40 @@ class ErgonomicsFieldPainter extends CustomPainter {
       canvas.drawCircle(pts.last, 2, Paint()..color = Colors.white.withValues(alpha: 0.85));
     }
 
-    _pathLegend(canvas, size, paths, legendLeft: rect.right + 10);
+    _pathLegend(canvas, size, paths, roomRect: rect);
   }
 
   void _paint3D(Canvas canvas, Size size) {
-    final cam = _Cam(
+    final gridCols = snapshot.roomWidth.round().clamp(1, 64);
+    final gridRows = snapshot.roomDepth.round().clamp(1, 64);
+    const roomHeight = 2.8;
+
+    BenchFurnitureRenderer.paint3DScene(
+      canvas,
+      size,
       roomWidth: snapshot.roomWidth,
       roomDepth: snapshot.roomDepth,
-      roomHeight: 2.8,
+      roomHeight: roomHeight,
+      gridCols: gridCols,
+      gridRows: gridRows,
       yaw: yaw,
       pitch: pitch,
       distance: distance,
+      lookAtX: lookAtX,
+      lookAtZ: lookAtZ,
+      furniture: snapshot.furniture,
     );
 
-    final corners = [
-      const _V(0, 0, 0),
-      _V(snapshot.roomWidth, 0, 0),
-      _V(snapshot.roomWidth, 0, snapshot.roomDepth),
-      _V(0, 0, snapshot.roomDepth),
-      const _V(0, 2.8, 0),
-      _V(snapshot.roomWidth, 2.8, 0),
-      _V(snapshot.roomWidth, 2.8, snapshot.roomDepth),
-      _V(0, 2.8, snapshot.roomDepth),
-    ];
-    final projected = corners.map((v) => _project(v, size, cam)).toList();
-    final edges = [
-      [0, 1], [1, 2], [2, 3], [3, 0],
-      [4, 5], [5, 6], [6, 7], [7, 4],
-      [0, 4], [1, 5], [2, 6], [3, 7],
-    ];
-    final wire = Paint()
-      ..color = Colors.white.withValues(alpha: 0.28)
-      ..strokeWidth = 1.3;
-    for (final e in edges) {
-      final a = projected[e[0]];
-      final b = projected[e[1]];
-      if (a == null || b == null) continue;
-      canvas.drawLine(a.$1, b.$1, wire);
-    }
-
-    for (final f in snapshot.furniture) {
-      final h = f.id == 'bed'
-          ? 0.7
-          : (f.id == 'desk' || f.id == 'chair' ? 0.85 : 0.55);
-      final box = [
-        _V(f.gridX, 0, f.gridY),
-        _V(f.gridX + f.width, 0, f.gridY),
-        _V(f.gridX + f.width, 0, f.gridY + f.height),
-        _V(f.gridX, 0, f.gridY + f.height),
-        _V(f.gridX, h, f.gridY),
-        _V(f.gridX + f.width, h, f.gridY),
-        _V(f.gridX + f.width, h, f.gridY + f.height),
-        _V(f.gridX, h, f.gridY + f.height),
-      ];
-      final isKey = f.id == 'desk' || f.id == 'chair' || f.id == 'bed' || f.id == 'pc';
-      final fill = isKey
-          ? Colors.white.withValues(alpha: 0.16)
-          : Colors.white.withValues(alpha: 0.07);
-      final top = [4, 5, 6, 7]
-          .map((i) => _project(box[i], size, cam))
-          .whereType<(Offset, double)>()
-          .map((e) => e.$1)
-          .toList();
-      if (top.length == 4) {
-        canvas.drawPath(Path()..addPolygon(top, true), Paint()..color = fill);
-      }
-      for (final e in [
-        [0, 1], [1, 2], [2, 3], [3, 0],
-        [4, 5], [5, 6], [6, 7], [7, 4],
-        [0, 4], [1, 5], [2, 6], [3, 7],
-      ]) {
-        final a = _project(box[e[0]], size, cam);
-        final b = _project(box[e[1]], size, cam);
-        if (a == null || b == null) continue;
-        canvas.drawLine(
-          a.$1,
-          b.$1,
-          Paint()
-            ..color = Colors.white.withValues(alpha: 0.28)
-            ..strokeWidth = 1,
-        );
-      }
-    }
+    final cam = _Cam(
+      roomWidth: snapshot.roomWidth,
+      roomDepth: snapshot.roomDepth,
+      roomHeight: roomHeight,
+      yaw: yaw,
+      pitch: pitch,
+      distance: distance,
+      lookAtX: lookAtX,
+      lookAtZ: lookAtZ,
+    );
 
     final paths = _focusPaths;
     for (int i = 0; i < paths.length; i++) {
@@ -270,53 +226,31 @@ class ErgonomicsFieldPainter extends CustomPainter {
     }
   }
 
-  void _pathLegend(Canvas canvas, Size size, List<ErgonomicsPath> paths, {required double legendLeft}) {
-    var y = 22.0;
-    final title = TextPainter(
-      text: TextSpan(
-        text: 'ROUTES',
-        style: TextStyle(
-          color: AppColors.textMuted,
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.2,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    title.paint(canvas, Offset(legendLeft, y));
-    y += 18;
+  void _pathLegend(Canvas canvas, Size size, List<ErgonomicsPath> paths, {required Rect roomRect}) {
+    var x = roomRect.left;
+    final y = math.min(roomRect.bottom + 6, size.height - 52);
+    if (y + 40 > size.height) return;
 
     for (int i = 0; i < paths.length; i++) {
       final route = paths[i];
       final color = route.clear ? _pathColors[i % _pathColors.length] : AppColors.red;
-      canvas.drawCircle(Offset(legendLeft + 5, y + 6), 4, Paint()..color = color);
+      canvas.drawCircle(Offset(x + 5, y + 8), 4, Paint()..color = color);
       final tp = TextPainter(
         text: TextSpan(
           text: route.label,
           style: TextStyle(
             color: AppColors.textPrimary.withValues(alpha: 0.9),
-            fontSize: 10,
+            fontSize: 9,
             fontWeight: FontWeight.w700,
           ),
         ),
         textDirection: TextDirection.ltr,
-        maxLines: 2,
+        maxLines: 1,
         ellipsis: '…',
-      )..layout(maxWidth: size.width - legendLeft - 16);
-      tp.paint(canvas, Offset(legendLeft + 14, y));
-      y += tp.height + 10;
-    }
-
-    if (paths.isEmpty) {
-      final empty = TextPainter(
-        text: TextSpan(
-          text: 'No routes',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 10),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      empty.paint(canvas, Offset(legendLeft, y));
+      )..layout(maxWidth: 120);
+      tp.paint(canvas, Offset(x + 12, y));
+      x += tp.width + 22;
+      if (x > roomRect.right - 40) break;
     }
   }
 
@@ -411,6 +345,8 @@ class ErgonomicsFieldPainter extends CustomPainter {
         oldDelegate.yaw != yaw ||
         oldDelegate.pitch != pitch ||
         oldDelegate.distance != distance ||
+        oldDelegate.lookAtX != lookAtX ||
+        oldDelegate.lookAtZ != lookAtZ ||
         oldDelegate.pulse != pulse;
   }
 }
@@ -424,6 +360,7 @@ class _V {
 class _Cam {
   final double roomWidth, roomDepth, roomHeight;
   final double yaw, pitch, distance;
+  final double? lookAtX, lookAtZ;
 
   _Cam({
     required this.roomWidth,
@@ -432,7 +369,12 @@ class _Cam {
     required this.yaw,
     required this.pitch,
     required this.distance,
+    this.lookAtX,
+    this.lookAtZ,
   });
+
+  double get pivotX => lookAtX ?? roomWidth * 0.5;
+  double get pivotZ => lookAtZ ?? roomDepth * 0.5;
 }
 
 _V _cross(_V a, _V b) => _V(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
@@ -444,7 +386,7 @@ _V _norm(_V v) {
 }
 
 (Offset, double)? _project(_V p, Size size, _Cam cam) {
-  final center = _V(cam.roomWidth * 0.5, cam.roomHeight * 0.45, cam.roomDepth * 0.5);
+  final center = _V(cam.pivotX, cam.roomHeight * 0.45, cam.pivotZ);
   final horizontal = cam.distance * math.cos(cam.pitch);
   final eye = _V(
     center.x + horizontal * math.sin(cam.yaw),

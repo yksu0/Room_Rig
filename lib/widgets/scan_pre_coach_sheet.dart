@@ -51,24 +51,24 @@ Future<bool> showScanPreCoachSheet(BuildContext context) async {
               ),
               const SizedBox(height: 16),
               const _TipRow(
-                icon: Icons.smartphone_rounded,
-                title: 'Hold chest-high',
-                detail: 'Keep the phone upright and steady — avoid low angles.',
+                icon: Icons.gps_fixed_rounded,
+                title: 'Lock tracking first',
+                detail: 'Stand by the door and slowly pan floor → furniture. We will not record yet.',
               ),
               const _TipRow(
-                icon: Icons.directions_walk_rounded,
-                title: 'Walk slowly',
-                detail: 'Side-step around the room. Fast turns break tracking.',
+                icon: Icons.straighten_rounded,
+                title: 'Then one short walk',
+                detail: 'Walk toward the far wall so we can size the room. Corners come after that.',
+              ),
+              const _TipRow(
+                icon: Icons.smartphone_rounded,
+                title: 'Hold chest-high',
+                detail: 'Keep the phone upright. Fast turns and blank walls break ARCore.',
               ),
               const _TipRow(
                 icon: Icons.wb_sunny_outlined,
                 title: 'Use good light',
-                detail: 'Turn lights on; point at furniture and corners, not blank walls.',
-              ),
-              const _TipRow(
-                icon: Icons.door_front_door_outlined,
-                title: 'Start at the door',
-                detail: 'Sweep all four corners, then the window and desk wall.',
+                detail: 'Turn lights on and include edges — desks, doors, window frames.',
               ),
               const SizedBox(height: 18),
               Row(
