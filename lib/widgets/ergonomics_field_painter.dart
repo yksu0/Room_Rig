@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import '../services/ergonomics_simulator.dart';
 import '../theme/app_theme.dart';
 import 'bench_room_views.dart';
-import 'furniture_shapes.dart';
 
 enum ErgonomicsVizMode { topDown2D, orbit3D }
 
@@ -84,8 +83,7 @@ class ErgonomicsFieldPainter extends CustomPainter {
           rect.top + (z / snapshot.roomDepth) * rect.height,
         );
 
-    // Furniture silhouettes + anchor labels on key path nodes.
-    const anchorIds = {'bed', 'desk', 'pc', 'chair', 'window', 'door'};
+    // Furniture silhouettes only — path labels/legend removed (display-only).
     BenchFurnitureRenderer.paint2D(
       canvas,
       roomRect: rect,
@@ -93,27 +91,6 @@ class ErgonomicsFieldPainter extends CustomPainter {
       gridRows: gridRows,
       furniture: snapshot.furniture,
     );
-    for (final f in snapshot.furniture) {
-      if (!anchorIds.contains(f.id)) continue;
-      final r = FurnitureShapes.planCell(
-        room: rect,
-        item: f,
-        roomWidth: snapshot.roomWidth,
-        roomDepth: snapshot.roomDepth,
-      );
-      final tp = TextPainter(
-        text: TextSpan(
-          text: f.id,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.75),
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: r.width);
-      tp.paint(canvas, Offset(r.center.dx - tp.width / 2, r.bottom - tp.height - 2));
-    }
 
     final paths = _focusPaths;
     for (int i = 0; i < paths.length; i++) {
@@ -154,8 +131,6 @@ class ErgonomicsFieldPainter extends CustomPainter {
       canvas.drawCircle(pts.first, 2, Paint()..color = Colors.white.withValues(alpha: 0.85));
       canvas.drawCircle(pts.last, 2, Paint()..color = Colors.white.withValues(alpha: 0.85));
     }
-
-    _pathLegend(canvas, size, paths, roomRect: rect);
   }
 
   void _paint3D(Canvas canvas, Size size) {
@@ -223,34 +198,6 @@ class ErgonomicsFieldPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );
-    }
-  }
-
-  void _pathLegend(Canvas canvas, Size size, List<ErgonomicsPath> paths, {required Rect roomRect}) {
-    var x = roomRect.left;
-    final y = math.min(roomRect.bottom + 6, size.height - 52);
-    if (y + 40 > size.height) return;
-
-    for (int i = 0; i < paths.length; i++) {
-      final route = paths[i];
-      final color = route.clear ? _pathColors[i % _pathColors.length] : AppColors.red;
-      canvas.drawCircle(Offset(x + 5, y + 8), 4, Paint()..color = color);
-      final tp = TextPainter(
-        text: TextSpan(
-          text: route.label,
-          style: TextStyle(
-            color: AppColors.textPrimary.withValues(alpha: 0.9),
-            fontSize: 9,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-        ellipsis: '…',
-      )..layout(maxWidth: 120);
-      tp.paint(canvas, Offset(x + 12, y));
-      x += tp.width + 22;
-      if (x > roomRect.right - 40) break;
     }
   }
 
