@@ -1,7 +1,9 @@
 // lib/services/airflow_optimizer.dart
-// First-pass airflow auto-arrange: move furniture, then score via voxel sim.
+// Auto-Rig airflow arrange: HVAC throw + cooled work zone, then voxel score.
 import '../models/room_model.dart';
+import '../models/surface_mount.dart';
 import 'airflow_simulator.dart';
+import 'layout_collision.dart';
 import 'layout_optimizer_common.dart';
 import 'layout_orientation.dart';
 
@@ -21,7 +23,6 @@ class AirflowOptimizeResult {
 class AirflowOptimizer {
   AirflowOptimizer._();
 
-  /// Score the current layout without moving anything (field only, no tracers).
   static AirflowMetrics evaluate(List<FurnitureItem> furniture) {
     return AirflowSimulator.build(
       furniture: furniture,
@@ -31,7 +32,6 @@ class AirflowOptimizer {
     ).metrics;
   }
 
-  /// Rearrange furniture for max AC throw coverage, clear lanes, wall fan.
   static AirflowOptimizeResult optimize({
     required List<FurnitureItem> furniture,
     required int gridCols,
@@ -40,92 +40,69 @@ class AirflowOptimizer {
     final cols = gridCols.toDouble();
     final rows = gridRows.toDouble();
     final reasons = <String>[];
-
-    FurnitureItem? find(String id) {
-      try {
-        return furniture.firstWhere((f) => f.id == id);
-      } catch (_) {
-        return null;
-      }
-    }
-
     final targets = <String, ({double x, double y})>{};
 
-    // 1) AC mid-depth on the longer wall (right) for max throw coverage.
-    if (find('ac') != null) {
-      targets['ac'] = (x: cols - 1, y: (rows * 0.4).clamp(1.0, rows - 2));
+    final ac = LayoutOptimizerCommon.firstWhere(furniture, SurfaceMounts.isVent);
+    if (ac != null) {
+      // Mid-depth on the longer wall → widest throw coverage (ASHRAE).
+      targets[ac.id] = (x: cols - 1, y: (rows * 0.4).clamp(1.0, rows - 2));
       reasons.add('Moved AC to mid long-wall for maximum throw coverage');
     }
 
-    // 2) Window stays a daylight opening, not a fake exhaust.
-    if (find('window') != null) {
-      targets['window'] = (x: 0.5, y: 0.0);
+    final window = LayoutOptimizerCommon.findWindow(furniture);
+    if (window != null) {
+      targets[window.id] = (
+        x: window.gridX.clamp(0.5, cols - window.width - 0.2),
+        y: 0.0,
+      );
       reasons.add('Kept the window as a pressure-neutral opening on the front wall');
     }
-    if (find('intake') != null) {
-      targets['intake'] = (x: cols - 1, y: (rows * 0.15).clamp(0.2, rows - 2));
-      reasons.add('Parked the intake away from the extract so supply can pressurize the room');
+
+    final intake = LayoutOptimizerCommon.firstWhere(furniture, SurfaceMounts.isIntake);
+    if (intake != null) {
+      targets[intake.id] = (x: cols - 1, y: (rows * 0.15).clamp(0.2, rows - 2));
+      reasons.add('Parked intake away from extract so supply can pressurize the room');
     }
-    if (find('exhaust') != null) {
-      targets['exhaust'] = (x: 0.0, y: (rows * 0.55).clamp(1.0, rows - 2));
-      reasons.add('Moved the exhaust opposite the AC throw so extract does not short-circuit');
-    }
-    if (find('door') != null) {
-      targets['door'] = (x: 0.0, y: (rows - 1.8).clamp(4.0, rows - 1));
-      reasons.add('Anchored entry door on the side wall with a clear approach');
+    final exhaust = LayoutOptimizerCommon.firstWhere(furniture, SurfaceMounts.isExhaust);
+    if (exhaust != null) {
+      targets[exhaust.id] = (x: 0.0, y: (rows * 0.55).clamp(1.0, rows - 2));
+      reasons.add('Moved exhaust opposite the AC throw so extract does not short-circuit');
     }
 
-    // 3) Work cluster (desk / chair / PC) inside the cooled sweep, left side.
-    if (find('desk') != null) {
-      targets['desk'] = (x: 0.3, y: (rows * 0.28).clamp(1.0, rows - 3));
-      reasons.add('Placed desk inside the AC coverage cone');
-    }
-    final deskY = targets['desk']?.y ?? (rows * 0.28);
-    if (find('chair') != null) {
-      targets['chair'] = (x: 0.4, y: deskY + 1.1);
-    }
-    if (find('pc') != null) {
-      targets['pc'] = (x: 0.2, y: deskY - 0.35);
-      reasons.add('Put PC heat source inside the cooled zone');
+    final door = LayoutOptimizerCommon.findDoor(furniture);
+    if (door != null) {
+      targets[door.id] = (x: 0.0, y: (rows - 1.8).clamp(4.0, rows - 1));
+      reasons.add('Anchored entry door with a clear approach aisle');
     }
 
-    // 4) Stand fan on desk wall — not mid-room — aiming into open floor.
-    if (find('fan') != null) {
-      targets['fan'] = (x: 0.15, y: (deskY + 2.2).clamp(2.0, rows - 1.5));
-      reasons.add('Parked stand fan on the desk wall to mix air without blocking walkways');
+    reasons.addAll(
+      LayoutOptimizerCommon.planWorkCluster(
+        furniture: furniture,
+        targets: targets,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        bias: WorkClusterBias.airflow,
+      ),
+    );
+
+    final fan = LayoutOptimizerCommon.firstWhere(
+      furniture,
+      (f) => f.iconName == 'fan' || '${f.id} ${f.name}'.toLowerCase().contains('fan'),
+    );
+    if (fan != null) {
+      // East wall, mid-depth — mixes the room without blocking the entry approach.
+      final fanY = (rows * 0.55).clamp(2.5, rows - 1.5);
+      targets[fan.id] = (x: cols - 1.0, y: fanY);
+      reasons.add('Stand fan on the far wall to mix air without blocking the entry');
     }
 
-    // 5) Bed on far perimeter, out of primary throw.
-    final bed = find('bed');
-    if (bed != null) {
-      targets['bed'] = (
-        x: ((cols - bed.width) * 0.45).clamp(0.0, cols - bed.width),
-        y: (rows - bed.height - 0.2).clamp(0.0, rows - bed.height),
-      );
-      reasons.add('Tucked bed along the far wall, clear of the AC throw');
-    }
-
-    // 6) Storage in a dead corner away from the throw corridor.
-    if (find('shelf') != null || find('bookshelf') != null) {
-      final id = find('shelf') != null ? 'shelf' : 'bookshelf';
-      targets[id] = (x: 0.2, y: (rows - 1.5).clamp(0.0, rows - 1));
-      reasons.add('Moved storage into a perimeter corner outside the airflow lane');
-    }
-
-    if (find('lamp') != null) {
-      targets['lamp'] = (x: (cols * 0.35).clamp(1.0, cols - 1), y: 1.2);
-    }
-
-    // Sofa / plant / wardrobe: soft perimeter nudges if present.
-    if (find('sofa') != null) {
-      targets['sofa'] = (x: 1.0, y: (rows - 2).clamp(0.0, rows - 1));
-    }
-    if (find('plant') != null) {
-      targets['plant'] = (x: cols - 1, y: 2.0);
-    }
-    if (find('wardrobe') != null) {
-      targets['wardrobe'] = (x: 0.0, y: (rows * 0.55).clamp(2.0, rows - 2));
-    }
+    LayoutOptimizerCommon.planPerimeterStorage(
+      furniture: furniture,
+      targets: targets,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      reasons: reasons,
+    );
 
     final before = furniture.map((f) => f.copyWith()).toList(growable: false);
     var next = LayoutOptimizerCommon.applyTargets(
@@ -137,14 +114,54 @@ class AirflowOptimizer {
       gridRows: gridRows,
     );
     next = _resolveOverlaps(next, cols, rows);
+    next = LayoutOptimizerCommon.mountDeskTopItems(next);
+    // Keep wall fans pinned after overlap nudges.
+    next = next.map((f) {
+      final isFan = f.iconName == 'fan' || '${f.id} ${f.name}'.toLowerCase().contains('fan');
+      if (!isFan || f.locked) return f;
+      final pos = targets[f.id];
+      if (pos == null) return f;
+      return f.copyWith(gridX: pos.x, gridY: f.gridY.clamp(pos.y - 0.5, pos.y + 0.5));
+    }).toList(growable: false);
     next = LayoutOrientation.apply(
       furniture: next,
       gridCols: gridCols,
       gridRows: gridRows,
     );
+    next = _resolveOpeningBlocks(next, gridCols, gridRows);
+    next = LayoutOptimizerCommon.resolveLayoutConflicts(
+      items: next,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    // Re-pin HVAC targets after collision nudges.
+    next = next.map((f) {
+      if (f.locked) return f;
+      final pos = targets[f.id];
+      if (pos == null) return f;
+      if (SurfaceMounts.isVent(f) ||
+          SurfaceMounts.isIntake(f) ||
+          SurfaceMounts.isExhaust(f)) {
+        return f.copyWith(gridX: pos.x, gridY: pos.y);
+      }
+      final isFan = f.iconName == 'fan' || '${f.id} ${f.name}'.toLowerCase().contains('fan');
+      if (!isFan) return f;
+      return f.copyWith(gridX: pos.x, gridY: f.gridY.clamp(pos.y - 0.5, pos.y + 0.5));
+    }).toList(growable: false);
     LayoutOptimizerCommon.noteOrientation(reasons, before, next);
 
+    final beforeMetrics = evaluate(before);
     final metrics = evaluate(next);
+    if (metrics.circulationScore + 0.5 < beforeMetrics.circulationScore) {
+      return AirflowOptimizeResult(
+        furniture: before,
+        metrics: beforeMetrics,
+        reasons: [
+          ...reasons,
+          'Kept your layout — auto-arrange would not improve airflow',
+        ],
+      );
+    }
 
     if (reasons.isEmpty) {
       reasons.add('No airflow-critical items found to rearrange');
@@ -157,26 +174,21 @@ class AirflowOptimizer {
     );
   }
 
-  /// Lightweight overlap push so Auto-Rig doesn't stack solids.
   static List<FurnitureItem> _resolveOverlaps(
     List<FurnitureItem> items,
     double cols,
     double rows,
   ) {
     final mutable = items.map((f) => f.copyWith()).toList();
-    // Fixed devices can stay; push movable solids apart.
-    const fixed = {'window', 'door', 'ac', 'intake', 'exhaust'};
     for (int iter = 0; iter < 8; iter++) {
       var moved = false;
       for (int i = 0; i < mutable.length; i++) {
-        if (fixed.contains(mutable[i].id)) continue;
+        if (SurfaceMounts.isStructuralMount(mutable[i])) continue;
         for (int j = i + 1; j < mutable.length; j++) {
-          if (fixed.contains(mutable[j].id)) continue;
+          if (SurfaceMounts.isStructuralMount(mutable[j])) continue;
           final a = mutable[i];
           final b = mutable[j];
-          if (!_overlaps(a, b)) continue;
-
-          // Push the later item down/right preferentially.
+          if (!LayoutCollision.blocks(a, b, mutable)) continue;
           final maxX = (cols - b.width).clamp(0.0, cols);
           final maxY = (rows - b.height).clamp(0.0, rows);
           var nx = b.gridX + 0.35;
@@ -194,10 +206,39 @@ class AirflowOptimizer {
     return List.unmodifiable(mutable);
   }
 
-  static bool _overlaps(FurnitureItem a, FurnitureItem b) {
-    return a.gridX < b.gridX + b.width &&
-        a.gridX + a.width > b.gridX &&
-        a.gridY < b.gridY + b.height &&
-        a.gridY + a.height > b.gridY;
+  /// Nudge movable items that block doors or windows after overlap resolution.
+  static List<FurnitureItem> _resolveOpeningBlocks(
+    List<FurnitureItem> items,
+    int gridCols,
+    int gridRows,
+  ) {
+    final mutable = items.map((f) => f.copyWith()).toList();
+    for (int pass = 0; pass < 6; pass++) {
+      final conflicts = LayoutCollision.findConflicts(
+        furniture: mutable,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      );
+      final blocked = conflicts.where((c) => c.kind == LayoutConflictKind.blockedOpening).toList();
+      if (blocked.isEmpty) break;
+
+      for (final conflict in blocked) {
+        final blockerId = conflict.itemIds.firstWhere(
+          (id) => !id.contains('door') && !id.contains('window'),
+          orElse: () => conflict.itemIds.first,
+        );
+        final idx = mutable.indexWhere((f) => f.id == blockerId);
+        if (idx < 0) continue;
+        final item = mutable[idx];
+        if (item.locked || SurfaceMounts.isStructuralMount(item)) continue;
+        final maxX = (gridCols - item.width).clamp(0.0, gridCols.toDouble());
+        final maxY = (gridRows - item.height).clamp(0.0, gridRows.toDouble());
+        var nx = (item.gridX + 0.5).clamp(0.0, maxX);
+        var ny = (item.gridY - 0.6).clamp(0.0, maxY);
+        if (ny == item.gridY) ny = (item.gridY + 0.6).clamp(0.0, maxY);
+        mutable[idx] = item.copyWith(gridX: nx, gridY: ny);
+      }
+    }
+    return List.unmodifiable(mutable);
   }
 }
