@@ -100,37 +100,6 @@ class LightingFieldPainter extends CustomPainter {
       gridRows: gridRows,
       furniture: furniture,
     );
-
-    // Lights
-    for (final light in snapshot.lights) {
-      final o = Offset(
-        rect.left + (light.x / snapshot.roomWidth) * rect.width,
-        rect.top + (light.z / snapshot.roomDepth) * rect.height,
-      );
-      final color = switch (light.kind) {
-        'window' => AppColors.green,
-        'ceiling' => AppColors.lightingColor,
-        _ => AppColors.amber,
-      };
-      final radius = 10.0 + pulse * 4;
-      canvas.drawCircle(
-        o,
-        radius * 2.2,
-        Paint()
-          ..shader = RadialGradient(
-            colors: [color.withValues(alpha: 0.35), Colors.transparent],
-          ).createShader(Rect.fromCircle(center: o, radius: radius * 2.2)),
-      );
-      canvas.drawCircle(o, 5, Paint()..color = color);
-      final tp = TextPainter(
-        text: TextSpan(
-          text: light.label,
-          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset(o.dx - tp.width / 2, o.dy - 18));
-    }
   }
 
   void _paint3D(Canvas canvas, Size size) {
@@ -180,18 +149,6 @@ class LightingFieldPainter extends CustomPainter {
           Paint()..color = AppColors.lightingColor.withValues(alpha: (0.15 + v * 0.55).clamp(0.1, 0.7)),
         );
       }
-    }
-
-    for (final light in snapshot.lights) {
-      final p = _project(_V(light.x, light.y, light.z), size, cam);
-      if (p == null) continue;
-      final color = switch (light.kind) {
-        'window' => AppColors.green,
-        'ceiling' => AppColors.lightingColor,
-        _ => AppColors.amber,
-      };
-      canvas.drawCircle(p.$1, 8 + pulse * 3, Paint()..color = color.withValues(alpha: 0.25));
-      canvas.drawCircle(p.$1, 4.5, Paint()..color = color);
     }
   }
 
