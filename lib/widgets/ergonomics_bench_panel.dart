@@ -8,18 +8,19 @@ import '../services/bench_layouts.dart';
 import '../services/ergonomics_simulator.dart';
 import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
+import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
-import 'benchmark_validation_card.dart';
 import 'ergonomics_field_painter.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
-import 'score_ring.dart';
 
 enum _ErgoStep { layout, simulate, results }
 enum _View { twoD, threeD }
 
 class ErgonomicsBenchPanel extends StatefulWidget {
-  const ErgonomicsBenchPanel({super.key});
+  final ValueChanged<bool>? onOrbitDraggingChanged;
+
+  const ErgonomicsBenchPanel({super.key, this.onOrbitDraggingChanged});
 
   @override
   State<ErgonomicsBenchPanel> createState() => _ErgonomicsBenchPanelState();
@@ -125,6 +126,22 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
 
   List<FurnitureItem> _layoutFurnitureFor(AppState state) => _furnitureFor(_layoutVariant);
 
+  int get _stepIndex => switch (_step) {
+        _ErgoStep.layout => benchStepLayout,
+        _ErgoStep.simulate => benchStepMiddle,
+        _ErgoStep.results => benchStepResults,
+      };
+
+  _ErgoStep _stepFromIndex(int i) => switch (i) {
+        benchStepLayout => _ErgoStep.layout,
+        benchStepMiddle => _ErgoStep.simulate,
+        _ => _ErgoStep.results,
+      };
+
+  String get _layoutHint => _layouts?.fellBackToSample ?? false
+      ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
+      : 'Walks the routes through the furniture in your Rig right now, then compares an optimized rearrange of the same room.';
+
   ErgonomicsSimSnapshot? get _activeSim {
     switch (_simVariant) {
       case BenchLayoutKind.improved:
@@ -213,110 +230,46 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _steps(),
-        const SizedBox(height: 16),
-        if (_step == _ErgoStep.layout) ...[
-          _layoutSection(state),
-          const SizedBox(height: 16),
-          _primaryButton(
-            'RUN ERGONOMICS BENCH',
-            RoomSvg.scan,
-            _running ? null : () => _runBench(),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _layouts?.fellBackToSample ?? false
-                ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-                : 'Walks the routes through the furniture in your Rig right now, then compares an optimized rearrange of the same room.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ],
-        if (_step == _ErgoStep.simulate || (_step == _ErgoStep.results && _running)) ...[
-          _simSection(state),
-          if (_running) ...[
-            const SizedBox(height: 16),
-            _progressBar(),
-          ],
-        ],
-        if (_step == _ErgoStep.results && !_running) ...[
-          _simSection(state),
-          const SizedBox(height: 20),
-          _results(state),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _primaryButton(
-                  'APPLY IMPROVED LAYOUT',
-                  RoomSvg.star,
-                  () {
-                    state.applyFurnitureLayout(
-                      _furnitureFor(BenchLayoutKind.improved),
-                      markOptimized: true,
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text('Improved ergonomics layout applied to Rig'),
-                        backgroundColor: AppColors.ergonomicsColor.withValues(alpha: 0.9),
-                        behavior: SnackBarBehavior.floating,
-                        action: SnackBarAction(
-                          label: 'OPEN RIG',
-                          textColor: Colors.black,
-                          onPressed: () => state.setTab(2),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              _iconButton(_rebuild),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
+    final applyValidation = _validationForSimVariant(state);
+    final applyBlocked = applyValidation.hasHardLayoutConflicts;
 
-  Widget _steps() {
-    final steps = [
-      (_ErgoStep.layout, '1. Layout'),
-      (_ErgoStep.simulate, '2. Paths'),
-      (_ErgoStep.results, '3. Results'),
-    ];
-    return Row(
-      children: steps.map((s) {
-        final selected = _step == s.$1;
-        return Expanded(
-          child: GestureDetector(
-            onTap: () {
-              if (s.$1 == _ErgoStep.results && !_showResults && !_running) return;
-              setState(() => _step = s.$1);
-            },
-            child: Container(
-              margin: EdgeInsets.only(right: s.$1 == _ErgoStep.results ? 0 : 8),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: selected ? AppColors.ergonomicsColor.withValues(alpha: 0.12) : AppColors.card,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: selected ? AppColors.ergonomicsColor : AppColors.border),
-              ),
-              child: Text(
-                s.$2,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: selected ? AppColors.ergonomicsColor : AppColors.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
+    return BenchPanelScaffold(
+      accentColor: AppColors.ergonomicsColor,
+      step: _stepIndex,
+      stepLabels: const ['1. Layout', '2. Paths', '3. Results'],
+      resultsEnabled: _showResults,
+      running: _running,
+      onStepChanged: (i) => setState(() => _step = _stepFromIndex(i)),
+      layoutBody: _layoutSection(state),
+      layoutRunAction: BenchRunAction(
+        buttonLabel: 'RUN ERGONOMICS BENCH',
+        icon: RoomSvg.scan,
+        onRun: _running ? null : _runBench,
+        hint: _layoutHint,
+      ),
+      middleBody: _simSection(state),
+      progress: _progress,
+      progressLabel: 'Tracing frequent walk paths',
+      resultsBody: _results(state),
+      applyEnabled: !applyBlocked,
+      applyBlockedReason: applyBlocked
+          ? 'Fix overlaps or blocked doorways before applying.'
+          : null,
+      onApply: () async {
+        if (!await confirmBenchApply(context, validation: applyValidation)) return;
+        if (!context.mounted) return;
+        state.applyFurnitureLayout(
+          _furnitureFor(BenchLayoutKind.improved),
+          markOptimized: true,
         );
-      }).toList(),
+        showBenchApplySnackBar(
+          context,
+          message: 'Improved ergonomics layout applied to Rig',
+          accentColor: AppColors.ergonomicsColor,
+          onOpenRig: () => state.setTab(2),
+        );
+      },
+      onRefresh: _rebuild,
     );
   }
 
@@ -333,24 +286,22 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
           style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
         ),
         const SizedBox(height: 10),
-        Row(
-          children: [
-            _chip('My Room', _layoutVariant == BenchLayoutKind.myRoom, AppColors.cyan,
-                () => _setLayoutVariant(BenchLayoutKind.myRoom)),
-            const SizedBox(width: 8),
-            _chip('Improved', _layoutVariant == BenchLayoutKind.improved, AppColors.green,
-                () => _setLayoutVariant(BenchLayoutKind.improved)),
-            const SizedBox(width: 8),
-            _chip('Sample', _layoutVariant == BenchLayoutKind.sample, AppColors.amber,
-                () => _setLayoutVariant(BenchLayoutKind.sample)),
-            const Spacer(),
-            _chip('2D', _roomView == _View.twoD, AppColors.ergonomicsColor, () {
-              setState(() => _roomView = _View.twoD);
-            }),
-            const SizedBox(width: 6),
-            _chip('3D', _roomView == _View.threeD, AppColors.ergonomicsColor, () {
-              setState(() => _roomView = _View.threeD);
-            }),
+        BenchVariantChips(
+          selected: _layoutVariant,
+          onChanged: _setLayoutVariant,
+          trailing: [
+            BenchChip(
+              label: '2D',
+              selected: _roomView == _View.twoD,
+              color: AppColors.ergonomicsColor,
+              onTap: () => setState(() => _roomView = _View.twoD),
+            ),
+            BenchChip(
+              label: '3D',
+              selected: _roomView == _View.threeD,
+              color: AppColors.ergonomicsColor,
+              onTap: () => setState(() => _roomView = _View.threeD),
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -409,7 +360,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
                                         gridCols: room.gridCols,
                                         gridRows: room.gridRows,
                                         furniture: furniture,
-                                        showCoverageCone: false,
                                         selectedId: _selectedFurnitureId,
                                       ),
                                       child: const SizedBox.expand(),
@@ -556,25 +506,22 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
           style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _chip('My Room', _simVariant == BenchLayoutKind.myRoom, AppColors.cyan, () {
-              setState(() => _simVariant = BenchLayoutKind.myRoom);
-            }),
-            _chip('Improved', _simVariant == BenchLayoutKind.improved, AppColors.green, () {
-              setState(() => _simVariant = BenchLayoutKind.improved);
-            }),
-            _chip('Sample', _simVariant == BenchLayoutKind.sample, AppColors.amber, () {
-              setState(() => _simVariant = BenchLayoutKind.sample);
-            }),
-            _chip('2D', _simViz == ErgonomicsVizMode.topDown2D, AppColors.ergonomicsColor, () {
-              setState(() => _simViz = ErgonomicsVizMode.topDown2D);
-            }),
-            _chip('3D', _simViz == ErgonomicsVizMode.orbit3D, AppColors.ergonomicsColor, () {
-              setState(() => _simViz = ErgonomicsVizMode.orbit3D);
-            }),
+        BenchVariantChips(
+          selected: _simVariant,
+          onChanged: (v) => setState(() => _simVariant = v),
+          trailing: [
+            BenchChip(
+              label: '2D',
+              selected: _simViz == ErgonomicsVizMode.topDown2D,
+              color: AppColors.ergonomicsColor,
+              onTap: () => setState(() => _simViz = ErgonomicsVizMode.topDown2D),
+            ),
+            BenchChip(
+              label: '3D',
+              selected: _simViz == ErgonomicsVizMode.orbit3D,
+              color: AppColors.ergonomicsColor,
+              onTap: () => setState(() => _simViz = ErgonomicsVizMode.orbit3D),
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -629,11 +576,11 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
         const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(child: _metric('Comfort', m.comfortScore, AppColors.ergonomicsColor)),
+            Expanded(child: BenchMetricTile(label: 'Comfort', value: m.comfortScore, color: AppColors.ergonomicsColor)),
             const SizedBox(width: 8),
-            Expanded(child: _metric('Paths', m.pathScore * 100, AppColors.cyan)),
+            Expanded(child: BenchMetricTile(label: 'Paths', value: m.pathScore * 100, color: AppColors.cyan)),
             const SizedBox(width: 8),
-            Expanded(child: _metric('Reach', m.reachScore * 100, AppColors.amber)),
+            Expanded(child: BenchMetricTile(label: 'Reach', value: m.reachScore * 100, color: AppColors.amber)),
           ],
         ),
       ],
@@ -643,8 +590,9 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
   /// Validate the layout the results header is actually showing, so the badge,
   /// the score rings, and the check rows all describe the same furniture.
   BenchmarkValidation _validationForSimVariant(AppState state) {
+    final kind = _step == _ErgoStep.results ? BenchLayoutKind.improved : _simVariant;
     return BenchmarkValidator.validateLayout(
-      furniture: _furnitureFor(_simVariant),
+      furniture: _furnitureFor(kind),
       gridCols: state.currentRoomData.gridCols,
       gridRows: state.currentRoomData.gridRows,
       mode: 'ergonomics',
@@ -657,65 +605,21 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     final base = _myRoomSim!.metrics;
     final opt = _improvedSim!.metrics;
     final sample = _sampleSim?.metrics;
-    return GlassCard(
-      borderColor: BenchResultBadge.colorFor(validation.verdict).withValues(alpha: 0.4),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text('Ergonomics Comfort Bench', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
-              ),
-              BenchResultBadge(validation: validation),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              ScoreRing(score: base.comfortScore, size: 78, color: AppColors.cyan, label: 'My Room'),
-              ScoreRing(score: opt.comfortScore, size: 78, color: AppColors.ergonomicsColor, label: 'Improved'),
-              if (sample != null)
-                ScoreRing(score: sample.comfortScore, size: 78, color: AppColors.amber, label: 'Sample')
-              else
-                ScoreRing(score: state.ergonomicsScore, size: 78, color: AppColors.green, label: 'Score'),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'Paths +${((opt.pathScore - base.pathScore) * 100).toStringAsFixed(0)} · '
-            'Clearance +${((opt.chairClearance - base.chairClearance) * 100).toStringAsFixed(0)} · '
-            'Reach +${((opt.reachScore - base.reachScore) * 100).toStringAsFixed(0)}',
-            style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13),
-          ),
-          const SizedBox(height: 14),
-          BenchmarkValidationCard(validation: validation),
-        ],
-      ),
-    );
-  }
-
-  Widget _progressBar() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Text('Tracing frequent walk paths', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-            const Spacer(),
-            Text('${(_progress * 100).toInt()}%', style: TextStyle(color: AppColors.ergonomicsColor, fontSize: 12, fontWeight: FontWeight.w700)),
-          ],
-        ),
-        const SizedBox(height: 6),
-        LinearProgressIndicator(
-          value: _progress,
-          backgroundColor: AppColors.border,
-          valueColor: const AlwaysStoppedAnimation(AppColors.ergonomicsColor),
-          minHeight: 4,
-          borderRadius: BorderRadius.circular(4),
-        ),
+    return BenchResultsCard(
+      title: 'Ergonomics Comfort Bench',
+      validation: validation,
+      rings: [
+        BenchScoreRingSpec(score: base.comfortScore, color: AppColors.cyan, label: 'My Room'),
+        BenchScoreRingSpec(score: opt.comfortScore, color: AppColors.ergonomicsColor, label: 'Improved'),
+        if (sample != null)
+          BenchScoreRingSpec(score: sample.comfortScore, color: AppColors.amber, label: 'Sample')
+        else
+          BenchScoreRingSpec(score: state.ergonomicsScore, color: AppColors.green, label: 'Score'),
       ],
+      summaryText:
+          'Paths +${((opt.pathScore - base.pathScore) * 100).toStringAsFixed(0)} · '
+          'Clearance +${((opt.chairClearance - base.chairClearance) * 100).toStringAsFixed(0)} · '
+          'Reach +${((opt.reachScore - base.reachScore) * 100).toStringAsFixed(0)}',
     );
   }
 
@@ -741,7 +645,10 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       resetNonce: resetNonce,
       onDoubleTap: onDoubleTap,
       onDragChanged: (dragging) {
-        if (_orbitDragging != dragging) setState(() => _orbitDragging = dragging);
+        if (_orbitDragging != dragging) {
+          setState(() => _orbitDragging = dragging);
+          widget.onOrbitDraggingChanged?.call(dragging);
+        }
       },
       builder: builder,
     );
@@ -751,79 +658,4 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
   // ignore: unused_element
   bool get isOrbitDragging => _orbitDragging;
 
-  Widget _chip(String label, bool selected, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.15) : AppColors.card,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: selected ? color : AppColors.border),
-        ),
-        child: Text(label, style: TextStyle(color: selected ? color : AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
-      ),
-    );
-  }
-
-  Widget _metric(String label, double value, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: [
-          Text(label, style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Text(
-            value.toStringAsFixed(0),
-            style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w800),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _primaryButton(String label, String icon, VoidCallback? onTap) {
-    final disabled = onTap == null;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          gradient: disabled ? null : AppColors.accentGradient,
-          color: disabled ? AppColors.card : null,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: disabled ? AppColors.border : Colors.transparent),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SvgIcon(icon, size: 18, color: Colors.white),
-            const SizedBox(width: 8),
-            Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.1)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _iconButton(VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: const Icon(Icons.refresh_rounded, color: AppColors.textSecondary, size: 20),
-      ),
-    );
-  }
 }
