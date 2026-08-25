@@ -74,7 +74,7 @@ class _ScoreRingState extends State<ScoreRing>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  '${(widget.score * _animation.value / widget.score * widget.score).round()}',
+                  '${(widget.score * _animation.value).round()}',
                   style: TextStyle(
                     color: widget.color,
                     fontSize: widget.size * 0.22,
