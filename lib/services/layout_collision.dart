@@ -287,6 +287,11 @@ class LayoutCollision {
 
   /// True when two items fight for the same space. Desktop items on a desk
   /// ignore the desk (and the floor under it) but still bump each other.
+  static bool blocks(FurnitureItem a, FurnitureItem b, List<FurnitureItem> furniture) =>
+      _pairBlocks(a, b, furniture);
+
+  /// True when two items fight for the same space. Desktop items on a desk
+  /// ignore the desk (and the floor under it) but still bump each other.
   static bool _pairBlocks(FurnitureItem a, FurnitureItem b, List<FurnitureItem> furniture) {
     if (!overlaps(a, b)) return false;
     if (skipsFloorOccupancy(a) && !SurfaceMounts.isDeskTopItem(a)) return false;
