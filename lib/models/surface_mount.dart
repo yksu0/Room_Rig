@@ -154,9 +154,18 @@ class SurfaceMounts {
   static bool isDeskTopItem(FurnitureItem f) {
     final hay = _hay(f);
     if (hay.contains('floor') && hay.contains('lamp')) return false;
-    if (f.iconName == 'monitor' || hay.contains('monitor')) return true;
-    if (f.iconName == 'pc' || hay.contains('pc tower') || hay.contains(' pc')) return true;
-    if (f.id == 'pc' || f.id.startsWith('pc_')) return true;
+    if (f.iconName == 'monitor' || hay.contains('monitor') || hay.contains('display')) {
+      return true;
+    }
+    if (f.iconName == 'pc' ||
+        f.id == 'pc' ||
+        f.id.startsWith('pc_') ||
+        hay.contains('pc tower') ||
+        hay.contains(' pc') ||
+        hay.contains('computer') ||
+        (hay.contains('tower') && !hay.contains('fan'))) {
+      return true;
+    }
     if (hay.contains('task lamp') || (f.iconName == 'lamp' && !hay.contains('floor'))) {
       return true;
     }
