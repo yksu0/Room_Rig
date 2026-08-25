@@ -4,7 +4,10 @@ import '../theme/app_theme.dart';
 import 'room_icons.dart';
 
 /// Short pre-scan tips before ARCore / camera capture starts.
-Future<bool> showScanPreCoachSheet(BuildContext context) async {
+Future<bool> showScanPreCoachSheet(
+  BuildContext context, {
+  required String detectorLabel,
+}) async {
   final result = await showModalBottomSheet<bool>(
     context: context,
     backgroundColor: AppColors.surface,
@@ -47,6 +50,32 @@ Future<bool> showScanPreCoachSheet(BuildContext context) async {
                   color: AppColors.textPrimary,
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.memory_outlined, size: 16, color: AppColors.amber),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Detector: $detectorLabel',
+                        style: TextStyle(
+                          color: AppColors.amber,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
