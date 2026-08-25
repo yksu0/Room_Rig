@@ -95,7 +95,7 @@ class RigCatalog {
       category: 'airflow',
       airflowImpact: -0.5,
       cost: 900,
-      description: 'Heat source — on the desk or on the floor beside it',
+      description: 'Heat source — Auto-Rig parks it on the desk when one is present',
     ),
     RigCatalogEntry(
       baseId: 'bed',
