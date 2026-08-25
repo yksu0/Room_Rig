@@ -2,7 +2,9 @@
 // Walkable-floor estimate — occupancy, door aisle, unused corners. Not CAD.
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
+import '../models/surface_mount.dart';
 import 'layout_collision.dart';
+import 'layout_optimizer_common.dart';
 import 'layout_orientation.dart';
 
 class SpatialMetrics {
@@ -260,6 +262,7 @@ class SpatialOptimizer {
         final item = next[i];
         if (item.id == doorBox.id) continue;
         if (item.locked || LayoutCollision.skipsFloorOccupancy(item)) continue;
+        if (SurfaceMounts.isDeskTopItem(item) || SurfaceMounts.isDeskHost(item)) continue;
         final approach = doorBox.copyWith(
           gridX: doorBox.gridX,
           gridY: doorBox.gridY,
@@ -287,6 +290,7 @@ class SpatialOptimizer {
       for (int i = 0; i < next.length; i++) {
         final item = next[i];
         if (item.locked || LayoutCollision.skipsFloorOccupancy(item)) continue;
+        if (SurfaceMounts.isDeskTopItem(item) || SurfaceMounts.isDeskHost(item)) continue;
         if (item.width < 1.5 && item.height < 1.5) continue;
         final spot = LayoutCollision.findEmptyCell(
           furniture: next.where((f) => f.id != item.id).toList(),
@@ -325,6 +329,12 @@ class SpatialOptimizer {
 
     next = LayoutOrientation.apply(
       furniture: next,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    next = LayoutOptimizerCommon.mountDeskTopItems(next);
+    next = LayoutOptimizerCommon.resolveLayoutConflicts(
+      items: next,
       gridCols: gridCols,
       gridRows: gridRows,
     );
