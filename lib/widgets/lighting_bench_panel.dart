@@ -8,18 +8,19 @@ import '../services/bench_layouts.dart';
 import '../services/lighting_simulator.dart';
 import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
+import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
-import 'benchmark_validation_card.dart';
 import 'glass_card.dart';
 import 'lighting_field_painter.dart';
 import 'room_icons.dart';
-import 'score_ring.dart';
 
 enum _LightStep { layout, simulate, results }
 enum _View { twoD, threeD }
 
 class LightingBenchPanel extends StatefulWidget {
-  const LightingBenchPanel({super.key});
+  final ValueChanged<bool>? onOrbitDraggingChanged;
+
+  const LightingBenchPanel({super.key, this.onOrbitDraggingChanged});
 
   @override
   State<LightingBenchPanel> createState() => _LightingBenchPanelState();
@@ -125,6 +126,22 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
 
   List<FurnitureItem> _layoutFurnitureFor(AppState state) => _furnitureFor(_layoutVariant);
 
+  int get _stepIndex => switch (_step) {
+        _LightStep.layout => benchStepLayout,
+        _LightStep.simulate => benchStepMiddle,
+        _LightStep.results => benchStepResults,
+      };
+
+  _LightStep _stepFromIndex(int i) => switch (i) {
+        benchStepLayout => _LightStep.layout,
+        benchStepMiddle => _LightStep.simulate,
+        _ => _LightStep.results,
+      };
+
+  String get _layoutHint => _layouts?.fellBackToSample ?? false
+      ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
+      : 'Lights the furniture in your Rig right now, then compares it against an optimized rearrange of the same room.';
+
   LightingSimSnapshot? get _activeSim {
     switch (_simVariant) {
       case BenchLayoutKind.improved:
@@ -202,110 +219,46 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _steps(),
-        const SizedBox(height: 16),
-        if (_step == _LightStep.layout) ...[
-          _layoutSection(state),
-          const SizedBox(height: 16),
-          _primaryButton(
-            'RUN LIGHTING BENCH',
-            RoomSvg.scan,
-            _running ? null : () => _runBench(),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _layouts?.fellBackToSample ?? false
-                ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-                : 'Lights the furniture in your Rig right now, then compares it against an optimized rearrange of the same room.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-        ],
-        if (_step == _LightStep.simulate || (_step == _LightStep.results && _running)) ...[
-          _simSection(state),
-          if (_running) ...[
-            const SizedBox(height: 16),
-            _progressBar(),
-          ],
-        ],
-        if (_step == _LightStep.results && !_running) ...[
-          _simSection(state),
-          const SizedBox(height: 20),
-          _results(state),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _primaryButton(
-                  'APPLY IMPROVED LAYOUT',
-                  RoomSvg.star,
-                  () {
-                    state.applyFurnitureLayout(
-                      _furnitureFor(BenchLayoutKind.improved),
-                      markOptimized: true,
-                    );
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text('Improved lighting layout applied to Rig'),
-                        backgroundColor: AppColors.lightingColor.withValues(alpha: 0.9),
-                        behavior: SnackBarBehavior.floating,
-                        action: SnackBarAction(
-                          label: 'OPEN RIG',
-                          textColor: Colors.black,
-                          onPressed: () => state.setTab(2),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 8),
-              _iconButton(_rebuild),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
+    final applyValidation = _validationForSimVariant(state);
+    final applyBlocked = applyValidation.hasHardLayoutConflicts;
 
-  Widget _steps() {
-    final steps = [
-      (_LightStep.layout, '1. Layout'),
-      (_LightStep.simulate, '2. Light Field'),
-      (_LightStep.results, '3. Results'),
-    ];
-    return Row(
-      children: steps.map((s) {
-        final selected = _step == s.$1;
-        return Expanded(
-          child: GestureDetector(
-            onTap: () {
-              if (s.$1 == _LightStep.results && !_showResults && !_running) return;
-              setState(() => _step = s.$1);
-            },
-            child: Container(
-              margin: EdgeInsets.only(right: s.$1 == _LightStep.results ? 0 : 8),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: selected ? AppColors.lightingColor.withValues(alpha: 0.12) : AppColors.card,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: selected ? AppColors.lightingColor : AppColors.border),
-              ),
-              child: Text(
-                s.$2,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: selected ? AppColors.lightingColor : AppColors.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
+    return BenchPanelScaffold(
+      accentColor: AppColors.lightingColor,
+      step: _stepIndex,
+      stepLabels: const ['1. Layout', '2. Light Field', '3. Results'],
+      resultsEnabled: _showResults,
+      running: _running,
+      onStepChanged: (i) => setState(() => _step = _stepFromIndex(i)),
+      layoutBody: _layoutSection(state),
+      layoutRunAction: BenchRunAction(
+        buttonLabel: 'RUN LIGHTING BENCH',
+        icon: RoomSvg.scan,
+        onRun: _running ? null : _runBench,
+        hint: _layoutHint,
+      ),
+      middleBody: _simSection(state),
+      progress: _progress,
+      progressLabel: 'Tracing daylight + task lamps',
+      resultsBody: _results(state),
+      applyEnabled: !applyBlocked,
+      applyBlockedReason: applyBlocked
+          ? 'Fix overlaps or blocked doorways before applying.'
+          : null,
+      onApply: () async {
+        if (!await confirmBenchApply(context, validation: applyValidation)) return;
+        if (!context.mounted) return;
+        state.applyFurnitureLayout(
+          _furnitureFor(BenchLayoutKind.improved),
+          markOptimized: true,
         );
-      }).toList(),
+        showBenchApplySnackBar(
+          context,
+          message: 'Improved lighting layout applied to Rig',
+          accentColor: AppColors.lightingColor,
+          onOpenRig: () => state.setTab(2),
+        );
+      },
+      onRefresh: _rebuild,
     );
   }
 
@@ -333,24 +286,22 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
           style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
         ),
         const SizedBox(height: 10),
-        Row(
-          children: [
-            _chip('My Room', _layoutVariant == BenchLayoutKind.myRoom, AppColors.cyan,
-                () => _setLayoutVariant(BenchLayoutKind.myRoom)),
-            const SizedBox(width: 8),
-            _chip('Improved', _layoutVariant == BenchLayoutKind.improved, AppColors.green,
-                () => _setLayoutVariant(BenchLayoutKind.improved)),
-            const SizedBox(width: 8),
-            _chip('Sample', _layoutVariant == BenchLayoutKind.sample, AppColors.amber,
-                () => _setLayoutVariant(BenchLayoutKind.sample)),
-            const Spacer(),
-            _chip('2D', _roomView == _View.twoD, AppColors.lightingColor, () {
-              setState(() => _roomView = _View.twoD);
-            }),
-            const SizedBox(width: 6),
-            _chip('3D', _roomView == _View.threeD, AppColors.lightingColor, () {
-              setState(() => _roomView = _View.threeD);
-            }),
+        BenchVariantChips(
+          selected: _layoutVariant,
+          onChanged: _setLayoutVariant,
+          trailing: [
+            BenchChip(
+              label: '2D',
+              selected: _roomView == _View.twoD,
+              color: AppColors.lightingColor,
+              onTap: () => setState(() => _roomView = _View.twoD),
+            ),
+            BenchChip(
+              label: '3D',
+              selected: _roomView == _View.threeD,
+              color: AppColors.lightingColor,
+              onTap: () => setState(() => _roomView = _View.threeD),
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -409,7 +360,6 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                                         gridCols: room.gridCols,
                                         gridRows: room.gridRows,
                                         furniture: furniture,
-                                        showCoverageCone: false,
                                         selectedId: _selectedFurnitureId,
                                       ),
                                       child: const SizedBox.expand(),
@@ -554,25 +504,22 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
           style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _chip('My Room', _simVariant == BenchLayoutKind.myRoom, AppColors.cyan, () {
-              setState(() => _simVariant = BenchLayoutKind.myRoom);
-            }),
-            _chip('Improved', _simVariant == BenchLayoutKind.improved, AppColors.green, () {
-              setState(() => _simVariant = BenchLayoutKind.improved);
-            }),
-            _chip('Sample', _simVariant == BenchLayoutKind.sample, AppColors.amber, () {
-              setState(() => _simVariant = BenchLayoutKind.sample);
-            }),
-            _chip('2D', _simViz == LightingVizMode.topDown2D, AppColors.lightingColor, () {
-              setState(() => _simViz = LightingVizMode.topDown2D);
-            }),
-            _chip('3D', _simViz == LightingVizMode.orbit3D, AppColors.lightingColor, () {
-              setState(() => _simViz = LightingVizMode.orbit3D);
-            }),
+        BenchVariantChips(
+          selected: _simVariant,
+          onChanged: (v) => setState(() => _simVariant = v),
+          trailing: [
+            BenchChip(
+              label: '2D',
+              selected: _simViz == LightingVizMode.topDown2D,
+              color: AppColors.lightingColor,
+              onTap: () => setState(() => _simViz = LightingVizMode.topDown2D),
+            ),
+            BenchChip(
+              label: '3D',
+              selected: _simViz == LightingVizMode.orbit3D,
+              color: AppColors.lightingColor,
+              onTap: () => setState(() => _simViz = LightingVizMode.orbit3D),
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -629,11 +576,11 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
         const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(child: _metric('Exposure', m.exposureScore, AppColors.lightingColor)),
+            Expanded(child: BenchMetricTile(label: 'Exposure', value: m.exposureScore, color: AppColors.lightingColor)),
             const SizedBox(width: 8),
-            Expanded(child: _metric('Task light', m.taskIllumination * 100, AppColors.amber)),
+            Expanded(child: BenchMetricTile(label: 'Task light', value: m.taskIllumination * 100, color: AppColors.amber)),
             const SizedBox(width: 8),
-            Expanded(child: _metric('Shadows', m.shadowRatio * 100, AppColors.red, invert: true)),
+            Expanded(child: BenchMetricTile(label: 'Shadows', value: m.shadowRatio * 100, color: AppColors.red, invert: true)),
           ],
         ),
       ],
@@ -643,8 +590,9 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   /// Validate the layout the results header is actually showing, so the badge,
   /// the score rings, and the check rows all describe the same furniture.
   BenchmarkValidation _validationForSimVariant(AppState state) {
+    final kind = _step == _LightStep.results ? BenchLayoutKind.improved : _simVariant;
     return BenchmarkValidator.validateLayout(
-      furniture: _furnitureFor(_simVariant),
+      furniture: _furnitureFor(kind),
       gridCols: state.currentRoomData.gridCols,
       gridRows: state.currentRoomData.gridRows,
       mode: 'lighting',
@@ -657,64 +605,20 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     final base = _myRoomSim!.metrics;
     final opt = _improvedSim!.metrics;
     final sample = _sampleSim?.metrics;
-    return GlassCard(
-      borderColor: BenchResultBadge.colorFor(validation.verdict).withValues(alpha: 0.4),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text('Lighting Exposure Bench', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
-              ),
-              BenchResultBadge(validation: validation),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              ScoreRing(score: base.exposureScore, size: 78, color: AppColors.cyan, label: 'My Room'),
-              ScoreRing(score: opt.exposureScore, size: 78, color: AppColors.lightingColor, label: 'Improved'),
-              if (sample != null)
-                ScoreRing(score: sample.exposureScore, size: 78, color: AppColors.amber, label: 'Sample')
-              else
-                ScoreRing(score: state.lightingScore, size: 78, color: AppColors.green, label: 'Score'),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'Shadows ${((base.shadowRatio - opt.shadowRatio) * 100).toStringAsFixed(0)} pts · '
-            'Task light +${((opt.taskIllumination - base.taskIllumination) * 100).toStringAsFixed(0)}',
-            style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13),
-          ),
-          const SizedBox(height: 14),
-          BenchmarkValidationCard(validation: validation),
-        ],
-      ),
-    );
-  }
-
-  Widget _progressBar() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Text('Tracing daylight + task lamps', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-            const Spacer(),
-            Text('${(_progress * 100).toInt()}%', style: TextStyle(color: AppColors.lightingColor, fontSize: 12, fontWeight: FontWeight.w700)),
-          ],
-        ),
-        const SizedBox(height: 6),
-        LinearProgressIndicator(
-          value: _progress,
-          backgroundColor: AppColors.border,
-          valueColor: const AlwaysStoppedAnimation(AppColors.lightingColor),
-          minHeight: 4,
-          borderRadius: BorderRadius.circular(4),
-        ),
+    return BenchResultsCard(
+      title: 'Lighting Exposure Bench',
+      validation: validation,
+      rings: [
+        BenchScoreRingSpec(score: base.exposureScore, color: AppColors.cyan, label: 'My Room'),
+        BenchScoreRingSpec(score: opt.exposureScore, color: AppColors.lightingColor, label: 'Improved'),
+        if (sample != null)
+          BenchScoreRingSpec(score: sample.exposureScore, color: AppColors.amber, label: 'Sample')
+        else
+          BenchScoreRingSpec(score: state.lightingScore, color: AppColors.green, label: 'Score'),
       ],
+      summaryText:
+          'Shadows ${((base.shadowRatio - opt.shadowRatio) * 100).toStringAsFixed(0)} pts · '
+          'Task light +${((opt.taskIllumination - base.taskIllumination) * 100).toStringAsFixed(0)}',
     );
   }
 
@@ -740,7 +644,10 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       resetNonce: resetNonce,
       onDoubleTap: onDoubleTap,
       onDragChanged: (dragging) {
-        if (_orbitDragging != dragging) setState(() => _orbitDragging = dragging);
+        if (_orbitDragging != dragging) {
+          setState(() => _orbitDragging = dragging);
+          widget.onOrbitDraggingChanged?.call(dragging);
+        }
       },
       builder: builder,
     );
@@ -749,83 +656,4 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   // Silence unused warning — parent scroll can key off this later if needed.
   bool get isOrbitDragging => _orbitDragging;
 
-  Widget _chip(String label, bool selected, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.15) : AppColors.card,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: selected ? color : AppColors.border),
-        ),
-        child: Text(label, style: TextStyle(color: selected ? color : AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
-      ),
-    );
-  }
-
-  Widget _metric(String label, double value, Color color, {bool invert = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: [
-          Text(label, style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Text(
-            value.toStringAsFixed(0),
-            style: TextStyle(
-              color: invert && value > 25 ? AppColors.red : color,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _primaryButton(String label, String icon, VoidCallback? onTap) {
-    final disabled = onTap == null;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          gradient: disabled ? null : AppColors.accentGradient,
-          color: disabled ? AppColors.card : null,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: disabled ? AppColors.border : Colors.transparent),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SvgIcon(icon, size: 18, color: Colors.white),
-            const SizedBox(width: 8),
-            Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1.1)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _iconButton(VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: const Icon(Icons.refresh_rounded, color: AppColors.textSecondary, size: 20),
-      ),
-    );
-  }
 }
