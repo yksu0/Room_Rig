@@ -150,19 +150,13 @@ class BenchRoom2DPainter extends CustomPainter {
   final int gridCols;
   final int gridRows;
   final List<FurnitureItem> furniture;
-  final String? highlightNote;
-  final bool showCoverageCone;
   final String? selectedId;
-  final bool showLegend;
 
   BenchRoom2DPainter({
     required this.gridCols,
     required this.gridRows,
     required this.furniture,
-    this.highlightNote,
-    this.showCoverageCone = true,
     this.selectedId,
-    this.showLegend = false,
   });
 
   @override
@@ -199,51 +193,6 @@ class BenchRoom2DPainter extends CustomPainter {
       canvas.drawLine(Offset(roomRect.left, dy), Offset(roomRect.right, dy), gridPaint);
     }
 
-    FurnitureItem? ac;
-    for (final f in furniture) {
-      if (SurfaceMounts.isVent(f)) ac = f;
-    }
-
-    // Soft coverage cone from AC (into the room) — shows "max coverage" intent.
-    if (showCoverageCone && ac != null) {
-      final mount = SurfaceMounts.of(ac, gridCols: gridCols, gridRows: gridRows);
-      final span = mount.span;
-      final origin = span != null
-          ? Offset(
-              roomRect.left + ((span.x0 + span.x1) / 2) * cellW + span.inwardX * cellW * 0.35,
-              roomRect.top + ((span.z0 + span.z1) / 2) * cellH + span.inwardZ * cellH * 0.35,
-            )
-          : Offset(
-              roomRect.left + (ac.gridX + ac.width / 2) * cellW,
-              roomRect.top + (ac.gridY + ac.height / 2) * cellH,
-            );
-      // Blow toward room center from the AC wall.
-      final towardCenter = Offset(roomRect.center.dx - origin.dx, roomRect.center.dy - origin.dy);
-      final angle = math.atan2(towardCenter.dy, towardCenter.dx);
-      final reach = math.min(roomRect.width, roomRect.height) * 0.92;
-      final sweep = 1.15; // radians ~66°
-
-      final path = Path()..moveTo(origin.dx, origin.dy);
-      path.arcTo(
-        Rect.fromCircle(center: origin, radius: reach),
-        angle - sweep / 2,
-        sweep,
-        false,
-      );
-      path.close();
-      canvas.drawPath(
-        path,
-        Paint()..color = AppColors.cyan.withValues(alpha: 0.10),
-      );
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = AppColors.cyan.withValues(alpha: 0.28)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.1,
-      );
-    }
-
     BenchFurnitureRenderer.paint2D(
       canvas,
       roomRect: roomRect,
@@ -252,61 +201,11 @@ class BenchRoom2DPainter extends CustomPainter {
       furniture: furniture,
       selectedId: selectedId,
     );
-
-    if (showLegend) {
-      _paintLegend(canvas, size, roomRect);
-    }
-  }
-
-  void _paintLegend(Canvas canvas, Size size, Rect roomRect) {
-    final left = roomRect.right + 10;
-    var top = roomRect.top;
-    final title = TextPainter(
-      text: const TextSpan(
-        text: 'ITEMS',
-        style: TextStyle(color: AppColors.cyan, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.2),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    title.paint(canvas, Offset(left, top));
-    top += 16;
-
-    for (final item in furniture) {
-      final color = categoryColor(item.category);
-      canvas.drawCircle(Offset(left + 5, top + 6), 4, Paint()..color = color);
-      final tp = TextPainter(
-        text: TextSpan(
-          text: '${shortFurnitureLabel(item)}  ${item.name}',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 9, fontWeight: FontWeight.w600),
-        ),
-        textDirection: TextDirection.ltr,
-        maxLines: 1,
-        ellipsis: '…',
-      )..layout(maxWidth: size.width - left - 8);
-      tp.paint(canvas, Offset(left + 14, top));
-      top += 16;
-      if (top > roomRect.bottom - 8) break;
-    }
-
-    // Tiny coverage key.
-    top = roomRect.bottom - 28;
-    canvas.drawCircle(Offset(left + 5, top + 6), 4, Paint()..color = AppColors.cyan.withValues(alpha: 0.5));
-    final tip = TextPainter(
-      text: const TextSpan(
-        text: 'AC throw\ncoverage',
-        style: TextStyle(color: AppColors.textMuted, fontSize: 8, fontWeight: FontWeight.w600, height: 1.2),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: 70);
-    tip.paint(canvas, Offset(left + 14, top));
   }
 
   @override
   bool shouldRepaint(covariant BenchRoom2DPainter old) =>
       old.furniture != furniture ||
-      old.highlightNote != highlightNote ||
-      old.showCoverageCone != showCoverageCone ||
-      old.showLegend != showLegend ||
       old.gridCols != gridCols ||
       old.gridRows != gridRows ||
       old.selectedId != selectedId;
@@ -371,16 +270,6 @@ class BenchRoom3DPainter extends CustomPainter {
       roomHeight: roomHeight,
       furniture: furniture,
     );
-
-    // Hint that the view is orbitable.
-    final hint = TextPainter(
-      text: const TextSpan(
-        text: '1 finger orbit · 2 fingers pan + pinch · double-tap reset',
-        style: TextStyle(color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w600),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    hint.paint(canvas, Offset(12, size.height - hint.height - 10));
   }
 
   @override
@@ -1212,6 +1101,9 @@ class _BenchOrbitShellState extends State<BenchOrbitShell> {
 
     return Listener(
       behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => widget.onDragChanged?.call(true),
+      onPointerUp: (_) => widget.onDragChanged?.call(false),
+      onPointerCancel: (_) => widget.onDragChanged?.call(false),
       onPointerSignal: (signal) {
         if (signal is PointerScrollEvent) {
           setState(() {
