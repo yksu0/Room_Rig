@@ -13,6 +13,7 @@
 import 'dart:math';
 
 import '../models/room_model.dart';
+import '../models/surface_mount.dart';
 import '../widgets/furniture_shapes.dart';
 
 class LayoutOrientation {
@@ -64,9 +65,9 @@ class LayoutOrientation {
         z: item.gridY + item.height * 0.5,
       );
 
-  static FurnitureItem? _find(List<FurnitureItem> items, String id) {
+  static FurnitureItem? _first(List<FurnitureItem> items, bool Function(FurnitureItem) test) {
     for (final f in items) {
-      if (f.id == id) return f;
+      if (test(f)) return f;
     }
     return null;
   }
@@ -77,10 +78,21 @@ class LayoutOrientation {
     required int gridCols,
     required int gridRows,
   }) {
-    final desk = _find(furniture, 'desk');
-    final chair = _find(furniture, 'chair');
-    final sofa = _find(furniture, 'sofa');
-    final tv = _find(furniture, 'tv');
+    final desks = furniture.where(SurfaceMounts.isDeskHost).toList()
+      ..sort((a, b) => (b.width * b.height).compareTo(a.width * a.height));
+    final desk = desks.isEmpty ? null : desks.first;
+    final chair = _first(furniture, (f) {
+      final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
+      return f.iconName == 'chair' || hay.contains('chair') || hay.contains('seat');
+    });
+    final sofa = _first(
+      furniture,
+      (f) => f.iconName == 'sofa' || '${f.id} ${f.name}'.toLowerCase().contains('sofa'),
+    );
+    final tv = _first(
+      furniture,
+      (f) => f.iconName == 'tv' || '${f.id} ${f.name}'.toLowerCase().contains('tv'),
+    );
     final roomCx = gridCols * 0.5;
     final roomCz = gridRows * 0.5;
 
@@ -120,6 +132,7 @@ class LayoutOrientation {
           return _faceIntoRoom(item, gridCols, gridRows);
 
         case FurnitureKind.monitor:
+          // Screen faces the seated user (ISO visual display terminal posture).
           if (chair != null) {
             final u = _center(chair);
             return item.copyWith(
@@ -137,8 +150,8 @@ class LayoutOrientation {
               yawDegrees: yawToward(
                 fromX: c.x,
                 fromZ: c.z,
-                toX: d.x + (roomCx - d.x) * 0.35,
-                toZ: d.z + (roomCz - d.z) * 0.35,
+                toX: d.x,
+                toZ: d.z + desk.height,
               ),
             );
           }
