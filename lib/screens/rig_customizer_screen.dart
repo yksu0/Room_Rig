@@ -1,7 +1,9 @@
 // lib/screens/rig_customizer_screen.dart
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/rig_catalog.dart';
@@ -9,32 +11,24 @@ import '../models/room_model.dart';
 import '../models/room_scale.dart';
 import '../models/surface_mount.dart';
 import '../services/bench_layouts.dart';
-import '../services/lighting_simulator.dart';
 import '../models/scan_layout_model.dart';
 import '../services/layout_collision.dart';
 import '../theme/app_theme.dart';
-import '../widgets/empty_state.dart';
+import '../widgets/rig_customizer/rig_scan_action_button.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/furniture_shapes.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/room_orbit_projection.dart';
 import '../widgets/room_plan_geometry.dart';
+import '../widgets/rig_customizer/rig_drag_magnifier.dart';
+import '../widgets/rig_customizer/rig_furniture_cell.dart';
+import '../widgets/rig_customizer/rig_room_items_drawer.dart';
+import '../widgets/rig_customizer/room_grid_painter.dart';
+import '../widgets/rig_customizer/room_orbit_3d_painter.dart';
 
 enum _RigViewMode { twoD, threeD }
 enum _OptimizeGoal { balanced, airflow, lighting, ergonomics, spatial }
 
-/// Corners of the room-facing surface of a wall fitting, inset from the wall by
-/// [inset] grid units. Ordered bottom-start, bottom-end, top-end, top-start.
-List<OrbitVec3> _fittingFace(WallSpan span, double bottomY, double topY, double inset) {
-  final ix = span.inwardX * inset;
-  final iz = span.inwardZ * inset;
-  return [
-    OrbitVec3(span.x0 + ix, bottomY, span.z0 + iz),
-    OrbitVec3(span.x1 + ix, bottomY, span.z1 + iz),
-    OrbitVec3(span.x1 + ix, topY, span.z1 + iz),
-    OrbitVec3(span.x0 + ix, topY, span.z0 + iz),
-  ];
-}
 
 Color _categoryColor(String cat) {
   switch (cat) {
@@ -49,40 +43,6 @@ Color _categoryColor(String cat) {
   }
 }
 
-_RoomRenderItem _furnitureRenderItem({
-  required FurnitureItem item,
-  required int gridCols,
-  required int gridRows,
-  required List<FurnitureItem> furniture,
-  required Color color,
-  required bool selected,
-  bool ghost = false,
-}) {
-  final kind = FurnitureShapes.kindOf(item);
-  final mount = SurfaceMounts.of(
-    item,
-    gridCols: gridCols,
-    gridRows: gridRows,
-    furniture: furniture,
-  );
-  final yBase = (mount.isDesk || mount.isCeiling) ? mount.bottomY : 0.0;
-  return _RoomRenderItem(
-    id: item.id,
-    x: item.gridX,
-    z: item.gridY,
-    width: item.width,
-    depth: item.height,
-    yawDegrees: item.yawDegrees,
-    color: color,
-    selected: selected,
-    ghost: ghost,
-    isScanObject: false,
-    label: item.name,
-    heightY: yBase + FurnitureShapes.meshHeight(kind),
-    kind: kind,
-    mount: mount,
-  );
-}
 
 class RigCustomizerScreen extends StatefulWidget {
   const RigCustomizerScreen({super.key});
@@ -104,7 +64,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   /// Orbit pivot on the floor — two-finger drag pans this off room center.
   double? _lookAtX;
   double? _lookAtZ;
-  bool _detailsExpanded = false;
+  bool _furnitureDetailsExpanded = false;
+  bool _scanDetailsExpanded = false;
   String _sidebarQuery = '';
   String? _sidebarCategory; // null = all
   double _sidebarMinConfidence = 0; // 0, 0.5, 0.7, 0.85
@@ -118,6 +79,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
   /// Where the finger touched down in the 3D canvas, before touch slop.
   Offset? _pointerDownPos;
+
+  /// Lift preview follows the finger while dragging in 2D or 3D.
+  Offset? _dragPointerLocal;
 
   /// 2D canvas drag — unified pointer handler (matches 3D grab-offset model).
   String? _drag2dItemId;
@@ -135,7 +99,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.bg,
-      endDrawer: _buildDetectedItemsDrawer(state),
+      endDrawer: RigRoomItemsDrawer(
+        sidebarQuery: _sidebarQuery,
+        sidebarCategory: _sidebarCategory,
+        sidebarMinConfidence: _sidebarMinConfidence,
+        onQueryChanged: (v) => setState(() => _sidebarQuery = v),
+        onCategoryChanged: (cat) => setState(() => _sidebarCategory = cat),
+        onMinConfidenceChanged: (v) => setState(() => _sidebarMinConfidence = v),
+        onReplaceScanObject: (obj) => _showScanReplacePicker(state, obj),
+        onDeleteScanObject: (obj) => _deleteScanObjectWithUndo(state, obj),
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -242,12 +215,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   accent: true,
                   onTap: () => _runAutoRig(context, state),
                 ),
-                const SizedBox(width: 2),
-                _IconToolButton(
-                  icon: Icons.science_rounded,
-                  tooltip: 'Sample Room on Bench',
-                  onTap: () => _openSampleRoom(state),
-                ),
+                if (kDebugMode) ...[
+                  const SizedBox(width: 2),
+                  _IconToolButton(
+                    icon: Icons.science_rounded,
+                    tooltip: 'Sample Room on Bench',
+                    onTap: () => _openSampleRoom(state),
+                  ),
+                ],
               ],
             ),
           ),
@@ -256,7 +231,31 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  void _runAutoRig(BuildContext context, AppState state) {
+  Future<void> _runAutoRig(BuildContext context, AppState state) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Run Auto-Rig?', style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          'This will rearrange furniture based on your current optimization goal.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Run'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final beforeFp = BenchLayoutBuilder.fingerprintOf(state.furniture);
     final goal = switch (_optimizeGoal) {
       _OptimizeGoal.airflow => 'airflow',
       _OptimizeGoal.lighting => 'lighting',
@@ -269,6 +268,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     } else {
       state.runOptimization(goal: goal);
     }
+    if (BenchLayoutBuilder.fingerprintOf(state.furniture) == beforeFp) return;
+    if (!mounted) return;
+
     final mix = state.optimizeWeights.summaryLabel;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -334,6 +336,66 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     var deg = (_cameraYawRad * 180 / math.pi) % 360;
     if (deg < 0) deg += 360;
     return deg.round() % 360;
+  }
+
+  double _roomHeightMeters(AppState state) {
+    final layout = state.activeRoomLayout;
+    if (layout != null && layout.dimensions.heightMeters > 0) {
+      return layout.dimensions.heightMeters;
+    }
+    return state.currentRoomData.heightMeters;
+  }
+
+  ({double gridX, double gridY, double width, double depth}) _scanObjectGridFootprint(
+    AppState state,
+    ScanObject obj,
+  ) {
+    final gridCols = state.currentRoomData.gridCols;
+    final gridRows = state.currentRoomData.gridRows;
+    final roomLayout = state.activeRoomLayout;
+    final roomLengthMeters = roomLayout?.dimensions.lengthMeters ?? gridCols.toDouble();
+    final roomWidthMeters = roomLayout?.dimensions.widthMeters ?? gridRows.toDouble();
+    final metersPerGridX = roomLengthMeters <= 0 ? 1.0 : roomLengthMeters / gridCols;
+    final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / gridRows;
+    return (
+      gridX: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
+          .clamp(0.0, gridCols.toDouble()),
+      gridY: ((obj.center.z - obj.sizeMeters.z * 0.5) / metersPerGridZ)
+          .clamp(0.0, gridRows.toDouble()),
+      width: (obj.sizeMeters.x / metersPerGridX).clamp(0.35, gridCols.toDouble()),
+      depth: (obj.sizeMeters.z / metersPerGridZ).clamp(0.35, gridRows.toDouble()),
+    );
+  }
+
+  Rect _scanObjectPlanRect(ScanObject obj, Rect roomRect, AppState state) {
+    final gridCols = state.currentRoomData.gridCols;
+    final gridRows = state.currentRoomData.gridRows;
+    final fp = _scanObjectGridFootprint(state, obj);
+    final cw = RoomPlanGeometry.cellW(roomRect, gridCols);
+    final ch = RoomPlanGeometry.cellH(roomRect, gridRows);
+    return Rect.fromLTWH(
+      roomRect.left + fp.gridX * cw,
+      roomRect.top + fp.gridY * ch,
+      fp.width * cw,
+      fp.depth * ch,
+    );
+  }
+
+  ScanObject? _hitScanObject2D(Offset local, Rect roomRect, AppState state) {
+    if (!roomRect.contains(local)) return null;
+    final furnitureIds = state.furniture.map((f) => f.id).toSet();
+    final orphans = state.detectedScanObjects
+        .where((obj) => !furnitureIds.contains(obj.id) && !obj.hidden)
+        .toList()
+      ..sort(
+        (a, b) => (a.sizeMeters.x * a.sizeMeters.z).compareTo(b.sizeMeters.x * b.sizeMeters.z),
+      );
+    for (final obj in orphans) {
+      if (_scanObjectPlanRect(obj, roomRect, state).inflate(4).contains(local)) {
+        return obj;
+      }
+    }
+    return null;
   }
 
   void _toast(String message, {bool ok = true}) {
@@ -497,6 +559,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       state.currentRoomData.gridCols,
       state.currentRoomData.gridRows,
     );
+    setState(() => _dragPointerLocal = local);
     state.moveFurniture(id, grid.dx - grab.dx, grid.dy - grab.dy);
   }
 
@@ -508,6 +571,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     _drag2dGrab = null;
     _drag2dPointerDown = null;
     _drag2dGestureStarted = false;
+    _dragPointerLocal = null;
   }
 
   void _finishPointer2D(
@@ -543,7 +607,12 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         _showStructuralLockedHint(context);
       }
     } else {
-      state.clearSelection();
+      final scanHit = _hitScanObject2D(local, roomRect, state);
+      if (scanHit != null) {
+        state.selectScanObject(scanHit.id, toggle: true);
+      } else {
+        state.clearSelection();
+      }
     }
   }
 
@@ -607,73 +676,125 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               },
               onPointerUp: (e) => _finishPointer2D(e.localPosition, roomRect, state, mounts),
               onPointerCancel: (e) => _finishPointer2D(e.localPosition, roomRect, state, mounts),
-              child: Stack(
-                  children: [
-                    CustomPaint(
-                      size: canvasSize,
-                      painter: _RoomGridPainter(
-                        gridCols: gridCols,
-                        gridRows: gridRows,
-                        roomRect: roomRect,
-                        coverage: coverage,
-                        lengthMeters: state.activeRoomLayout?.dimensions.lengthMeters ??
-                            RoomScale.metersFromCells(gridCols),
-                        widthMeters: state.activeRoomLayout?.dimensions.widthMeters ??
-                            RoomScale.metersFromCells(gridRows),
-                        fittings: [
-                          for (final item in visible)
-                            if (mounts[item.id]!.isWall)
-                              (
-                                mount: mounts[item.id]!,
-                                selected: state.selectedItemId == item.id && !state.selectedIsScanObject,
-                              ),
-                        ],
-                      ),
-                    ),
-                    ...visible.map((item) {
-                      final isSelected = state.selectedItemId == item.id && !state.selectedIsScanObject;
-                      final mount = mounts[item.id]!;
-                      if (mount.isWall && mount.span != null) {
-                        return _buildWallFitting2D(
-                          state: state,
-                          item: item,
-                          mount: mount,
-                          isSelected: isSelected,
-                          hasConflict: conflictIds.contains(item.id),
-                          roomRect: roomRect,
-                          cellW: cellW,
-                          cellH: cellH,
-                        );
-                      }
-                      final itemRect = RoomPlanGeometry.itemRect(item, roomRect, gridCols, gridRows);
-                      final cellWidth = itemRect.width * 0.9;
-                      final cellHeight = itemRect.height * 0.9;
-                      return Positioned(
-                        key: ValueKey('rig2d_${item.id}'),
-                        left: itemRect.left + itemRect.width * 0.05,
-                        top: itemRect.top + itemRect.height * 0.05,
-                        width: cellWidth,
-                        height: cellHeight,
-                        child: IgnorePointer(
-                          child: Opacity(
-                            opacity: state.isPendingPlacement(item.id)
-                                ? 0.42
-                                : (item.locked ||
-                                        (!state.invasiveEdit && SurfaceMounts.isStructuralMount(item))
-                                    ? 0.85
-                                    : 1),
-                            child: _FurnitureCell(
-                              item: item,
-                              isSelected: isSelected,
-                              hasConflict: conflictIds.contains(item.id) ||
-                                  (isSelected && state.dragPoseBlocked),
-                            ),
+              child: Builder(
+                builder: (context) {
+                  Widget buildScene() {
+                    return Stack(
+                      children: [
+                        CustomPaint(
+                          size: canvasSize,
+                          painter: RoomGridPainter(
+                            gridCols: gridCols,
+                            gridRows: gridRows,
+                            roomRect: roomRect,
+                            coverage: coverage,
+                            lengthMeters: state.activeRoomLayout?.dimensions.lengthMeters ??
+                                RoomScale.metersFromCells(gridCols),
+                            widthMeters: state.activeRoomLayout?.dimensions.widthMeters ??
+                                RoomScale.metersFromCells(gridRows),
+                            fittings: [
+                              for (final item in visible)
+                                if (mounts[item.id]!.isWall)
+                                  (
+                                    mount: mounts[item.id]!,
+                                    selected: state.selectedItemId == item.id && !state.selectedIsScanObject,
+                                  ),
+                            ],
                           ),
                         ),
-                      );
-                    }),
-                  ],
-                ),
+                        ...visible.map((item) {
+                          final isSelected = state.selectedItemId == item.id && !state.selectedIsScanObject;
+                          final mount = mounts[item.id]!;
+                          if (mount.isWall && mount.span != null) {
+                            return _buildWallFitting2D(
+                              state: state,
+                              item: item,
+                              mount: mount,
+                              isSelected: isSelected,
+                              hasConflict: conflictIds.contains(item.id),
+                              roomRect: roomRect,
+                              cellW: cellW,
+                              cellH: cellH,
+                            );
+                          }
+                          final itemRect = RoomPlanGeometry.itemRect(item, roomRect, gridCols, gridRows);
+                          final cellWidth = itemRect.width * 0.9;
+                          final cellHeight = itemRect.height * 0.9;
+                          return Positioned(
+                            key: ValueKey('rig2d_${item.id}'),
+                            left: itemRect.left + itemRect.width * 0.05,
+                            top: itemRect.top + itemRect.height * 0.05,
+                            width: cellWidth,
+                            height: cellHeight,
+                            child: IgnorePointer(
+                              child: Opacity(
+                                opacity: state.isPendingPlacement(item.id)
+                                    ? 0.42
+                                    : (item.locked ||
+                                            (!state.invasiveEdit && SurfaceMounts.isStructuralMount(item))
+                                        ? 0.85
+                                        : 1),
+                                child: RigFurnitureCell(
+                                  item: item,
+                                  isSelected: isSelected,
+                                  hasConflict: conflictIds.contains(item.id) ||
+                                      (isSelected && state.dragPoseBlocked),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                        ...() {
+                          final furnitureIds = state.furniture.map((f) => f.id).toSet();
+                          return state.detectedScanObjects
+                              .where((obj) => !furnitureIds.contains(obj.id) && !obj.hidden)
+                              .map((obj) {
+                            final fp = _scanObjectGridFootprint(state, obj);
+                            final itemRect = Rect.fromLTWH(
+                              roomRect.left + fp.gridX * cellW,
+                              roomRect.top + fp.gridY * cellH,
+                              fp.width * cellW,
+                              fp.depth * cellH,
+                            );
+                            final isSelected =
+                                state.selectedItemId == obj.id && state.selectedIsScanObject;
+                            return Positioned(
+                              key: ValueKey('rig2d_scan_${obj.id}'),
+                              left: itemRect.left,
+                              top: itemRect.top,
+                              width: itemRect.width,
+                              height: itemRect.height,
+                              child: IgnorePointer(
+                                child: Opacity(
+                                  opacity: obj.locked ? 0.85 : 1,
+                                  child: RigScanObject2DCell(
+                                    color: _categoryColor(obj.category),
+                                    isSelected: isSelected,
+                                    label: obj.label,
+                                  ),
+                                ),
+                              ),
+                            );
+                          });
+                        }(),
+                      ],
+                    );
+                  }
+
+                  return Stack(
+                    children: [
+                      buildScene(),
+                      if (_drag2dGestureStarted && _dragPointerLocal != null)
+                        RigDragMagnifier(
+                          focalPoint: _dragPointerLocal!,
+                          canvasSize: canvasSize,
+                          blocked: state.dragPoseBlocked,
+                          scene: buildScene(),
+                        ),
+                    ],
+                  );
+                },
+              ),
             );
           },
         ),
@@ -704,10 +825,12 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             final metersPerGridX = roomLengthMeters <= 0 ? 1.0 : roomLengthMeters / gridCols;
             final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / gridRows;
 
+            final roomHeight = _roomHeightMeters(state);
+
             final presetItems = state.furniture
                 .where((item) => !item.hidden)
                 .map(
-                  (item) => _furnitureRenderItem(
+                  (item) => furnitureRenderItem(
                     item: item,
                     gridCols: gridCols,
                     gridRows: gridRows,
@@ -724,7 +847,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             final detectedItems = state.detectedScanObjects
                 .where((obj) => !furnitureIds.contains(obj.id) && !obj.hidden)
                 .map(
-                  (obj) => _RoomRenderItem(
+                  (obj) => RoomRenderItem(
                     id: 'scan_${obj.id}',
                     x: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
                         .clamp(0.0, gridCols.toDouble()),
@@ -741,7 +864,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 )
                 .toList();
 
-            final renderItems = <_RoomRenderItem>[...presetItems, ...detectedItems];
+            final renderItems = <RoomRenderItem>[...presetItems, ...detectedItems];
 
             return Listener(
               behavior: HitTestBehavior.opaque,
@@ -762,6 +885,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 }
                 final dragId = _dragItemId;
                 if (dragId != null) {
+                  setState(() => _dragPointerLocal = pos);
                   _updateDrag3D(dragId, pos, canvasSize, state);
                 }
               },
@@ -812,7 +936,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       final pose = CameraPose(
                         roomWidth: cols,
                         roomDepth: rows,
-                        roomHeight: 2.8,
+                        roomHeight: roomHeight,
                         yaw: _cameraYawRad,
                         pitch: _cameraPitchRad,
                         distance: _cameraDistance,
@@ -843,21 +967,40 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 },
                 child: Stack(
                 children: [
-                  CustomPaint(
-                    size: Size(w, h),
-                    painter: _RoomOrbit3DPainter(
-                      roomWidth: gridCols.toDouble(),
-                      roomDepth: gridRows.toDouble(),
-                      roomHeight: 2.8,
-                      gridCols: gridCols,
-                      gridRows: gridRows,
-                      yaw: _cameraYawRad,
-                      pitch: _cameraPitchRad,
-                      distance: _cameraDistance,
-                      lookAtX: _lookAtX,
-                      lookAtZ: _lookAtZ,
-                      items: renderItems,
-                    ),
+                  Builder(
+                    builder: (context) {
+                      Widget buildScene() {
+                        return CustomPaint(
+                          size: Size(w, h),
+                          painter: RoomOrbit3DPainter(
+                            roomWidth: gridCols.toDouble(),
+                            roomDepth: gridRows.toDouble(),
+                            roomHeight: roomHeight,
+                            gridCols: gridCols,
+                            gridRows: gridRows,
+                            yaw: _cameraYawRad,
+                            pitch: _cameraPitchRad,
+                            distance: _cameraDistance,
+                            lookAtX: _lookAtX,
+                            lookAtZ: _lookAtZ,
+                            items: renderItems,
+                          ),
+                        );
+                      }
+
+                      return Stack(
+                        children: [
+                          buildScene(),
+                          if (_dragItemId != null && _dragPointerLocal != null)
+                            RigDragMagnifier(
+                              focalPoint: _dragPointerLocal!,
+                              canvasSize: Size(w, h),
+                              blocked: state.dragPoseBlocked,
+                              scene: buildScene(),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                   Positioned(
                     top: 8,
@@ -876,7 +1019,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     ),
                   ),
                   Positioned(
-                    top: 8,
+                    top: 40,
                     right: 10,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -904,7 +1047,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       child: Text(
                         state.selectedFurniture != null
                             ? 'Drag item · Facing buttons aim fans / coolers / heaters'
-                            : 'Drag to orbit · select an item to move or aim it',
+                            : 'Select an item, then drag to move it',
                         style: const TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
                       ),
                     ),
@@ -967,7 +1110,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   /// outside a tiny face, and a neighbor in front can win the strict pick.
   bool _pointerNearSelected(FurnitureItem item, Offset localPos, Size size, AppState state) {
     final cam = _cameraFor(state);
-    final render = _furnitureRenderItem(
+    final render = furnitureRenderItem(
       item: item,
       gridCols: state.currentRoomData.gridCols,
       gridRows: state.currentRoomData.gridRows,
@@ -1004,12 +1147,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     _dragItemId = null;
     _dragGrabOffset = null;
     _pointerDownPos = null;
+    _dragPointerLocal = null;
   }
 
   CameraPose _cameraFor(AppState state) => CameraPose(
         roomWidth: state.currentRoomData.gridCols.toDouble(),
         roomDepth: state.currentRoomData.gridRows.toDouble(),
-        roomHeight: 2.8,
+        roomHeight: _roomHeightMeters(state),
         yaw: _cameraYawRad,
         pitch: _cameraPitchRad,
         distance: _cameraDistance,
@@ -1017,10 +1161,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         lookAtZ: _lookAtZ,
       );
 
-  _PickedEntity? _pickItemIn3D(Offset localPos, Size size, AppState state) {
+  PickedEntity? _pickItemIn3D(Offset localPos, Size size, AppState state) {
     final cam = _cameraFor(state);
 
-    _PickedEntity? best;
+    PickedEntity? best;
     double bestDepth = double.infinity;
 
     final roomLayout = state.activeRoomLayout;
@@ -1030,9 +1174,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / state.currentRoomData.gridRows;
 
     final furnitureIds = state.furniture.map((f) => f.id).toSet();
-    final pickItems = <_RoomRenderItem>[
+    final pickItems = <RoomRenderItem>[
       ...state.furniture.map(
-        (item) => _furnitureRenderItem(
+        (item) => furnitureRenderItem(
           item: item,
           gridCols: state.currentRoomData.gridCols,
           gridRows: state.currentRoomData.gridRows,
@@ -1042,7 +1186,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         ),
       ),
       ...state.detectedScanObjects.where((obj) => !furnitureIds.contains(obj.id)).map(
-        (obj) => _RoomRenderItem(
+        (obj) => RoomRenderItem(
           id: obj.id,
           x: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
               .clamp(0.0, state.currentRoomData.gridCols.toDouble()),
@@ -1064,14 +1208,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         final path = Path()..addPolygon(face.points, true);
         if (path.contains(localPos) && face.depth < bestDepth) {
           bestDepth = face.depth;
-          best = _PickedEntity(id: item.id, isScanObject: item.isScanObject);
+          best = PickedEntity(id: item.id, isScanObject: item.isScanObject);
         }
       }
     }
 
     if (best != null) return best;
 
-    _PickedEntity? fallback;
+    PickedEntity? fallback;
     double fallbackDist = 24;
     for (final item in pickItems) {
       final point = RoomProjection.project(_pickAnchor(item), size, cam);
@@ -1079,7 +1223,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       final distance = (point.offset - localPos).distance;
       if (distance < fallbackDist) {
         fallbackDist = distance;
-        fallback = _PickedEntity(id: item.id, isScanObject: item.isScanObject);
+        fallback = PickedEntity(id: item.id, isScanObject: item.isScanObject);
       }
     }
     return fallback;
@@ -1087,14 +1231,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
   /// Tap targets follow the same geometry the painter uses, so a wall AC is
   /// tappable where it is drawn rather than where its floor cell would be.
-  List<ProjectedFace> _pickFaces(_RoomRenderItem item, Size size, CameraPose cam) {
+  List<ProjectedFace> _pickFaces(RoomRenderItem item, Size size, CameraPose cam) {
     final mount = item.mount;
     final span = mount.span;
     final faces = <RoomFace>[];
 
     if (mount.isWall && span != null) {
-      final inner = _fittingFace(span, mount.bottomY, mount.topY, mount.protrusion);
-      final outer = _fittingFace(span, mount.bottomY, mount.topY, 0);
+      final inner = fittingFace(span, mount.bottomY, mount.topY, mount.protrusion);
+      final outer = fittingFace(span, mount.bottomY, mount.topY, 0);
       faces.add(RoomFace(inner, Colors.white));
       faces.add(RoomFace([outer[0], inner[0], inner[1], outer[1]], Colors.white));
       faces.add(RoomFace([outer[3], inner[3], inner[2], outer[2]], Colors.white));
@@ -1151,7 +1295,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     return out;
   }
 
-  OrbitVec3 _pickAnchor(_RoomRenderItem item) {
+  OrbitVec3 _pickAnchor(RoomRenderItem item) {
     final mount = item.mount;
     final span = mount.span;
     if (mount.isWall && span != null) {
@@ -1175,418 +1319,15 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
 
-  Widget _buildDetectedItemsDrawer(AppState state) {
-    final scanObjects = state.detectedScanObjects;
-    final q = _sidebarQuery.trim().toLowerCase();
-    bool matchesQuery(String name, String category, String id) {
-      if (q.isEmpty) return true;
-      return name.toLowerCase().contains(q) ||
-          category.toLowerCase().contains(q) ||
-          id.toLowerCase().contains(q);
-    }
-
-    bool matchesCategory(String category) {
-      final filter = _sidebarCategory;
-      if (filter == null) return true;
-      return category.toLowerCase() == filter;
-    }
-
-    final layoutItems = state.furniture.where((item) {
-      if (!matchesQuery(item.name, item.category, item.id)) return false;
-      if (!matchesCategory(item.category)) return false;
-      final conf = state.confidenceForFurniture(item.id) ?? 0.95;
-      return conf >= _sidebarMinConfidence;
-    }).toList(growable: false);
-
-    final filteredScan = scanObjects.where((obj) {
-      if (!matchesQuery(obj.label, obj.category, obj.id)) return false;
-      if (!matchesCategory(obj.category)) return false;
-      return obj.confidence >= _sidebarMinConfidence;
-    }).toList(growable: false);
-
-    return Drawer(
-      backgroundColor: AppColors.surface,
-      width: 320,
-      child: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 12, 8),
-              child: Row(
-                children: [
-                  Text(
-                    'ROOM ITEMS',
-                    style: TextStyle(color: AppColors.cyan, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${layoutItems.length + filteredScan.length}/${state.furniture.length + scanObjects.length}',
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: TextField(
-                onChanged: (v) => setState(() => _sidebarQuery = v),
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: 'Search name or category',
-                  hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 12),
-                  prefixIcon: Icon(Icons.search_rounded, color: AppColors.textMuted, size: 18),
-                  isDense: true,
-                  filled: true,
-                  fillColor: AppColors.card,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: AppColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: AppColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.7)),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final cat in const [null, 'airflow', 'lighting', 'ergonomics', 'neutral'])
-                    _SidebarFilterChip(
-                      label: cat ?? 'All',
-                      active: _sidebarCategory == cat,
-                      onTap: () => setState(() => _sidebarCategory = cat),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final entry in const [
-                    (0.0, 'Any %'),
-                    (0.5, '≥50%'),
-                    (0.7, '≥70%'),
-                    (0.85, '≥85%'),
-                  ])
-                    _SidebarFilterChip(
-                      label: entry.$2,
-                      active: (_sidebarMinConfidence - entry.$1).abs() < 0.001,
-                      onTap: () => setState(() => _sidebarMinConfidence = entry.$1),
-                    ),
-                ],
-              ),
-            ),
-            const Divider(color: AppColors.border, height: 1),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
-                children: [
-                  Text(
-                    'LAYOUT ITEMS',
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5),
-                  ),
-                  const SizedBox(height: 8),
-                  if (layoutItems.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Text('No layout items match filters.', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-                    )
-                  else
-                    ...layoutItems.map((item) {
-                      final isSelected = state.selectedItemId == item.id && !state.selectedIsScanObject;
-                      final catColor = _categoryColor(item.category);
-                      final conf = state.confidenceForFurniture(item.id);
-                      final confLabel = conf == null ? '—' : '${(conf * 100).round()}%';
-                      final canDelete = item.iconName != 'door' &&
-                          item.iconName != 'window' &&
-                          (state.invasiveEdit || !SurfaceMounts.isStructuralMount(item));
-                      final structuralFixed =
-                          !state.invasiveEdit && SurfaceMounts.isStructuralMount(item);
-
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: isSelected ? catColor.withValues(alpha: 0.12) : AppColors.card,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isSelected ? catColor : AppColors.border,
-                              width: isSelected ? 1.4 : 1,
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  state.selectFurniture(item.id, toggle: true);
-                                  Navigator.of(context).pop();
-                                },
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 36,
-                                      height: 36,
-                                      decoration: BoxDecoration(
-                                        color: catColor.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Center(
-                                        child: Opacity(
-                                          opacity: item.hidden ? 0.35 : 1,
-                                          child: SvgIcon(
-                                            furnitureSvgFor(item.iconName),
-                                            size: 18,
-                                            color: catColor,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(item.name, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            '${item.category.toUpperCase()}  •  ${item.statusLabel}  •  $confLabel'
-                                            '${structuralFixed ? '  •  FIXED' : ''}',
-                                            style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (item.locked || structuralFixed)
-                                      const Padding(
-                                        padding: EdgeInsets.only(right: 4),
-                                        child: Icon(Icons.lock_rounded, size: 14, color: AppColors.amber),
-                                      ),
-                                    if (item.hidden)
-                                      const Icon(Icons.visibility_off_rounded, size: 14, color: AppColors.textMuted),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  _ScanActionButton(
-                                    icon: item.hidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                                    label: item.hidden ? 'Show' : 'Hide',
-                                    color: AppColors.textSecondary,
-                                    onTap: () => state.toggleFurnitureHidden(item.id),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _ScanActionButton(
-                                    icon: item.locked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                                    label: item.locked ? 'Unlock' : 'Lock',
-                                    color: item.locked ? AppColors.amber : AppColors.textSecondary,
-                                    onTap: () => state.toggleFurnitureLock(item.id),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _ScanActionButton(
-                                    icon: Icons.copy_rounded,
-                                    label: 'Dup',
-                                    color: AppColors.cyan,
-                                    onTap: () {
-                                      state.duplicateFurniture(item.id);
-                                      Navigator.of(context).pop();
-                                    },
-                                  ),
-                                  if (canDelete) ...[
-                                    const SizedBox(width: 6),
-                                    _ScanActionButton(
-                                      icon: Icons.delete_outline_rounded,
-                                      label: 'Del',
-                                      color: AppColors.red,
-                                      onTap: () => state.deleteFurniture(item.id),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                  const SizedBox(height: 6),
-                  Text(
-                    'SCAN OBJECTS',
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5),
-                  ),
-                  const SizedBox(height: 8),
-                  if (filteredScan.isEmpty)
-                    EmptyState(
-                      iconSvg: RoomSvg.scan,
-                      title: scanObjects.isEmpty ? 'No scan objects yet' : 'No matches',
-                      message: scanObjects.isEmpty
-                          ? 'Run a room scan to detect furniture with confidence scores. Layout items stay available above.'
-                          : 'Try a different filter.',
-                      actionLabel: scanObjects.isEmpty ? 'Go to Scan' : null,
-                      onAction: scanObjects.isEmpty
-                          ? () {
-                              Navigator.of(context).pop();
-                              state.setTab(1);
-                            }
-                          : null,
-                    )
-                  else
-                    ...filteredScan.map((obj) {
-                      final isSelected = state.selectedItemId == obj.id && state.selectedIsScanObject;
-                      final catColor = _categoryColor(obj.category);
-                      final status = [
-                        if (obj.hidden) 'Hidden',
-                        if (obj.locked) 'Locked',
-                        if (!obj.hidden && !obj.locked) 'Active',
-                      ].join(' · ');
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: isSelected ? catColor.withValues(alpha: 0.12) : AppColors.card,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isSelected ? catColor : catColor.withValues(alpha: 0.55),
-                              width: isSelected ? 1.4 : 1,
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  state.selectScanObject(obj.id, toggle: true);
-                                  Navigator.of(context).pop();
-                                },
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 36,
-                                      height: 36,
-                                      decoration: BoxDecoration(
-                                        color: catColor.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Center(
-                                        child: Opacity(
-                                          opacity: obj.hidden ? 0.35 : 1,
-                                          child: Icon(Icons.view_in_ar_rounded, size: 18, color: catColor),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(obj.label, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            '${obj.category.toUpperCase()}  •  $status',
-                                            style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.green.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        '${(obj.confidence * 100).round()}%',
-                                        style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.w700),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  _ScanActionButton(
-                                    icon: obj.hidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                                    label: obj.hidden ? 'Show' : 'Hide',
-                                    color: AppColors.textSecondary,
-                                    onTap: () => state.toggleDetectedScanObjectHidden(obj.id),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _ScanActionButton(
-                                    icon: obj.locked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                                    label: obj.locked ? 'Unlock' : 'Lock',
-                                    color: obj.locked ? AppColors.amber : AppColors.textSecondary,
-                                    onTap: () => state.toggleDetectedScanObjectLock(obj.id),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _ScanActionButton(
-                                    icon: Icons.copy_rounded,
-                                    label: 'Dup',
-                                    color: AppColors.cyan,
-                                    onTap: () {
-                                      state.duplicateDetectedScanObject(obj.id);
-                                      Navigator.of(context).pop();
-                                    },
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  _ScanActionButton(
-                                    icon: Icons.swap_horiz_rounded,
-                                    label: 'Replace',
-                                    color: AppColors.cyan,
-                                    onTap: () => _showScanReplacePicker(state, obj),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  _ScanActionButton(
-                                    icon: Icons.delete_outline_rounded,
-                                    label: 'Del',
-                                    color: AppColors.red,
-                                    onTap: () => _deleteScanObjectWithUndo(state, obj),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Future<void> _showScanReplacePicker(AppState state, ScanObject obj) async {
-    final templates = <String, List<String>>{
-      'ergonomics': ['Office Chair', 'Standing Desk', 'Monitor Stand', 'Keyboard Tray'],
-      'lighting': ['Floor Lamp', 'Task Light', 'Window', 'Ceiling Light'],
-      'airflow': ['Tower Fan', 'Air Purifier', 'Vent Unit', 'AC Outlet'],
-      'neutral': ['Storage Cabinet', 'Side Table', 'Shelf Unit', 'Decor Piece'],
-    };
+    final catalog = RigCatalog.items.where((e) => e.category == obj.category).toList();
+    if (catalog.isEmpty) {
+      _toast('No catalog items for ${obj.category}', ok: false);
+      return;
+    }
 
-    final category = obj.category;
-    final options = templates[category] ?? ['Generic Item', 'Storage Unit', 'Desk Accessory'];
-
-    final selected = await showModalBottomSheet<String>(
+    final selected = await showModalBottomSheet<RigCatalogEntry>(
       context: context,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
@@ -1610,13 +1351,20 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   style: const TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 12),
-                ...options.map(
-                  (option) => ListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                    leading: Icon(Icons.swap_horiz_rounded, color: AppColors.cyan),
-                    title: Text(option, style: const TextStyle(color: AppColors.textPrimary)),
-                    onTap: () => Navigator.of(context).pop(option),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: catalog
+                        .map(
+                          (entry) => ListTile(
+                            dense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                            leading: Icon(Icons.swap_horiz_rounded, color: AppColors.cyan),
+                            title: Text(entry.name, style: const TextStyle(color: AppColors.textPrimary)),
+                            onTap: () => Navigator.of(context).pop(entry),
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
               ],
@@ -1627,32 +1375,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
 
     if (selected == null || !mounted) return;
-    final previousLabel = obj.label;
-    final previousCategory = obj.category;
-
-    state.replaceDetectedScanObject(
-      obj.id,
-      newLabel: selected,
-      newCategory: category,
-    );
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('Replaced "$previousLabel" with "$selected"'),
-          action: SnackBarAction(
-            label: 'Undo',
-            onPressed: () {
-              state.replaceDetectedScanObject(
-                obj.id,
-                newLabel: previousLabel,
-                newCategory: previousCategory,
-              );
-            },
-          ),
-        ),
-      );
+    state.replaceScanObjectWithCatalog(obj.id, selected);
   }
 
   void _deleteScanObjectWithUndo(AppState state, ScanObject obj) {
@@ -2062,10 +1785,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  tooltip: _detailsExpanded ? 'Hide details' : 'Show details',
-                  onPressed: () => setState(() => _detailsExpanded = !_detailsExpanded),
+                  tooltip: _furnitureDetailsExpanded ? 'Hide details' : 'Show details',
+                  onPressed: () => setState(() => _furnitureDetailsExpanded = !_furnitureDetailsExpanded),
                   icon: Icon(
-                    _detailsExpanded ? Icons.expand_more_rounded : Icons.info_outline_rounded,
+                    _furnitureDetailsExpanded ? Icons.expand_more_rounded : Icons.info_outline_rounded,
                     size: 20,
                     color: AppColors.textMuted,
                   ),
@@ -2084,7 +1807,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             _buildFacingStrip(state, item),
             const SizedBox(height: 8),
             _buildSizeStrip(state, item),
-            if (_detailsExpanded) ...[
+            if (_furnitureDetailsExpanded) ...[
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -2144,10 +1867,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  tooltip: _detailsExpanded ? 'Hide details' : 'Show details',
-                  onPressed: () => setState(() => _detailsExpanded = !_detailsExpanded),
+                  tooltip: _scanDetailsExpanded ? 'Hide details' : 'Show details',
+                  onPressed: () => setState(() => _scanDetailsExpanded = !_scanDetailsExpanded),
                   icon: Icon(
-                    _detailsExpanded ? Icons.expand_more_rounded : Icons.info_outline_rounded,
+                    _scanDetailsExpanded ? Icons.expand_more_rounded : Icons.info_outline_rounded,
                     size: 20,
                     color: AppColors.textMuted,
                   ),
@@ -2162,7 +1885,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 ),
               ],
             ),
-            if (_detailsExpanded) ...[
+            if (_scanDetailsExpanded) ...[
               const SizedBox(height: 8),
               Text(
                 '${obj.sizeMeters.x.toStringAsFixed(2)}m × ${obj.sizeMeters.z.toStringAsFixed(2)}m × ${obj.sizeMeters.y.toStringAsFixed(2)}m'
@@ -2170,6 +1893,49 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
             ],
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                RigScanActionButton(
+                  icon: Icons.upload_rounded,
+                  label: 'Promote',
+                  color: AppColors.green,
+                  onTap: () => state.promoteScanObject(obj.id),
+                ),
+                const SizedBox(width: 6),
+                RigScanActionButton(
+                  icon: Icons.swap_horiz_rounded,
+                  label: 'Replace',
+                  color: AppColors.cyan,
+                  onTap: () => _showScanReplacePicker(state, obj),
+                ),
+                const SizedBox(width: 6),
+                RigScanActionButton(
+                  icon: obj.hidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                  label: obj.hidden ? 'Show' : 'Hide',
+                  color: AppColors.textSecondary,
+                  onTap: () => state.toggleDetectedScanObjectHidden(obj.id),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                RigScanActionButton(
+                  icon: obj.locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                  label: obj.locked ? 'Unlock' : 'Lock',
+                  color: obj.locked ? AppColors.amber : AppColors.textSecondary,
+                  onTap: () => state.toggleDetectedScanObjectLock(obj.id),
+                ),
+                const SizedBox(width: 6),
+                RigScanActionButton(
+                  icon: Icons.delete_outline_rounded,
+                  label: 'Delete',
+                  color: AppColors.red,
+                  onTap: () => _deleteScanObjectWithUndo(state, obj),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -2177,118 +1943,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 }
 
-class _FurnitureCell extends StatelessWidget {
-  final FurnitureItem item;
-  final bool isSelected;
-  final bool hasConflict;
-  const _FurnitureCell({
-    required this.item,
-    required this.isSelected,
-    this.hasConflict = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = hasConflict
-        ? AppColors.red
-        : switch (item.category) {
-            'airflow' => AppColors.airflowColor,
-            'lighting' => AppColors.lightingColor,
-            'ergonomics' => AppColors.ergonomicsColor,
-            _ => AppColors.textMuted,
-          };
-    final kind = FurnitureShapes.kindOf(item);
-    return CustomPaint(
-      painter: _FurniturePlanPainter(
-        kind: kind,
-        color: color,
-        selected: isSelected,
-        hasConflict: hasConflict,
-        yawDegrees: item.yawDegrees,
-        showFacing: FurnitureShapes.showsFacing(kind),
-      ),
-    );
-  }
-}
-
-class _FurniturePlanPainter extends CustomPainter {
-  final FurnitureKind kind;
-  final Color color;
-  final bool selected;
-  final bool hasConflict;
-  final double yawDegrees;
-  final bool showFacing;
-
-  _FurniturePlanPainter({
-    required this.kind,
-    required this.color,
-    required this.selected,
-    required this.hasConflict,
-    required this.yawDegrees,
-    required this.showFacing,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    FurnitureShapes.paintPlan(
-      canvas,
-      size,
-      kind,
-      color,
-      selected: selected,
-      hasConflict: hasConflict,
-      yawDegrees: yawDegrees,
-    );
-    if (showFacing) {
-      _FacingChevronPainter(
-        color: selected ? AppColors.cyan : color,
-        yawDegrees: yawDegrees,
-      ).paint(canvas, size);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _FurniturePlanPainter old) =>
-      old.kind != kind ||
-      old.color != color ||
-      old.selected != selected ||
-      old.hasConflict != hasConflict ||
-      old.yawDegrees != yawDegrees ||
-      old.showFacing != showFacing;
-}
-
-class _FacingChevronPainter extends CustomPainter {
-  final Color color;
-  final double yawDegrees;
-  _FacingChevronPainter({required this.color, required this.yawDegrees});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width * 0.5;
-    final cy = size.height * 0.5;
-    final rad = yawDegrees * math.pi / 180.0;
-    // Plan: yaw 0° → +Z → down the screen.
-    final dirX = math.sin(rad);
-    final dirY = math.cos(rad);
-    final reach = math.min(size.width, size.height) * 0.48;
-    final tip = Offset(cx + dirX * reach, cy + dirY * reach);
-    final back = Offset(cx + dirX * reach * 0.15, cy + dirY * reach * 0.15);
-    final px = -dirY;
-    final py = dirX;
-    final left = Offset(back.dx + px * reach * 0.28, back.dy + py * reach * 0.28);
-    final right = Offset(back.dx - px * reach * 0.28, back.dy - py * reach * 0.28);
-    final path = Path()
-      ..moveTo(tip.dx, tip.dy)
-      ..lineTo(left.dx, left.dy)
-      ..lineTo(right.dx, right.dy)
-      ..close();
-    canvas.drawPath(path, Paint()..color = color.withValues(alpha: 0.95));
-  }
-
-  @override
-  bool shouldRepaint(covariant _FacingChevronPainter old) =>
-      old.color != color || old.yawDegrees != yawDegrees;
-}
 
 /// Plan symbol for a window, door, or wall vent, drawn against its wall.
 class _WallFittingCell extends StatelessWidget {
@@ -2608,845 +2262,6 @@ class _ImpactChip extends StatelessWidget {
   }
 }
 
-typedef _Fitting2D = ({SurfaceMount mount, bool selected});
-
-class _RoomGridPainter extends CustomPainter {
-  final int gridCols;
-  final int gridRows;
-  final Rect? roomRect;
-  final CoverageGrid? coverage;
-  final List<_Fitting2D> fittings;
-  final double lengthMeters;
-  final double widthMeters;
-
-  _RoomGridPainter({
-    required this.gridCols,
-    required this.gridRows,
-    this.roomRect,
-    this.coverage,
-    this.fittings = const [],
-    this.lengthMeters = 0,
-    this.widthMeters = 0,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final room = roomRect ?? Rect.fromLTWH(0, 0, size.width, size.height);
-    final cellW = room.width / gridCols;
-    final cellH = room.height / gridRows;
-
-    final cov = coverage;
-    if (cov != null && cov.cols == gridCols && cov.rows == gridRows) {
-      for (int row = 0; row < gridRows; row++) {
-        for (int col = 0; col < gridCols; col++) {
-          final v = cov.coverage[row * cov.cols + col].clamp(0.0, 1.0);
-          if (v < 0.05) continue;
-          final paint = Paint()
-            ..color = AppColors.cyan.withValues(alpha: 0.08 + v * 0.18);
-          canvas.drawRect(
-            Rect.fromLTWH(
-              room.left + col * cellW,
-              room.top + row * cellH,
-              cellW,
-              cellH,
-            ),
-            paint,
-          );
-        }
-      }
-    }
-
-    final gridPaint = Paint()
-      ..color = AppColors.border.withValues(alpha: 0.45)
-      ..strokeWidth = 0.5;
-
-    for (int col = 0; col <= gridCols; col++) {
-      final x = room.left + col * cellW;
-      canvas.drawLine(Offset(x, room.top), Offset(x, room.bottom), gridPaint);
-    }
-    for (int row = 0; row <= gridRows; row++) {
-      final y = room.top + row * cellH;
-      canvas.drawLine(Offset(room.left, y), Offset(room.right, y), gridPaint);
-    }
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(room.deflate(1.5), const Radius.circular(4)),
-      Paint()
-        ..color = AppColors.cyan.withValues(alpha: 0.38)
-        ..strokeWidth = 3
-        ..style = PaintingStyle.stroke,
-    );
-
-    _paintDimensionLabels(canvas, room);
-    _paintFittingContext(canvas, room, cellW, cellH);
-    _paintCeilingFixture(canvas, room);
-  }
-
-  void _paintDimensionLabels(Canvas canvas, Rect room) {
-    final length = lengthMeters > 0 ? lengthMeters : RoomScale.metersFromCells(gridCols);
-    final width = widthMeters > 0 ? widthMeters : RoomScale.metersFromCells(gridRows);
-    final style = const TextStyle(color: Color(0xFF8B93B8), fontSize: 10, fontWeight: FontWeight.w700);
-    final top = TextPainter(
-      text: TextSpan(text: RoomScale.formatMeters(length), style: style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    top.paint(canvas, Offset(room.left + (room.width - top.width) / 2, room.top + 4));
-    final side = TextPainter(
-      text: TextSpan(text: RoomScale.formatMeters(width), style: style),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    canvas.save();
-    canvas.translate(room.left + 4, room.top + (room.height + side.width) / 2);
-    canvas.rotate(-1.5708);
-    side.paint(canvas, Offset.zero);
-    canvas.restore();
-  }
-
-  /// What each wall fitting does to the room: daylight from windows, the swing
-  /// path of a door, the throw of a wall vent.
-  void _paintFittingContext(Canvas canvas, Rect room, double cellW, double cellH) {
-    Offset toPx(double gx, double gz) => Offset(room.left + gx * cellW, room.top + gz * cellH);
-
-    for (final f in fittings) {
-      final span = f.mount.span;
-      if (span == null) continue;
-      final a = toPx(span.x0, span.z0);
-      final b = toPx(span.x1, span.z1);
-      final inward = Offset(span.inwardX * cellW, span.inwardZ * cellH);
-      final alpha = f.selected ? 1.6 : 1.0;
-
-      switch (f.mount.style) {
-        case MountStyle.window:
-          // Daylight falls off with depth into the room.
-          for (int i = 1; i <= 4; i++) {
-            final t = i / 4;
-            final shade = (0.13 * (1 - t) * alpha).clamp(0.0, 0.5);
-            final near = a + inward * (t - 0.25) * 2.2;
-            final far = b + inward * t * 2.2;
-            canvas.drawRect(
-              Rect.fromPoints(near, far),
-              Paint()..color = AppColors.lightingColor.withValues(alpha: shade),
-            );
-          }
-        case MountStyle.door:
-          final radius = (b - a).distance;
-          final path = Path()..moveTo(a.dx, a.dy);
-          for (int i = 0; i <= 12; i++) {
-            final angle = (i / 12) * math.pi / 2;
-            final along = (b - a) / (radius == 0 ? 1 : radius);
-            final dir = Offset(
-              along.dx * math.cos(angle) + span.inwardX * math.sin(angle),
-              along.dy * math.cos(angle) + span.inwardZ * math.sin(angle),
-            );
-            final p = a + dir * radius;
-            path.lineTo(p.dx, p.dy);
-          }
-          path.close();
-          canvas.drawPath(
-            path,
-            Paint()..color = AppColors.textMuted.withValues(alpha: 0.10 * alpha),
-          );
-        case MountStyle.vent:
-          // Throw cone: roughly the sweep the airflow sim gives a wall unit.
-          final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
-          final reach = inward * 3.2;
-          final sideways = Offset(-inward.dy, inward.dx) * 1.6;
-          final cone = Path()
-            ..moveTo(mid.dx, mid.dy)
-            ..lineTo(mid.dx + reach.dx - sideways.dx, mid.dy + reach.dy - sideways.dy)
-            ..lineTo(mid.dx + reach.dx + sideways.dx, mid.dy + reach.dy + sideways.dy)
-            ..close();
-          canvas.drawPath(
-            cone,
-            Paint()..color = AppColors.airflowColor.withValues(alpha: 0.09 * alpha),
-          );
-        case MountStyle.intake:
-          final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
-          final reach = inward * 2.8;
-          canvas.drawLine(
-            mid,
-            mid + reach,
-            Paint()
-              ..color = AppColors.green.withValues(alpha: 0.35 * alpha)
-              ..strokeWidth = 2,
-          );
-        case MountStyle.exhaust:
-          final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
-          final reach = inward * 2.8;
-          canvas.drawLine(
-            mid + reach,
-            mid,
-            Paint()
-              ..color = AppColors.orange.withValues(alpha: 0.35 * alpha)
-              ..strokeWidth = 2,
-          );
-        case MountStyle.floorItem:
-        case MountStyle.deskItem:
-        case MountStyle.ceilingFixture:
-          break;
-      }
-    }
-  }
-
-  /// The overhead fixture the lighting model always assumes is present.
-  void _paintCeilingFixture(Canvas canvas, Rect room) {
-    final center = Offset(
-      room.left + room.width * LightingSimulator.ceilingLightU,
-      room.top + room.height * LightingSimulator.ceilingLightV,
-    );
-    canvas.drawCircle(
-      center,
-      26,
-      Paint()..color = AppColors.lightingColor.withValues(alpha: 0.05),
-    );
-    canvas.drawCircle(
-      center,
-      9,
-      Paint()
-        ..color = AppColors.lightingColor.withValues(alpha: 0.45)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2,
-    );
-    // Cross-hairs mark it as a ceiling item rather than something on the floor.
-    final tick = Paint()
-      ..color = AppColors.lightingColor.withValues(alpha: 0.45)
-      ..strokeWidth = 1.2;
-    canvas.drawLine(center + const Offset(-14, 0), center + const Offset(-11, 0), tick);
-    canvas.drawLine(center + const Offset(11, 0), center + const Offset(14, 0), tick);
-    canvas.drawLine(center + const Offset(0, -14), center + const Offset(0, -11), tick);
-    canvas.drawLine(center + const Offset(0, 11), center + const Offset(0, 14), tick);
-  }
-
-  @override
-  bool shouldRepaint(_RoomGridPainter old) =>
-      old.gridCols != gridCols ||
-      old.gridRows != gridRows ||
-      old.roomRect != roomRect ||
-      old.coverage != coverage ||
-      old.fittings != fittings ||
-      old.lengthMeters != lengthMeters ||
-      old.widthMeters != widthMeters;
-}
-
-/// A painted element paired with the depth it should sort at.
-class _Drawable {
-  final double depth;
-  final void Function(Canvas canvas) paint;
-
-  const _Drawable(this.depth, this.paint);
-}
-
-class _RoomRenderItem {
-  final String id;
-  final double x;
-  final double z;
-  final double width;
-  final double depth;
-  final double heightY;
-  final FurnitureKind kind;
-  final double yawDegrees;
-  final Color color;
-  final bool selected;
-  final bool isScanObject;
-  final bool ghost;
-  final String label;
-
-  /// Whether this sits on the floor, a wall, or the ceiling.
-  final SurfaceMount mount;
-
-  const _RoomRenderItem({
-    required this.id,
-    required this.x,
-    required this.z,
-    required this.width,
-    required this.depth,
-    required this.heightY,
-    this.kind = FurnitureKind.generic,
-    this.yawDegrees = 0,
-    this.mount = const SurfaceMount(
-      surface: MountSurface.floor,
-      style: MountStyle.floorItem,
-      bottomY: 0,
-      topY: 0.95,
-    ),
-    required this.color,
-    required this.selected,
-    required this.isScanObject,
-    required this.label,
-    this.ghost = false,
-  });
-}
-
-class _RoomOrbit3DPainter extends CustomPainter {
-  final double roomWidth;
-  final double roomDepth;
-  final double roomHeight;
-  final int gridCols;
-  final int gridRows;
-  final double yaw;
-  final double pitch;
-  final double distance;
-  final double? lookAtX;
-  final double? lookAtZ;
-  final List<_RoomRenderItem> items;
-
-  _RoomOrbit3DPainter({
-    required this.roomWidth,
-    required this.roomDepth,
-    required this.roomHeight,
-    required this.gridCols,
-    required this.gridRows,
-    required this.yaw,
-    required this.pitch,
-    required this.distance,
-    this.lookAtX,
-    this.lookAtZ,
-    required this.items,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cam = CameraPose(
-      roomWidth: roomWidth,
-      roomDepth: roomDepth,
-      roomHeight: roomHeight,
-      yaw: yaw,
-      pitch: pitch,
-      distance: distance,
-      lookAtX: lookAtX,
-      lookAtZ: lookAtZ,
-    );
-
-    _paintShell(canvas, size, cam);
-    _paintFloorGrid(canvas, size, cam);
-    _paintCeilingFixture(canvas, size, cam);
-
-    final drawables = <_Drawable>[];
-    for (final item in items) {
-      final start = drawables.length;
-      final mount = item.mount;
-      if (mount.isWall && mount.span != null) {
-        _collectWallFitting(drawables, item, mount, size, cam);
-      } else if (mount.isCeiling) {
-        _collectCeilingFixture(drawables, item, mount, size, cam);
-      } else {
-        _collectBox(drawables, item, size, cam);
-      }
-      if (item.ghost) {
-        for (var i = start; i < drawables.length; i++) {
-          final inner = drawables[i];
-          drawables[i] = _Drawable(inner.depth, (canvas) {
-            canvas.saveLayer(null, Paint()..color = const Color(0x62FFFFFF));
-            inner.paint(canvas);
-            canvas.restore();
-          });
-        }
-      }
-    }
-
-    drawables.sort((a, b) => b.depth.compareTo(a.depth));
-    for (final d in drawables) {
-      d.paint(canvas);
-    }
-  }
-
-  void _paintShell(Canvas canvas, Size size, CameraPose cam) {
-    final floor = RoomProjection.projectFace(
-      RoomFace(
-        [
-          OrbitVec3(0, 0, 0),
-          OrbitVec3(roomWidth, 0, 0),
-          OrbitVec3(roomWidth, 0, roomDepth),
-          OrbitVec3(0, 0, roomDepth),
-        ],
-        AppColors.surfaceAlt.withValues(alpha: 0.72),
-      ),
-      size,
-      cam,
-    );
-    if (floor != null) {
-      canvas.drawPath(Path()..addPolygon(floor.points, true), Paint()..color = floor.color);
-    }
-
-    // Open wireframe shell — no solid wall faces, so the interior stays visible
-    // when orbiting behind walls (matches Benchmark 3D).
-    final corners = [
-      OrbitVec3(0, 0, 0),
-      OrbitVec3(roomWidth, 0, 0),
-      OrbitVec3(roomWidth, 0, roomDepth),
-      OrbitVec3(0, 0, roomDepth),
-      OrbitVec3(0, roomHeight, 0),
-      OrbitVec3(roomWidth, roomHeight, 0),
-      OrbitVec3(roomWidth, roomHeight, roomDepth),
-      OrbitVec3(0, roomHeight, roomDepth),
-    ];
-    final projected = corners.map((v) => RoomProjection.project(v, size, cam)).toList();
-    final edge = Paint()
-      ..color = AppColors.border.withValues(alpha: 0.85)
-      ..strokeWidth = 1.2;
-    void line(int a, int b) {
-      final pa = projected[a];
-      final pb = projected[b];
-      if (pa == null || pb == null) return;
-      canvas.drawLine(pa.offset, pb.offset, edge);
-    }
-
-    line(0, 1);
-    line(1, 2);
-    line(2, 3);
-    line(3, 0);
-    line(4, 5);
-    line(5, 6);
-    line(6, 7);
-    line(7, 4);
-    line(0, 4);
-    line(1, 5);
-    line(2, 6);
-    line(3, 7);
-  }
-
-  /// The overhead fixture the lighting model always assumes is on. Drawn from
-  /// the simulator's own position so the two never disagree.
-  void _paintCeilingFixture(Canvas canvas, Size size, CameraPose cam) {
-    final cx = roomWidth * LightingSimulator.ceilingLightU;
-    final cz = roomDepth * LightingSimulator.ceilingLightV;
-    final mount = RoomProjection.project(OrbitVec3(cx, roomHeight, cz), size, cam);
-    final lens = RoomProjection.project(OrbitVec3(cx, roomHeight - 0.14, cz), size, cam);
-    if (mount == null || lens == null) return;
-
-    canvas.drawLine(
-      mount.offset,
-      lens.offset,
-      Paint()
-        ..color = AppColors.lightingColor.withValues(alpha: 0.55)
-        ..strokeWidth = 1.6,
-    );
-    canvas.drawCircle(lens.offset, 10, Paint()..color = AppColors.lightingColor.withValues(alpha: 0.22));
-    canvas.drawCircle(lens.offset, 4.5, Paint()..color = AppColors.lightingColor.withValues(alpha: 0.9));
-
-    final pool = RoomProjection.project(OrbitVec3(cx, 0.02, cz), size, cam);
-    if (pool != null) {
-      canvas.drawCircle(
-        pool.offset,
-        26,
-        Paint()..color = AppColors.lightingColor.withValues(alpha: 0.06),
-      );
-    }
-  }
-
-  void _paintFloorGrid(Canvas canvas, Size size, CameraPose cam) {
-    final gridPaint = Paint()
-      ..color = AppColors.border.withValues(alpha: 0.55)
-      ..strokeWidth = 0.8;
-    for (int c = 0; c <= gridCols; c++) {
-      final a = RoomProjection.project(OrbitVec3(c.toDouble(), 0.001, 0), size, cam);
-      final b = RoomProjection.project(OrbitVec3(c.toDouble(), 0.001, roomDepth), size, cam);
-      if (a != null && b != null) canvas.drawLine(a.offset, b.offset, gridPaint);
-    }
-    for (int r = 0; r <= gridRows; r++) {
-      final a = RoomProjection.project(OrbitVec3(0, 0.001, r.toDouble()), size, cam);
-      final b = RoomProjection.project(OrbitVec3(roomWidth, 0.001, r.toDouble()), size, cam);
-      if (a != null && b != null) canvas.drawLine(a.offset, b.offset, gridPaint);
-    }
-  }
-
-  void _collectBox(List<_Drawable> out, _RoomRenderItem item, Size size, CameraPose cam) {
-    final List<RoomFace> faces;
-    if (item.isScanObject) {
-      final yTop = item.heightY;
-      final a = OrbitVec3(item.x, 0, item.z);
-      final b = OrbitVec3(item.x + item.width, 0, item.z);
-      final c = OrbitVec3(item.x + item.width, 0, item.z + item.depth);
-      final d = OrbitVec3(item.x, 0, item.z + item.depth);
-      final a2 = OrbitVec3(item.x, yTop, item.z);
-      final b2 = OrbitVec3(item.x + item.width, yTop, item.z);
-      final c2 = OrbitVec3(item.x + item.width, yTop, item.z + item.depth);
-      final d2 = OrbitVec3(item.x, yTop, item.z + item.depth);
-      const sideBase = 0.28;
-      faces = [
-        RoomFace([a2, b2, c2, d2], item.color.withValues(alpha: item.selected ? 0.8 : 0.46)),
-        RoomFace([a, b, b2, a2], item.color.withValues(alpha: sideBase)),
-        RoomFace([b, c, c2, b2], item.color.withValues(alpha: sideBase + 0.06)),
-        RoomFace([c, d, d2, c2], item.color.withValues(alpha: sideBase + 0.02)),
-        RoomFace([d, a, a2, d2], item.color.withValues(alpha: sideBase - 0.02)),
-      ];
-    } else {
-      final yBase = item.mount.isDesk ? item.mount.bottomY : 0.0;
-      faces = FurnitureShapes.facesFor(
-        FurnitureShapes.boxes(
-          kind: item.kind,
-          x: item.x,
-          z: item.z,
-          width: item.width,
-          depth: item.depth,
-          color: item.color,
-          yBase: yBase,
-          yawDegrees: item.yawDegrees,
-        ),
-      );
-    }
-
-    for (final face in faces) {
-      final p = RoomProjection.projectFace(face, size, cam);
-      if (p == null) continue;
-      out.add(_Drawable(p.depth, (canvas) {
-        final path = Path()..addPolygon(p.points, true);
-        canvas.drawPath(path, Paint()..color = p.color);
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color = (item.selected ? item.color : Colors.black).withValues(alpha: item.selected ? 0.85 : 0.25)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = item.selected ? 1.4 : 0.8,
-        );
-      }));
-    }
-
-    if (!FurnitureShapes.showsFacing(item.kind)) return;
-
-    final yChev = item.mount.isDesk ? item.mount.bottomY + 0.02 : 0.02;
-    final cx = item.x + item.width * 0.5;
-    final cz = item.z + item.depth * 0.5;
-    final rad = item.yawDegrees * math.pi / 180.0;
-    final dirX = math.sin(rad);
-    final dirZ = math.cos(rad);
-    final reach = math.max(item.width, item.depth) * 0.55 + 0.2;
-    final tip = OrbitVec3(cx + dirX * reach, yChev, cz + dirZ * reach);
-    final back = OrbitVec3(cx + dirX * reach * 0.35, yChev, cz + dirZ * reach * 0.35);
-    final px = -dirZ;
-    final pz = dirX;
-    final left = OrbitVec3(back.x + px * 0.18, yChev, back.z + pz * 0.18);
-    final right = OrbitVec3(back.x - px * 0.18, yChev, back.z - pz * 0.18);
-    final tipP = RoomProjection.project(tip, size, cam);
-    final leftP = RoomProjection.project(left, size, cam);
-    final rightP = RoomProjection.project(right, size, cam);
-    if (tipP != null && leftP != null && rightP != null) {
-      final depth = (tipP.depth + leftP.depth + rightP.depth) / 3;
-      out.add(_Drawable(depth - 0.01, (canvas) {
-        final path = Path()
-          ..moveTo(tipP.offset.dx, tipP.offset.dy)
-          ..lineTo(leftP.offset.dx, leftP.offset.dy)
-          ..lineTo(rightP.offset.dx, rightP.offset.dy)
-          ..close();
-        canvas.drawPath(
-          path,
-          Paint()..color = (item.selected ? AppColors.cyan : item.color).withValues(alpha: 0.9),
-        );
-      }));
-    }
-  }
-
-  void _collectWallFitting(
-    List<_Drawable> out,
-    _RoomRenderItem item,
-    SurfaceMount mount,
-    Size size,
-    CameraPose cam,
-  ) {
-    final span = mount.span!;
-    switch (mount.style) {
-      case MountStyle.window:
-        _collectWindow(out, item, mount, span, size, cam);
-      case MountStyle.door:
-        _collectDoor(out, item, mount, span, size, cam);
-      case MountStyle.vent:
-        _collectVent(out, item, mount, span, size, cam);
-      case MountStyle.intake:
-      case MountStyle.exhaust:
-        _collectVent(out, item, mount, span, size, cam);
-      case MountStyle.floorItem:
-      case MountStyle.deskItem:
-      case MountStyle.ceilingFixture:
-        _collectBox(out, item, size, cam);
-    }
-  }
-
-  void _collectWindow(
-    List<_Drawable> out,
-    _RoomRenderItem item,
-    SurfaceMount mount,
-    WallSpan span,
-    Size size,
-    CameraPose cam,
-  ) {
-    final glass = _fittingFace(span, mount.bottomY, mount.topY, 0.02);
-    final face = RoomProjection.projectFace(
-      RoomFace(glass, AppColors.lightingColor.withValues(alpha: item.selected ? 0.42 : 0.28)),
-      size,
-      cam,
-    );
-    if (face == null) return;
-
-    // Mullion endpoints, projected up front so the closure just draws.
-    final midY = (mount.bottomY + mount.topY) / 2;
-    final midT = 0.5;
-    final vTop = _projectAlongWall(span, midT, mount.topY, 0.02, size, cam);
-    final vBottom = _projectAlongWall(span, midT, mount.bottomY, 0.02, size, cam);
-    final hStart = _projectAlongWall(span, 0, midY, 0.02, size, cam);
-    final hEnd = _projectAlongWall(span, 1, midY, 0.02, size, cam);
-    final sillA = _projectAlongWall(span, 0, mount.bottomY, 0.14, size, cam);
-    final sillB = _projectAlongWall(span, 1, mount.bottomY, 0.14, size, cam);
-
-    out.add(_Drawable(face.depth, (canvas) {
-      final path = Path()..addPolygon(face.points, true);
-      canvas.drawPath(path, Paint()..color = face.color);
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = AppColors.lightingColor.withValues(alpha: item.selected ? 0.95 : 0.7)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = item.selected ? 2.4 : 1.8,
-      );
-
-      final mullion = Paint()
-        ..color = AppColors.lightingColor.withValues(alpha: 0.55)
-        ..strokeWidth = 1.2;
-      if (vTop != null && vBottom != null) canvas.drawLine(vTop, vBottom, mullion);
-      if (hStart != null && hEnd != null) canvas.drawLine(hStart, hEnd, mullion);
-
-      // Sill: a small ledge that reads as the window sitting in the wall.
-      if (sillA != null && sillB != null) {
-        canvas.drawLine(
-          sillA,
-          sillB,
-          Paint()
-            ..color = AppColors.lightingColor.withValues(alpha: 0.85)
-            ..strokeWidth = 3,
-        );
-      }
-    }));
-  }
-
-  void _collectDoor(
-    List<_Drawable> out,
-    _RoomRenderItem item,
-    SurfaceMount mount,
-    WallSpan span,
-    Size size,
-    CameraPose cam,
-  ) {
-    final leaf = _fittingFace(span, mount.bottomY, mount.topY, 0.02);
-    final face = RoomProjection.projectFace(
-      RoomFace(leaf, AppColors.textMuted.withValues(alpha: item.selected ? 0.42 : 0.26)),
-      size,
-      cam,
-    );
-    if (face == null) return;
-
-    // Swing arc on the floor, hinged at the span start.
-    final radius = span.length;
-    final arc = <Offset>[];
-    const steps = 12;
-    for (int i = 0; i <= steps; i++) {
-      final t = i / steps;
-      final angle = t * math.pi / 2;
-      // Sweep from along-wall toward the inward normal.
-      final alongX = (span.x1 - span.x0) / (radius == 0 ? 1 : radius);
-      final alongZ = (span.z1 - span.z0) / (radius == 0 ? 1 : radius);
-      final px = span.x0 + (alongX * math.cos(angle) + span.inwardX * math.sin(angle)) * radius;
-      final pz = span.z0 + (alongZ * math.cos(angle) + span.inwardZ * math.sin(angle)) * radius;
-      final p = RoomProjection.project(OrbitVec3(px, 0.02, pz), size, cam);
-      if (p == null) {
-        arc.clear();
-        break;
-      }
-      arc.add(p.offset);
-    }
-
-    final handle = _projectAlongWall(span, 0.82, mount.topY * 0.45, 0.05, size, cam);
-
-    out.add(_Drawable(face.depth, (canvas) {
-      final path = Path()..addPolygon(face.points, true);
-      canvas.drawPath(path, Paint()..color = face.color);
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = AppColors.textSecondary.withValues(alpha: item.selected ? 0.95 : 0.7)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = item.selected ? 2.4 : 1.8,
-      );
-
-      if (arc.length > 2) {
-        final arcPath = Path()..moveTo(arc.first.dx, arc.first.dy);
-        for (final p in arc.skip(1)) {
-          arcPath.lineTo(p.dx, p.dy);
-        }
-        canvas.drawPath(
-          arcPath,
-          Paint()
-            ..color = AppColors.textSecondary.withValues(alpha: 0.45)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2,
-        );
-        canvas.drawLine(
-          arc.first,
-          arc.last,
-          Paint()
-            ..color = AppColors.textSecondary.withValues(alpha: 0.28)
-            ..strokeWidth = 1,
-        );
-      }
-
-      if (handle != null) {
-        canvas.drawCircle(handle, 2.4, Paint()..color = AppColors.textSecondary.withValues(alpha: 0.8));
-      }
-    }));
-  }
-
-  void _collectVent(
-    List<_Drawable> out,
-    _RoomRenderItem item,
-    SurfaceMount mount,
-    WallSpan span,
-    Size size,
-    CameraPose cam,
-  ) {
-    // An AC head visibly stands off the wall, so it gets a body with depth
-    // rather than a flat decal.
-    final inner = _fittingFace(span, mount.bottomY, mount.topY, mount.protrusion);
-    final outer = _fittingFace(span, mount.bottomY, mount.topY, 0.01);
-
-    final bodyFaces = <RoomFace>[
-      RoomFace(inner, AppColors.airflowColor.withValues(alpha: item.selected ? 0.55 : 0.38)),
-      // Underside, where the air actually leaves the unit.
-      RoomFace(
-        [outer[0], inner[0], inner[1], outer[1]],
-        AppColors.airflowColor.withValues(alpha: 0.5),
-      ),
-      RoomFace(
-        [outer[3], inner[3], inner[2], outer[2]],
-        AppColors.airflowColor.withValues(alpha: 0.26),
-      ),
-    ];
-
-    final louvers = <(Offset, Offset)>[];
-    for (int i = 1; i <= 3; i++) {
-      final y = mount.bottomY + (mount.topY - mount.bottomY) * (i / 5);
-      final a = _projectAlongWall(span, 0.08, y, mount.protrusion + 0.01, size, cam);
-      final b = _projectAlongWall(span, 0.92, y, mount.protrusion + 0.01, size, cam);
-      if (a != null && b != null) louvers.add((a, b));
-    }
-
-    // Short arrows showing the throw direction into the room and downward.
-    final throwLines = <(Offset, Offset)>[];
-    for (final t in const [0.25, 0.5, 0.75]) {
-      final from = _projectAlongWall(span, t, mount.bottomY, mount.protrusion, size, cam);
-      final toX = span.x0 + (span.x1 - span.x0) * t + span.inwardX * 0.95;
-      final toZ = span.z0 + (span.z1 - span.z0) * t + span.inwardZ * 0.95;
-      final to = RoomProjection.project(OrbitVec3(toX, mount.bottomY - 0.55, toZ), size, cam);
-      if (from != null && to != null) throwLines.add((from, to.offset));
-    }
-
-    for (final face in bodyFaces) {
-      final p = RoomProjection.projectFace(face, size, cam);
-      if (p == null) continue;
-      final isInner = identical(face, bodyFaces.first);
-      out.add(_Drawable(p.depth, (canvas) {
-        final path = Path()..addPolygon(p.points, true);
-        canvas.drawPath(path, Paint()..color = p.color);
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color = AppColors.airflowColor.withValues(alpha: item.selected ? 0.95 : 0.62)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = item.selected ? 2.2 : 1.4,
-        );
-        if (!isInner) return;
-
-        final louverPaint = Paint()
-          ..color = AppColors.airflowColor.withValues(alpha: 0.75)
-          ..strokeWidth = 1.2;
-        for (final (a, b) in louvers) {
-          canvas.drawLine(a, b, louverPaint);
-        }
-
-        final throwPaint = Paint()
-          ..color = AppColors.airflowColor.withValues(alpha: 0.35)
-          ..strokeWidth = 1.4;
-        for (final (a, b) in throwLines) {
-          canvas.drawLine(a, b, throwPaint);
-        }
-      }));
-    }
-  }
-
-  void _collectCeilingFixture(
-    List<_Drawable> out,
-    _RoomRenderItem item,
-    SurfaceMount mount,
-    Size size,
-    CameraPose cam,
-  ) {
-    final cx = item.x + item.width / 2;
-    final cz = item.z + item.depth / 2;
-    final anchor = RoomProjection.project(OrbitVec3(cx, mount.topY, cz), size, cam);
-    if (anchor == null) return;
-    final lens = RoomProjection.project(OrbitVec3(cx, mount.bottomY, cz), size, cam);
-    final floorSpot = RoomProjection.project(OrbitVec3(cx, 0.02, cz), size, cam);
-
-    out.add(_Drawable(anchor.depth, (canvas) {
-      if (lens != null) {
-        canvas.drawLine(
-          anchor.offset,
-          lens.offset,
-          Paint()
-            ..color = AppColors.lightingColor.withValues(alpha: 0.6)
-            ..strokeWidth = 1.6,
-        );
-        canvas.drawCircle(
-          lens.offset,
-          item.selected ? 11 : 9,
-          Paint()..color = AppColors.lightingColor.withValues(alpha: 0.30),
-        );
-        canvas.drawCircle(
-          lens.offset,
-          item.selected ? 5.5 : 4.5,
-          Paint()..color = AppColors.lightingColor.withValues(alpha: 0.95),
-        );
-      }
-      // Faint pool on the floor so the fixture reads as lighting the room.
-      if (floorSpot != null) {
-        canvas.drawCircle(
-          floorSpot.offset,
-          22,
-          Paint()..color = AppColors.lightingColor.withValues(alpha: 0.07),
-        );
-      }
-    }));
-  }
-
-  /// Projects a point [t] of the way along a wall span, [y] metres up, inset
-  /// from the wall by [inset].
-  Offset? _projectAlongWall(
-    WallSpan span,
-    double t,
-    double y,
-    double inset,
-    Size size,
-    CameraPose cam,
-  ) {
-    final x = span.x0 + (span.x1 - span.x0) * t + span.inwardX * inset;
-    final z = span.z0 + (span.z1 - span.z0) * t + span.inwardZ * inset;
-    return RoomProjection.project(OrbitVec3(x, y, z), size, cam)?.offset;
-  }
-
-  @override
-  bool shouldRepaint(covariant _RoomOrbit3DPainter oldDelegate) {
-    return oldDelegate.yaw != yaw ||
-        oldDelegate.pitch != pitch ||
-        oldDelegate.distance != distance ||
-        oldDelegate.lookAtX != lookAtX ||
-        oldDelegate.lookAtZ != lookAtZ ||
-        oldDelegate.items != items;
-  }
-}
-
-class _PickedEntity {
-  final String id;
-  final bool isScanObject;
-
-  const _PickedEntity({required this.id, required this.isScanObject});
-}
 
 class _InvasiveEditToggle extends StatelessWidget {
   final bool invasive;
@@ -3882,85 +2697,6 @@ class _AddCatalogTile extends StatelessWidget {
   }
 }
 
-class _SidebarFilterChip extends StatelessWidget {
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _SidebarFilterChip({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(
-          color: active ? AppColors.cyan.withValues(alpha: 0.18) : AppColors.card,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: active ? AppColors.cyan.withValues(alpha: 0.6) : AppColors.border,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? AppColors.cyan : AppColors.textSecondary,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ScanActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _ScanActionButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withValues(alpha: 0.35)),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _ViewModeChip extends StatelessWidget {
   final String label;
