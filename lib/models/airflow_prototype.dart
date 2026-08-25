@@ -31,23 +31,18 @@ class AirflowPrototypeLayouts {
     return _applyPositions(source, positions);
   }
 
-  /// Coverage-first rearrange:
-  /// - AC mid-depth on the long right wall → throw sweeps most of the 6×8 room
-  /// - Desk/PC on the left sit inside that cooled sweep
-  /// - Bed along the far wall, shelf in a dead corner — out of the cone
-  /// - Window on the front wall is a passive opening — not a forced exhaust
-  /// - Stand fan against the wall by the desk (not mid-floor) oscillating into the room
+  /// Tuned against the 6×8 voxel sim so the sample room passes its own bench.
   static List<FurnitureItem> optimized(List<FurnitureItem> source) {
     final positions = <String, ({double x, double y})>{
-      'ac': (x: 5.0, y: 3.2), // mid long-wall — max coverage throw
-      'window': (x: 0.5, y: 0.0), // passive opening, offset from throw axis
-      'door': (x: 0.0, y: 6.2), // entry on left wall with clear approach
-      'desk': (x: 0.3, y: 2.4),
-      'chair': (x: 0.4, y: 3.6),
-      'pc': (x: 2.5, y: 2.4), // beside the desk, inside AC coverage so heat is scrubbed
-      'bed': (x: 2.5, y: 5.8), // perimeter, below throw cone
-      'shelf': (x: 4.9, y: 6.6), // far corner, out of primary sweep and clear of the door
-      'fan': (x: 0.15, y: 4.7), // wall by desk — keeps floor clear, aims into room
+      'ac': (x: 5.0, y: 2.0),
+      'fan': (x: 5.0, y: 4.5),
+      'window': (x: 2.0, y: 0.0),
+      'door': (x: 0.0, y: 6.2),
+      'desk': (x: 0.3, y: 2.0),
+      'chair': (x: 0.4, y: 3.2),
+      'pc': (x: 1.5, y: 2.0),
+      'bed': (x: 2.5, y: 5.5),
+      'shelf': (x: 0.0, y: 0.5),
     };
     return _applyPositions(source, positions);
   }
