@@ -6,6 +6,7 @@ import 'airflow_simulator.dart';
 import 'ergonomics_optimizer.dart';
 import 'ergonomics_simulator.dart';
 import 'layout_collision.dart';
+import 'layout_optimizer_common.dart';
 import 'layout_orientation.dart';
 import 'lighting_optimizer.dart';
 import 'lighting_simulator.dart';
@@ -104,6 +105,8 @@ class MultiObjectiveOptimizer {
         furniture: air.furniture,
         weights: w,
         reasons: reasons,
+        gridCols: gridCols,
+        gridRows: gridRows,
       );
     }
     if (dominant == 'lighting') {
@@ -117,6 +120,8 @@ class MultiObjectiveOptimizer {
         furniture: light.furniture,
         weights: w,
         reasons: reasons,
+        gridCols: gridCols,
+        gridRows: gridRows,
       );
     }
     if (dominant == 'ergonomics') {
@@ -130,6 +135,8 @@ class MultiObjectiveOptimizer {
         furniture: ergo.furniture,
         weights: w,
         reasons: reasons,
+        gridCols: gridCols,
+        gridRows: gridRows,
       );
     }
     if (dominant == 'spatial') {
@@ -143,6 +150,8 @@ class MultiObjectiveOptimizer {
         furniture: space.furniture,
         weights: w,
         reasons: reasons,
+        gridCols: gridCols,
+        gridRows: gridRows,
       );
     }
 
@@ -192,11 +201,19 @@ class MultiObjectiveOptimizer {
       gridCols: gridCols,
       gridRows: gridRows,
     );
+    blended = LayoutOptimizerCommon.mountDeskTopItems(blended);
+    blended = LayoutOptimizerCommon.resolveLayoutConflicts(
+      items: blended,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
 
     return _pack(
       furniture: blended,
       weights: w,
       reasons: reasons,
+      gridCols: gridCols,
+      gridRows: gridRows,
     );
   }
 
@@ -204,9 +221,17 @@ class MultiObjectiveOptimizer {
     required List<FurnitureItem> furniture,
     required MultiObjectiveWeights weights,
     required List<String> reasons,
+    required int gridCols,
+    required int gridRows,
   }) {
+    var mounted = LayoutOptimizerCommon.mountDeskTopItems(furniture);
+    mounted = LayoutOptimizerCommon.resolveLayoutConflicts(
+      items: mounted,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
     return MultiObjectiveResult(
-      furniture: furniture,
+      furniture: mounted,
       airflowMetrics: AirflowOptimizer.evaluate(furniture),
       lightingMetrics: LightingOptimizer.evaluate(furniture),
       ergonomicsMetrics: ErgonomicsOptimizer.evaluate(furniture),
