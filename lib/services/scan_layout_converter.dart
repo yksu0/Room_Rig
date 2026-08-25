@@ -114,6 +114,21 @@ class ScanLayoutConverter {
     return items;
   }
 
+  static FurnitureItem furnitureFromScanObject(
+    ScanObject obj, {
+    required int gridCols,
+    required int gridRows,
+    required Set<String> usedIds,
+    double cellMeters = defaultCellMeters,
+  }) =>
+      _toFurnitureItem(
+        obj,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        cellMeters: cellMeters,
+        usedIds: usedIds,
+      );
+
   static FurnitureItem _toFurnitureItem(
     ScanObject obj, {
     required int gridCols,
