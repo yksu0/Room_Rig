@@ -41,7 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
     RoomPreset preset,
   ) async {
     if (preset == state.selectedPreset) return;
-    final hasWork = state.scanComplete || state.furniture.any((f) => f.id.startsWith('upg_'));
+    final hasWork = state.hasLayoutWork;
     if (hasWork) {
       final ok = await showDialog<bool>(
         context: context,
@@ -61,6 +61,56 @@ class _HomeScreenState extends State<HomeScreen> {
       if (ok != true) return;
     }
     state.selectPreset(preset);
+  }
+
+  Future<void> _confirmLoadSavedRoom(
+    BuildContext context,
+    AppState state,
+    String roomId,
+  ) async {
+    if (roomId == state.activeRoomId) return;
+    if (state.hasLayoutWork) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Text('Switch room?', style: TextStyle(color: AppColors.textPrimary)),
+          content: const Text(
+            'Unsaved layout changes on this room may be lost.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Switch')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    state.loadSavedRoom(roomId);
+  }
+
+  Future<void> _confirmRestoreOriginal(BuildContext context, AppState state) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Restore original layout?', style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          'This reverts to the layout saved before your last optimization.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Restore')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    state.restoreOriginalLayout();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Original layout restored')),
+    );
   }
 
   Future<void> _showOnboarding(AppState state) async {
@@ -97,14 +147,19 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildHeader(context, room, state),
               const SizedBox(height: 20),
-              if (!state.scanComplete) ...[
+              if (!state.roomIsReady) ...[
                 _GettingStartedBanner(
                   onScan: () => state.setTab(1),
                   onCreate: () => _showCreateRoomSheet(context, state),
                 ),
                 const SizedBox(height: 16),
-              ] else if (state.lastScanConfidence != null) ...[
+              ] else if (state.scanComplete && state.lastScanConfidence != null) ...[
                 _ScanConfidenceBanner(metrics: state.lastScanConfidence!),
+                const SizedBox(height: 12),
+                _JourneySteps(state: state),
+                const SizedBox(height: 16),
+              ] else if (state.roomIsReady) ...[
+                _ManualRoomBanner(state: state),
                 const SizedBox(height: 12),
                 _JourneySteps(state: state),
                 const SizedBox(height: 16),
@@ -187,13 +242,18 @@ class _HomeScreenState extends State<HomeScreen> {
               BoxShadow(color: AppColors.cyan.withValues(alpha: 0.3), blurRadius: 20),
             ],
           ),
-          child: SvgIcon(presetSvgFor(room.name), size: 26, color: Colors.white),
+          child: SvgIcon(
+            presetSvgFor(room.iconName.isNotEmpty ? room.iconName : room.name),
+            size: 26,
+            color: Colors.white,
+          ),
         ),
       ],
     );
   }
 
   Widget _buildScoreSection(BuildContext context, AppState state) {
+    final simulated = state.scoresAreSimulated;
     return GlassCard(
       gradient: const LinearGradient(
         colors: [Color(0xFF1A1E32), Color(0xFF0E1020)],
@@ -211,6 +271,26 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Text(
+                  simulated ? 'ROUGH EST.' : 'BENCH OK',
+                  style: TextStyle(
+                    color: simulated ? AppColors.amber : AppColors.green,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
                 ),
               ),
               const Spacer(),
@@ -237,21 +317,38 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              ScoreRing(score: state.airflowScore, size: 70, color: AppColors.airflowColor, label: 'Airflow'),
+              _tappableRing(state, 'airflow', state.airflowScore, 70, AppColors.airflowColor, 'Airflow'),
               ScoreRing(score: state.overallScore, size: 104, color: AppColors.cyan, label: 'Overall'),
-              ScoreRing(score: state.lightingScore, size: 70, color: AppColors.lightingColor, label: 'Lighting'),
+              _tappableRing(state, 'lighting', state.lightingScore, 70, AppColors.lightingColor, 'Lighting'),
             ],
           ),
           const SizedBox(height: 14),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              ScoreRing(score: state.ergonomicsScore, size: 64, color: AppColors.ergonomicsColor, label: 'Ergo'),
-              ScoreRing(score: state.spatialScore, size: 64, color: AppColors.spatialColor, label: 'Space'),
+              _tappableRing(state, 'ergonomics', state.ergonomicsScore, 64, AppColors.ergonomicsColor, 'Ergo'),
+              _tappableRing(state, 'spatial', state.spatialScore, 64, AppColors.spatialColor, 'Space'),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _tappableRing(
+    AppState state,
+    String mode,
+    double score,
+    double size,
+    Color color,
+    String label,
+  ) {
+    return GestureDetector(
+      onTap: () {
+        state.setBenchmarkMode(mode);
+        state.setTab(3);
+      },
+      child: ScoreRing(score: score, size: size, color: color, label: label),
     );
   }
 
@@ -287,8 +384,15 @@ class _HomeScreenState extends State<HomeScreen> {
             title: state.currentRoomData.name,
             subtitle: 'Current lot',
             selected: true,
-            onTap: () {},
-            onDuplicate: () => state.duplicateActiveRoom(),
+            onTap: () => _showRenameRoomSheet(context, state),
+            onDuplicate: () {
+              state.duplicateActiveRoom();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Duplicated as ${state.currentRoomData.name}')),
+                );
+              }
+            },
             onDelete: null,
           ),
         ...rooms.map(
@@ -298,12 +402,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? 'Scanned'
                 : (r.layout.scanSource == 'manual' ? 'Created' : 'Preset'),
             selected: r.id == state.activeRoomId,
-            onTap: () => state.loadSavedRoom(r.id),
-            onDuplicate: () {
-              if (r.id != state.activeRoomId) state.loadSavedRoom(r.id);
+            onTap: () => _confirmLoadSavedRoom(context, state, r.id),
+            onDuplicate: () async {
+              if (r.id != state.activeRoomId) {
+                await _confirmLoadSavedRoom(context, state, r.id);
+                if (!context.mounted) return;
+              }
               state.duplicateActiveRoom();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Duplicated as ${state.currentRoomData.name}')),
+                );
+              }
             },
-            onDelete: rooms.length > 1 ? () => state.deleteSavedRoom(r.id) : null,
+            onDelete: rooms.length > 1
+                ? () => _confirmDeleteRoom(context, state, r.id, r.name)
+                : null,
           ),
         ),
       ],
@@ -311,6 +425,56 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildPresetSelector(BuildContext context, AppState state) {
+    if (state.hasLayoutWork) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'ROOM PRESETS',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => _showPresetPicker(context, state),
+            child: const Text('Start new from preset…'),
+          ),
+        ],
+      );
+    }
+    return _buildPresetGrid(context, state);
+  }
+
+  Future<void> _showPresetPicker(BuildContext context, AppState state) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Load preset',
+              style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            const SizedBox(height: 12),
+            _buildPresetGrid(context, state),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPresetGrid(BuildContext context, AppState state) {
     final presets = [
       (RoomPreset.gamingSetup, RoomSvg.gaming, 'Gaming'),
       (RoomPreset.homeOffice, RoomSvg.briefcase, 'Office'),
@@ -376,6 +540,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildQuickActions(BuildContext context, AppState state) {
+    if (!state.roomIsReady) {
+      return const SizedBox.shrink();
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -389,44 +556,53 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _ActionButton(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final narrow = constraints.maxWidth < 360;
+            final actions = [
+              _ActionButton(
                 svgString: RoomSvg.scan,
                 label: 'Scan Room',
                 color: AppColors.cyan,
                 onTap: () => context.read<AppState>().setTab(1),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _ActionButton(
+              _ActionButton(
                 svgString: RoomSvg.home,
                 label: 'Create',
                 color: AppColors.purple,
                 onTap: () => _showCreateRoomSheet(context, state),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _ActionButton(
+              _ActionButton(
                 svgString: RoomSvg.tune,
                 label: 'Customize',
                 color: AppColors.purple,
                 onTap: () => context.read<AppState>().setTab(2),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _ActionButton(
+              _ActionButton(
                 svgString: RoomSvg.speedometer,
                 label: 'Benchmark',
                 color: AppColors.amber,
                 onTap: () => context.read<AppState>().setTab(3),
               ),
-            ),
-          ],
+            ];
+            if (narrow) {
+              return Column(
+                children: [
+                  Row(children: [Expanded(child: actions[0]), const SizedBox(width: 12), Expanded(child: actions[1])]),
+                  const SizedBox(height: 12),
+                  Row(children: [Expanded(child: actions[2]), const SizedBox(width: 12), Expanded(child: actions[3])]),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                for (int i = 0; i < actions.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 12),
+                  Expanded(child: actions[i]),
+                ],
+              ],
+            );
+          },
         ),
       ],
     );
@@ -449,7 +625,12 @@ class _HomeScreenState extends State<HomeScreen> {
         GlassCard(
           child: Column(
             children: [
-              _SpecRow(svgString: RoomSvg.home, label: 'Rig Name', value: state.currentRoomData.name),
+              _SpecRow(
+                svgString: RoomSvg.home,
+                label: 'Rig Name',
+                value: state.currentRoomData.name,
+                onTap: () => _showRenameRoomSheet(context, state),
+              ),
               const Divider(color: AppColors.border, height: 24),
               _SpecRow(
                 svgString: RoomSvg.tune,
@@ -472,7 +653,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 value: state.isOptimized
                     ? '+${(state.overallScore - state.previousOverallScore).toStringAsFixed(1)} pts'
                     : '—',
-                valueColor: AppColors.green,
+                valueColor: state.isOptimized && (state.overallScore - state.previousOverallScore) > 0
+                    ? AppColors.green
+                    : AppColors.textSecondary,
               ),
               if (state.hasCompareSnapshot) ...[
                 const Divider(color: AppColors.border, height: 24),
@@ -481,6 +664,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: 'Compare',
                   value: 'Original saved',
                   valueColor: AppColors.cyan,
+                  onTap: () {
+                    state.setBenchmarkMode('airflow');
+                    state.setTab(3);
+                  },
                 ),
               ],
               const SizedBox(height: 8),
@@ -488,7 +675,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   if (state.hasCompareSnapshot)
                     TextButton(
-                      onPressed: state.restoreOriginalLayout,
+                      onPressed: () => _confirmRestoreOriginal(context, state),
                       child: const Text('Restore original'),
                     ),
                   const Spacer(),
@@ -512,6 +699,77 @@ class _HomeScreenState extends State<HomeScreen> {
     final w = dims?.widthMeters ?? RoomScale.metersFromCells(room.gridRows);
     final h = dims?.heightMeters ?? room.heightMeters;
     return '${RoomScale.formatMeters(l)} × ${RoomScale.formatMeters(w)} × ${RoomScale.formatMeters(h)}';
+  }
+
+  Future<void> _confirmDeleteRoom(
+    BuildContext context,
+    AppState state,
+    String id,
+    String name,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Delete room?', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          'Remove "$name" from saved rooms. This cannot be undone.',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok == true) state.deleteSavedRoom(id);
+  }
+
+  Future<void> _showRenameRoomSheet(BuildContext context, AppState state) async {
+    final ctrl = TextEditingController(text: state.currentRoomData.name);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'RENAME ROOM',
+              style: TextStyle(color: AppColors.cyan, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                labelStyle: TextStyle(color: AppColors.textMuted),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+                  state.renameActiveRoom(ctrl.text);
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Save name'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    ctrl.dispose();
   }
 
   Future<void> _showCreateRoomSheet(BuildContext context, AppState state) async {
@@ -601,7 +859,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     nameCtrl.dispose();
     if (created == true && context.mounted) {
-      state.setTab(2);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Created ${state.currentRoomData.name}'),
+          action: SnackBarAction(
+            label: 'OPEN RIG',
+            onPressed: () => state.setTab(2),
+          ),
+        ),
+      );
     }
   }
 }
@@ -668,6 +934,49 @@ class _GettingStartedBanner extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManualRoomBanner extends StatelessWidget {
+  final AppState state;
+  const _ManualRoomBanner({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final isManual = state.activeRoomLayout?.scanSource == 'manual';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.purple.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          SvgIcon(RoomSvg.home, size: 22, color: AppColors.purple),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isManual ? 'Room created · ready to edit' : 'Room ready',
+                  style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 13),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  isManual
+                      ? 'Add furniture in Rig or run Bench to simulate scores.'
+                      : 'Continue with Rig, Bench, or Upgrades.',
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -820,12 +1129,19 @@ class _SpecRow extends StatelessWidget {
   final String label;
   final String value;
   final Color? valueColor;
+  final VoidCallback? onTap;
 
-  const _SpecRow({required this.svgString, required this.label, required this.value, this.valueColor});
+  const _SpecRow({
+    required this.svgString,
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final row = Row(
       children: [
         SvgIcon(svgString, size: 18, color: AppColors.textMuted),
         const SizedBox(width: 10),
@@ -839,8 +1155,14 @@ class _SpecRow extends StatelessWidget {
             fontWeight: FontWeight.w700,
           ),
         ),
+        if (onTap != null) ...[
+          const SizedBox(width: 4),
+          Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.textMuted),
+        ],
       ],
     );
+    if (onTap == null) return row;
+    return GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: row);
   }
 }
 
