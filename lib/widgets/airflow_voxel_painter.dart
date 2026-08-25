@@ -214,8 +214,6 @@ class AirflowVoxelPainter extends CustomPainter {
               (p.isCold ? (0.92 + (1.0 - yFrac) * 0.18) : (0.95 + yFrac * 0.22));
       canvas.drawCircle(o, radius, Paint()..color = color.withValues(alpha: alpha));
     }
-
-    _drawAnchors2D(canvas, rect, field);
   }
 
   /// Top-down view: weight floor cold pools heavier than ceiling hot layers.
@@ -250,19 +248,6 @@ class AirflowVoxelPainter extends CustomPainter {
         AppColors.cyan;
     // As intensity drops, fade toward neutral room air (not stuck neon cyan).
     return Color.lerp(const Color(0xFF9AA3B5), hotCold, p.intensity.clamp(0.0, 1.0))!;
-  }
-
-  void _drawAnchors2D(Canvas canvas, Rect rect, AirflowVoxelField field) {
-    for (final box in snapshot.boxes) {
-      final tagged = _anchorTag(box);
-      if (tagged == null) continue;
-      final c = box.center;
-      final o = Offset(
-        rect.left + (c.x / field.roomWidth) * rect.width,
-        rect.top + (c.z / field.roomDepth) * rect.height,
-      );
-      _drawAnchor(canvas, o, tagged.$1, tagged.$2);
-    }
   }
 
   void _paint3D(Canvas canvas, Size size) {
@@ -407,51 +392,6 @@ class AirflowVoxelPainter extends CustomPainter {
         );
       }
     }
-  }
-
-  (Color, String)? _anchorTag(AirflowBox box) {
-    switch (box.kind) {
-      case 'ac':
-        return (AppColors.cyan, 'AC');
-      case 'intake':
-        return (AppColors.green, 'In');
-      case 'exhaust':
-        return (AppColors.orange, 'Out');
-      case 'opening':
-        if (box.leakSign > 0.01) return (AppColors.amber, 'Out');
-        if (box.leakSign < -0.01) return (AppColors.green, 'In');
-        return (AppColors.textMuted, 'Win');
-      case 'door':
-        if (box.leakSign > 0.01) return (AppColors.amber, 'Out');
-        if (box.leakSign < -0.01) return (AppColors.green, 'In');
-        return (AppColors.textMuted, 'Door');
-      case 'heat':
-        return (AppColors.red, 'PC');
-      case 'fan':
-        return (AppColors.airflowColor, 'Fan');
-      default:
-        return null;
-    }
-  }
-
-  void _drawAnchor(Canvas canvas, Offset center, Color color, String label) {
-    canvas.drawCircle(center, 6.5, Paint()..color = color.withValues(alpha: 0.95));
-    canvas.drawCircle(
-      center,
-      14,
-      Paint()
-        ..color = color.withValues(alpha: 0.18)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2,
-    );
-    final tp = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    tp.paint(canvas, Offset(center.dx - tp.width / 2, center.dy - 22));
   }
 
   @override
