@@ -37,7 +37,33 @@ class AppState extends ChangeNotifier {
 
   void setTab(int tab) {
     _currentTab = tab;
+    if (tab == 0) {
+      _stashActiveRoom();
+      refreshSimulatedScores();
+    }
     notifyListeners();
+  }
+
+  /// True when the user has a usable room (scanned or manually created).
+  bool get roomIsReady =>
+      _scanComplete || _activeRoomLayout?.scanSource == 'manual';
+
+  /// Scores are furniture-impact estimates until Bench/optimizer marks them clean.
+  bool get scoresAreSimulated =>
+      _airflowMetricsDirty || _lightingMetricsDirty || _ergonomicsMetricsDirty;
+
+  /// Whether switching preset would discard meaningful user work.
+  bool get hasLayoutWork =>
+      roomIsReady ||
+      _isOptimized ||
+      hasCompareSnapshot ||
+      canUndoLayout ||
+      _furniture.any((f) => f.id.startsWith('upg_'));
+
+  /// Recompute optimizer-based scores for Hub/Upgrades display.
+  void refreshSimulatedScores() {
+    if (_furniture.isEmpty) return;
+    _refreshLayoutScores();
   }
 
   // Scan state
@@ -306,6 +332,65 @@ class AppState extends ChangeNotifier {
     _activeRoomLayout = layout.withObjects(next);
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
+  }
+
+  /// Promote a fused scan object into editable layout furniture.
+  bool promoteScanObject(String id, {RigCatalogEntry? catalogEntry}) {
+    final layout = _activeRoomLayout;
+    if (layout == null) return false;
+    final objIdx = layout.objects.indexWhere((o) => o.id == id);
+    if (objIdx < 0) return false;
+    final obj = layout.objects[objIdx];
+    final room = currentRoomData;
+    final usedIds = _furniture.map((f) => f.id).toSet();
+
+    _pushUndoCheckpoint();
+    FurnitureItem item;
+    if (catalogEntry != null) {
+      final newId = _uniqueScanId(catalogEntry.baseId, usedIds);
+      final cellMeters = ScanLayoutConverter.defaultCellMeters;
+      var gridX = (obj.center.x / cellMeters - catalogEntry.width / 2)
+          .clamp(0.0, max(0.0, room.gridCols - catalogEntry.width))
+          .toDouble();
+      var gridY = (obj.center.z / cellMeters - catalogEntry.height / 2)
+          .clamp(0.0, max(0.0, room.gridRows - catalogEntry.height))
+          .toDouble();
+      item = SurfaceMounts.snapToWall(
+        catalogEntry.toFurniture(id: newId, gridX: gridX, gridY: gridY),
+        gridCols: room.gridCols,
+        gridRows: room.gridRows,
+      );
+    } else {
+      item = ScanLayoutConverter.furnitureFromScanObject(
+        obj,
+        gridCols: room.gridCols,
+        gridRows: room.gridRows,
+        usedIds: usedIds,
+      );
+      item = SurfaceMounts.snapToWall(
+        item,
+        gridCols: room.gridCols,
+        gridRows: room.gridRows,
+      );
+    }
+
+    _furniture = [..._furniture, item];
+    final nextObjects = layout.objects.where((o) => o.id != id).toList(growable: false);
+    _activeRoomLayout = layout.withObjects(nextObjects).withFurniture(_furniture);
+    _selectedItemId = item.id;
+    _selectedIsScanObject = false;
+    _airflowMetricsDirty = true;
+    _lightingMetricsDirty = true;
+    _ergonomicsMetricsDirty = true;
+    _rememberFurniture();
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+    return true;
+  }
+
+  /// Replace a scan object label with a real catalog rig item at the same spot.
+  bool replaceScanObjectWithCatalog(String id, RigCatalogEntry entry) {
+    return promoteScanObject(id, catalogEntry: entry);
   }
 
   void toggleFurnitureHidden(String id) {
@@ -1373,23 +1458,18 @@ class AppState extends ChangeNotifier {
     switch (goal) {
       case 'airflow':
         setOptimizeWeights(airflow: 0.95, lighting: 0.35, ergonomics: 0.35, spatial: 0.4);
-        _benchmarkMode = 'airflow';
         break;
       case 'lighting':
         setOptimizeWeights(airflow: 0.35, lighting: 0.95, ergonomics: 0.35, spatial: 0.4);
-        _benchmarkMode = 'lighting';
         break;
       case 'ergonomics':
         setOptimizeWeights(airflow: 0.35, lighting: 0.35, ergonomics: 0.95, spatial: 0.4);
-        _benchmarkMode = 'ergonomics';
         break;
       case 'spatial':
         setOptimizeWeights(airflow: 0.35, lighting: 0.35, ergonomics: 0.45, spatial: 0.95);
-        _benchmarkMode = 'spatial';
         break;
       default:
         setOptimizeWeights(airflow: 0.75, lighting: 0.75, ergonomics: 0.75, spatial: 0.7);
-        _benchmarkMode = 'airflow';
     }
   }
 
@@ -1504,7 +1584,11 @@ class AppState extends ChangeNotifier {
     if (original != null && original['overall'] != null) {
       return original['overall']!;
     }
-    return (baselineAirflowScore + baselineLightingScore + baselineErgonomicsScore) / 3;
+    return (baselineAirflowScore +
+            baselineLightingScore +
+            baselineErgonomicsScore +
+            spatialScore) /
+        4;
   }
 
   String get scoreGrade {
