@@ -1,5 +1,8 @@
 // lib/services/lighting_optimizer.dart
+// Auto-Rig lighting arrange: daylight band + glare offset + task lamp (IES).
 import '../models/room_model.dart';
+import '../models/surface_mount.dart';
+import 'layout_collision.dart';
 import 'layout_optimizer_common.dart';
 import 'layout_orientation.dart';
 import 'lighting_simulator.dart';
@@ -31,84 +34,53 @@ class LightingOptimizer {
     final cols = gridCols.toDouble();
     final rows = gridRows.toDouble();
     final reasons = <String>[];
-
-    FurnitureItem? find(String id) {
-      try {
-        return furniture.firstWhere((f) => f.id == id);
-      } catch (_) {
-        return null;
-      }
-    }
-
     final targets = <String, ({double x, double y})>{};
 
-    // Anchor daylight on the front wall.
-    final window = find('window');
-    final windowX = window != null ? window.gridX + window.width * 0.5 : cols * 0.4;
+    final window = LayoutOptimizerCommon.findWindow(furniture);
     if (window != null) {
-      targets['window'] = (x: window.gridX.clamp(0.5, cols - window.width - 0.2), y: 0.0);
+      targets[window.id] = (
+        x: window.gridX.clamp(0.5, cols - window.width - 0.2),
+        y: 0.0,
+      );
       reasons.add('Anchored window daylight on the front wall');
     }
-    if (find('door') != null) {
-      targets['door'] = (x: 0.0, y: (rows - 1.8).clamp(4.0, rows - 1));
-      reasons.add('Kept entry door on the side wall');
+
+    final door = LayoutOptimizerCommon.findDoor(furniture);
+    if (door != null) {
+      targets[door.id] = (x: 0.0, y: (rows - 1.8).clamp(4.0, rows - 1));
+      reasons.add('Kept entry door clear on the side wall');
     }
 
-    // Desk in daylight band but offset off-axis to reduce glare.
-    if (find('desk') != null) {
-      final deskX = (windowX - 1.3).clamp(0.3, cols - 2.2);
-      targets['desk'] = (x: deskX, y: 2.1);
-      reasons.add('Moved desk into the daylight band with a glare-safe offset');
-    }
-    final desk = targets['desk'];
-    if (find('chair') != null && desk != null) {
-      targets['chair'] = (x: desk.x + 0.15, y: desk.y + 1.1);
-    }
-    if (find('pc') != null && desk != null) {
-      targets['pc'] = (x: (desk.x - 0.7).clamp(0.0, cols - 1), y: desk.y);
-    }
-    if (find('monitor') != null && desk != null) {
-      targets['monitor'] = (x: desk.x + 0.6, y: desk.y);
-    }
+    reasons.addAll(
+      LayoutOptimizerCommon.planWorkCluster(
+        furniture: furniture,
+        targets: targets,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        bias: WorkClusterBias.lighting,
+      ),
+    );
 
-    // Task lamp beside the desk (keep close; overlap pass may nudge slightly).
-    if (find('lamp') != null && desk != null) {
-      targets['lamp'] = (x: (desk.x + 1.05).clamp(0.0, cols - 1), y: desk.y + 0.05);
-      reasons.add('Placed task lamp at the desk instead of a dark corner');
-    }
+    LayoutOptimizerCommon.planPerimeterStorage(
+      furniture: furniture,
+      targets: targets,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      reasons: reasons,
+    );
 
-    // Clear tall blockers from the window → desk corridor.
-    if (find('shelf') != null || find('bookshelf') != null) {
-      final id = find('shelf') != null ? 'shelf' : 'bookshelf';
-      targets[id] = (x: cols - 1, y: (rows - 2.2).clamp(3.0, rows - 1));
-      reasons.add('Cleared tall storage out of the daylight corridor');
+    final desk = LayoutOptimizerCommon.findDesk(furniture);
+    final deskY = targets[desk?.id]?.y ?? desk?.gridY ?? 2.0;
+    final ac = LayoutOptimizerCommon.firstWhere(furniture, SurfaceMounts.isVent);
+    if (ac != null) {
+      targets[ac.id] = (x: cols - 1, y: (rows * 0.35).clamp(1.0, rows - 2));
     }
-    if (find('wardrobe') != null) {
-      targets['wardrobe'] = (x: 0.0, y: (rows * 0.55).clamp(3.0, rows - 2));
-    }
-
-    // Sleeping / lounge on the darker perimeter.
-    final bed = find('bed');
-    if (bed != null) {
-      targets['bed'] = (
-        x: ((cols - bed.width) * 0.55).clamp(0.0, cols - bed.width),
-        y: (rows - bed.height - 0.25).clamp(0.0, rows - bed.height),
-      );
-      reasons.add('Kept bed on the darker far wall');
-    }
-    if (find('sofa') != null) {
-      targets['sofa'] = (x: 1.0, y: (rows - 2).clamp(0.0, rows - 1));
-    }
-
-    // Keep airflow devices from stealing the daylight lane if present.
-    if (find('ac') != null) {
-      targets['ac'] = (x: cols - 1, y: (rows * 0.35).clamp(1.0, rows - 2));
-    }
-    if (find('fan') != null && desk != null) {
-      targets['fan'] = (x: 0.15, y: (desk.y + 2.2).clamp(2.0, rows - 1.5));
-    }
-    if (find('plant') != null) {
-      targets['plant'] = (x: cols - 1, y: 2.0);
+    final fan = LayoutOptimizerCommon.firstWhere(
+      furniture,
+      (f) => f.iconName == 'fan' || '${f.id} ${f.name}'.toLowerCase().contains('fan'),
+    );
+    if (fan != null) {
+      targets[fan.id] = (x: 0.15, y: (deskY + 2.2).clamp(2.0, rows - 1.5));
     }
 
     final before = furniture.map((f) => f.copyWith()).toList(growable: false);
@@ -121,8 +93,14 @@ class LightingOptimizer {
       gridRows: gridRows,
     );
     next = _resolveOverlaps(next, cols, rows);
+    next = LayoutOptimizerCommon.mountDeskTopItems(next);
     next = LayoutOrientation.apply(
       furniture: next,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    next = LayoutOptimizerCommon.resolveLayoutConflicts(
+      items: next,
       gridCols: gridCols,
       gridRows: gridRows,
     );
@@ -146,33 +124,30 @@ class LightingOptimizer {
     double rows,
   ) {
     final mutable = items.map((f) => f.copyWith()).toList();
-    const fixed = {'window', 'door', 'lamp', 'desk'};
     for (int iter = 0; iter < 8; iter++) {
       var moved = false;
       for (int i = 0; i < mutable.length; i++) {
         for (int j = i + 1; j < mutable.length; j++) {
-          final aFixed = fixed.contains(mutable[i].id);
-          final bFixed = fixed.contains(mutable[j].id);
-          if (aFixed && bFixed) continue;
           final a = mutable[i];
           final b = mutable[j];
-          if (!_overlaps(a, b)) continue;
+          final aFixed = SurfaceMounts.isStructuralMount(a) || SurfaceMounts.isDeskHost(a);
+          final bFixed = SurfaceMounts.isStructuralMount(b) || SurfaceMounts.isDeskHost(b);
+          if (aFixed && bFixed) continue;
+          if (!LayoutCollision.blocks(a, b, mutable)) continue;
           final moveIdx = bFixed ? i : j;
           final keep = moveIdx == i ? b : a;
           final mover = moveIdx == i ? a : b;
           final maxX = (cols - mover.width).clamp(0.0, cols);
           final maxY = (rows - mover.height).clamp(0.0, rows);
-          var nx = mover.gridX + 0.35;
+          var nx = mover.gridX;
           var ny = mover.gridY;
-          if (nx > maxX) {
-            nx = mover.gridX;
-            ny = (mover.gridY + 0.45).clamp(0.0, maxY);
-          }
-          // Prefer sliding away from the kept item.
           if (mover.gridX < keep.gridX) {
             nx = (keep.gridX - mover.width - 0.05).clamp(0.0, maxX);
           } else {
             nx = (keep.gridX + keep.width + 0.05).clamp(0.0, maxX);
+          }
+          if (nx > maxX) {
+            ny = (mover.gridY + 0.45).clamp(0.0, maxY);
           }
           mutable[moveIdx] = mover.copyWith(
             gridX: nx.clamp(0.0, maxX),
@@ -184,12 +159,5 @@ class LightingOptimizer {
       if (!moved) break;
     }
     return List.unmodifiable(mutable);
-  }
-
-  static bool _overlaps(FurnitureItem a, FurnitureItem b) {
-    return a.gridX < b.gridX + b.width &&
-        a.gridX + a.width > b.gridX &&
-        a.gridY < b.gridY + b.height &&
-        a.gridY + a.height > b.gridY;
   }
 }
