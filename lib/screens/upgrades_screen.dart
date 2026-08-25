@@ -56,6 +56,12 @@ class UpgradesScreen extends StatelessWidget {
           ),
           const Spacer(),
           if (addedCount > 0)
+            Text(
+              '\$${state.upgradesCost.toStringAsFixed(0)} spent',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          if (addedCount > 0) const SizedBox(width: 8),
+          if (addedCount > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -115,19 +121,19 @@ class UpgradesScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ScoreRing(
-                  score: (state.airflowScore + state.upgradeAirflowBonus).clamp(0, 100),
+                  score: state.airflowScore.clamp(0, 100),
                   size: 75,
                   color: AppColors.airflowColor,
                   label: 'Airflow',
                 ),
                 ScoreRing(
-                  score: (state.lightingScore + state.upgradeLightingBonus).clamp(0, 100),
+                  score: state.lightingScore.clamp(0, 100),
                   size: 75,
                   color: AppColors.lightingColor,
                   label: 'Lighting',
                 ),
                 ScoreRing(
-                  score: (state.ergonomicsScore + state.upgradeErgonomicsBonus).clamp(0, 100),
+                  score: state.ergonomicsScore.clamp(0, 100),
                   size: 75,
                   color: AppColors.ergonomicsColor,
                   label: 'Ergonomics',
@@ -210,9 +216,12 @@ class UpgradesScreen extends StatelessWidget {
                         backgroundColor: cat.$3.withValues(alpha: 0.9),
                         behavior: SnackBarBehavior.floating,
                         action: SnackBarAction(
-                          label: 'OPEN RIG',
+                          label: adding ? 'OPEN BENCH' : 'OPEN RIG',
                           textColor: Colors.black,
-                          onPressed: () => state.setTab(2),
+                          onPressed: () {
+                            if (adding) state.setBenchmarkMode(cat.$1);
+                            state.setTab(adding ? 3 : 2);
+                          },
                         ),
                       ),
                     );
@@ -294,6 +303,21 @@ class _UpgradeCard extends StatelessWidget {
                   Text(
                     upgrade['desc'] as String,
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        '\$${(upgrade['price'] as num?)?.toStringAsFixed(0) ?? '0'}',
+                        style: TextStyle(color: AppColors.cyan, fontSize: 12, fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(width: 8),
+                      if (isAdded)
+                        Text(
+                          'Installed',
+                          style: TextStyle(color: categoryColor, fontSize: 10, fontWeight: FontWeight.w700),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   Row(
