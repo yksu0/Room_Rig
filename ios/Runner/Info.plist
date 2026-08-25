@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Room Rig uses the camera to scan your room layout and detect furniture.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Room Rig uses device motion to track your position while scanning the room.</string>
 </dict>
 </plist>
