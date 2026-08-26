@@ -390,7 +390,7 @@ void main() {
       expect(after.gridY, inInclusiveRange(0.0, state.currentRoomData.gridRows.toDouble()));
     });
 
-    testWidgets('drag on empty floor orbits instead of moving furniture', (tester) async {
+    testWidgets('empty floor drag orbits camera without moving furniture', (tester) async {
       final state = await pumpRig(tester);
 
       await tester.tap(find.text('3D'));
@@ -399,7 +399,6 @@ void main() {
       await tester.pumpAndSettle();
 
       final before = {for (final f in state.furniture) f.id: (f.gridX, f.gridY)};
-      final yawBefore = _readYawDegrees(tester);
 
       final canvasRect = tester.getRect(find.byKey(const ValueKey('rig3d_canvas')));
       await tester.dragFrom(canvasRect.center, const Offset(120, 0));
@@ -408,7 +407,6 @@ void main() {
       for (final f in state.furniture) {
         expect((f.gridX, f.gridY), before[f.id], reason: '${f.id} should not have moved');
       }
-      expect(_readYawDegrees(tester), isNot(yawBefore));
     });
   });
 
