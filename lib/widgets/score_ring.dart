@@ -35,7 +35,7 @@ class _ScoreRingState extends State<ScoreRing>
       duration: const Duration(milliseconds: 1200),
       vsync: this,
     );
-    _animation = Tween<double>(begin: 0, end: widget.score / 100)
+    _animation = Tween<double>(begin: 0, end: 1)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     if (widget.animate) _controller.forward();
   }
@@ -44,7 +44,7 @@ class _ScoreRingState extends State<ScoreRing>
   void didUpdateWidget(ScoreRing old) {
     super.didUpdateWidget(old);
     if (old.score != widget.score) {
-      _animation = Tween<double>(begin: _animation.value, end: widget.score / 100)
+      _animation = Tween<double>(begin: _animation.value, end: 1)
           .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
       _controller.forward(from: 0);
     }
@@ -65,7 +65,7 @@ class _ScoreRingState extends State<ScoreRing>
         height: widget.size,
         child: CustomPaint(
           painter: _RingPainter(
-            progress: _animation.value,
+            progress: (widget.score / 100).clamp(0.0, 1.0) * _animation.value,
             color: widget.color,
             bgColor: AppColors.border,
           ),
