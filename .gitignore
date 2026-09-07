@@ -44,11 +44,14 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Local planning docs
+# Local planning / progress / design notes (keep out of git)
+/docs/
 plan.md
+planplan.md
 DESIGN_REFERENCES.md
 TECHNOLOGY_BLUEPRINT.md
 other_points.md
 PROJECT_PROGRESS.md
 to_be_continued.md
 SIMULATED_PROTOTYPE_PLAN.md
+PAGE_DIAGNOSTICS*.md
