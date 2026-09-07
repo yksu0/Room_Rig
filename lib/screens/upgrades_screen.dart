@@ -207,7 +207,7 @@ class UpgradesScreen extends StatelessWidget {
                       );
                       if (!ok || !context.mounted) return;
                     }
-                    final ok = state.toggleUpgrade(i);
+                    final ok = state.toggleUpgrade(i, pending: adding);
                     if (!ok) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -217,22 +217,22 @@ class UpgradesScreen extends StatelessWidget {
                       );
                       return;
                     }
+                    if (adding) {
+                      state.setTab(2);
+                    }
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
                           adding
-                              ? '${u['name']} placed on Rig'
+                              ? '${u['name']} — drag the ghost on Rig, then Place'
                               : '${u['name']} removed from Rig',
                         ),
                         backgroundColor: cat.$3.withValues(alpha: 0.9),
                         behavior: SnackBarBehavior.floating,
                         action: SnackBarAction(
-                          label: adding ? 'OPEN BENCH' : 'OPEN RIG',
+                          label: 'OPEN RIG',
                           textColor: Colors.black,
-                          onPressed: () {
-                            if (adding) state.setBenchmarkMode(cat.$1);
-                            state.setTab(adding ? 3 : 2);
-                          },
+                          onPressed: () => state.setTab(2),
                         ),
                       ),
                     );
