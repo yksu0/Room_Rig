@@ -334,7 +334,9 @@ void main() {
       final state = await pumpRig(tester);
       final fanBefore = state.furniture.firstWhere((f) => f.id == 'fan');
 
-      await tester.drag(find.byKey(const ValueKey('rig2d_fan')), const Offset(0, -120));
+      // Items are IgnorePointer visuals; the plan Listener owns the drag.
+      final fanRect = tester.getRect(find.byKey(const ValueKey('rig2d_fan')));
+      await tester.dragFrom(fanRect.center, const Offset(0, -120));
       await tester.pumpAndSettle();
 
       final fanAfter = state.furniture.firstWhere((f) => f.id == 'fan');
@@ -359,6 +361,8 @@ void main() {
       await tester.pumpAndSettle();
 
       state.selectFurniture('fan');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('rig3d_move_mode')));
       await tester.pumpAndSettle();
       final before = state.furniture.firstWhere((f) => f.id == 'fan');
 
@@ -388,6 +392,43 @@ void main() {
       expect(moved, greaterThan(0.05), reason: 'the selected item should have moved');
       expect(after.gridX, inInclusiveRange(0.0, state.currentRoomData.gridCols.toDouble()));
       expect(after.gridY, inInclusiveRange(0.0, state.currentRoomData.gridRows.toDouble()));
+    });
+
+    testWidgets('short drag on selected item orbits without moving furniture', (tester) async {
+      final state = await pumpRig(tester);
+
+      await tester.tap(find.text('3D'));
+      await tester.pumpAndSettle();
+
+      state.selectFurniture('fan');
+      await tester.pumpAndSettle();
+      // MOVE mode off: one-finger drag should orbit only.
+      final before = state.furniture.firstWhere((f) => f.id == 'fan');
+
+      final canvasRect = tester.getRect(find.byKey(const ValueKey('rig3d_canvas')));
+      final cam = CameraPose(
+        roomWidth: state.currentRoomData.gridCols.toDouble(),
+        roomDepth: state.currentRoomData.gridRows.toDouble(),
+        roomHeight: 2.8,
+        yaw: 0,
+        pitch: 0.34,
+        distance: 15,
+      );
+      final projected = RoomProjection.project(
+        OrbitVec3(before.gridX + before.width / 2, 0.5, before.gridY + before.height / 2),
+        canvasRect.size,
+        cam,
+      );
+      expect(projected, isNotNull);
+      final start = canvasRect.topLeft + projected!.offset;
+
+      await tester.dragFrom(start, const Offset(80, 0));
+      await tester.pumpAndSettle();
+
+      final after = state.furniture.firstWhere((f) => f.id == 'fan');
+      expect(after.gridX, before.gridX);
+      expect(after.gridY, before.gridY);
+      expect(_readYawDegrees(tester), isNot(0), reason: 'one-finger drag should orbit yaw');
     });
 
     testWidgets('empty floor drag orbits camera without moving furniture', (tester) async {

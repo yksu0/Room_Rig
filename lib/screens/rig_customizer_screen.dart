@@ -80,6 +80,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   /// Where the finger touched down in the 3D canvas, before touch slop.
   Offset? _pointerDownPos;
 
+  /// When true, one-finger drags move the selected item; otherwise they orbit.
+  bool _rigMoveMode = false;
+
   /// Lift preview follows the finger while dragging in 2D or 3D.
   Offset? _dragPointerLocal;
 
@@ -95,6 +98,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     final state = context.watch<AppState>();
     final selectedFurniture = state.selectedFurniture;
     final selectedScanObject = state.selectedScanObject;
+    final canMoveSelected =
+        selectedFurniture != null && !state.selectedIsScanObject;
+    if (!canMoveSelected && _rigMoveMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_rigMoveMode) setState(() => _rigMoveMode = false);
+      });
+    }
 
     return Scaffold(
       key: _scaffoldKey,
@@ -786,7 +797,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       buildScene(),
                       if (_drag2dGestureStarted && _dragPointerLocal != null)
                         RigDragMagnifier(
-                          focalPoint: _dragPointerLocal!,
+                          pointerLocal: _dragPointerLocal!,
                           canvasSize: canvasSize,
                           blocked: state.dragPoseBlocked,
                           scene: buildScene(),
@@ -866,145 +877,169 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
             final renderItems = <RoomRenderItem>[...presetItems, ...detectedItems];
 
-            return Listener(
-              behavior: HitTestBehavior.opaque,
-              // Item drags are driven from pointer events so a competing
-              // double-tap recognizer cannot swallow ScaleUpdate.
-              onPointerDown: (event) {
-                _pointerDownPos = event.localPosition;
-                _armItemDrag3D(event.localPosition, canvasSize, state);
-              },
-              onPointerMove: (event) {
-                if (_pendingDragId == null && _dragItemId == null) return;
-                final pos = event.localPosition;
-                if (_dragItemId == null) {
-                  if (_pointerDownPos != null && (pos - _pointerDownPos!).distance < 12) {
-                    return;
-                  }
-                  _commitItemDrag3D(state);
-                }
-                final dragId = _dragItemId;
-                if (dragId != null) {
-                  setState(() => _dragPointerLocal = pos);
-                  _updateDrag3D(dragId, pos, canvasSize, state);
-                }
-              },
-              onPointerUp: (_) {
-                _pendingDragId = null;
-                _pendingGrabOffset = null;
-                _endDrag3D(state);
-              },
-              onPointerCancel: (_) {
-                _pendingDragId = null;
-                _pendingGrabOffset = null;
-                _endDrag3D(state);
-              },
-              onPointerSignal: (signal) {
-                if (signal is PointerScrollEvent) {
-                  setState(() {
-                    _cameraDistance = (_cameraDistance + signal.scrollDelta.dy * 0.02).clamp(6.0, 32.0);
-                  });
-                }
-              },
-              child: GestureDetector(
-                key: const ValueKey('rig3d_canvas'),
-                behavior: HitTestBehavior.opaque,
-                onTapUp: (details) {
-                  final picked = _pickItemIn3D(details.localPosition, canvasSize, state);
-                  if (picked != null) {
-                    if (picked.isScanObject) {
-                      state.selectScanObject(picked.id, toggle: true);
-                    } else {
-                      state.selectFurniture(picked.id, toggle: true);
-                    }
-                  } else if (!state.hasPendingPlacement) {
-                    state.clearSelection();
-                  }
-                },
-                onScaleStart: (details) {
-                  _scaleStartDistance = _cameraDistance;
-                },
-                onScaleUpdate: (details) {
-                  if (_dragItemId != null || _pendingDragId != null) return;
-                  setState(() {
-                    if (details.pointerCount >= 2) {
-                      // Two fingers: pinch zoom + pan the orbit pivot.
-                      final next = _scaleStartDistance / details.scale.clamp(0.15, 6.0);
-                      _cameraDistance = next.clamp(6.0, 32.0);
-                      final cols = state.currentRoomData.gridCols.toDouble();
-                      final rows = state.currentRoomData.gridRows.toDouble();
-                      final pose = CameraPose(
-                        roomWidth: cols,
-                        roomDepth: rows,
-                        roomHeight: roomHeight,
-                        yaw: _cameraYawRad,
-                        pitch: _cameraPitchRad,
-                        distance: _cameraDistance,
-                        lookAtX: _lookAtX,
-                        lookAtZ: _lookAtZ,
-                      );
-                      final (right, fwd) = RoomProjection.floorPanAxes(pose);
-                      final pan = _cameraDistance * 0.00165;
-                      final dx = -details.focalPointDelta.dx * pan;
-                      final dz = details.focalPointDelta.dy * pan;
-                      _lookAtX = (pose.pivotX + right.x * dx + fwd.x * dz).clamp(-2.0, cols + 2.0);
-                      _lookAtZ = (pose.pivotZ + right.z * dx + fwd.z * dz).clamp(-2.0, rows + 2.0);
-                    } else {
-                      _cameraYawRad = _cameraYawRad + details.focalPointDelta.dx * 0.008;
-                      _cameraPitchRad = (_cameraPitchRad - details.focalPointDelta.dy * 0.006)
-                          .clamp(-0.1, 1.0);
-                    }
-                  });
-                },
-                onDoubleTap: () {
-                  setState(() {
-                    _cameraYawRad = 0;
-                    _cameraPitchRad = 0.34;
-                    _cameraDistance = 15;
-                    _lookAtX = null;
-                    _lookAtZ = null;
-                  });
-                },
-                child: Stack(
-                children: [
-                  Builder(
-                    builder: (context) {
-                      Widget buildScene() {
-                        return CustomPaint(
-                          size: Size(w, h),
-                          painter: RoomOrbit3DPainter(
-                            roomWidth: gridCols.toDouble(),
-                            roomDepth: gridRows.toDouble(),
-                            roomHeight: roomHeight,
-                            gridCols: gridCols,
-                            gridRows: gridRows,
-                            yaw: _cameraYawRad,
-                            pitch: _cameraPitchRad,
-                            distance: _cameraDistance,
-                            lookAtX: _lookAtX,
-                            lookAtZ: _lookAtZ,
-                            items: renderItems,
-                          ),
-                        );
-                      }
+            final showMove = state.selectedFurniture != null && !state.selectedIsScanObject;
 
-                      return Stack(
-                        children: [
-                          buildScene(),
-                          if (_dragItemId != null && _dragPointerLocal != null)
-                            RigDragMagnifier(
-                              focalPoint: _dragPointerLocal!,
-                              canvasSize: Size(w, h),
-                              blocked: state.dragPoseBlocked,
-                              scene: buildScene(),
-                            ),
-                        ],
-                      );
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    // Item drags are driven from pointer events so a competing
+                    // double-tap recognizer cannot swallow ScaleUpdate.
+                    onPointerDown: (event) {
+                      _pointerDownPos = event.localPosition;
+                      _pendingDragId = null;
+                      _pendingGrabOffset = null;
+                      if (_rigMoveMode) {
+                        _armItemDrag3D(event.localPosition, canvasSize, state);
+                      }
                     },
+                    onPointerMove: (event) {
+                      if (_pendingDragId == null && _dragItemId == null) return;
+                      final pos = event.localPosition;
+                      if (_dragItemId == null) {
+                        if (_pointerDownPos != null && (pos - _pointerDownPos!).distance < 12) {
+                          return;
+                        }
+                        _commitItemDrag3D(state);
+                      }
+                      final dragId = _dragItemId;
+                      if (dragId != null) {
+                        setState(() => _dragPointerLocal = pos);
+                        _updateDrag3D(dragId, pos, canvasSize, state);
+                      }
+                    },
+                    onPointerUp: (_) {
+                      _pendingDragId = null;
+                      _pendingGrabOffset = null;
+                      _endDrag3D(state);
+                    },
+                    onPointerCancel: (_) {
+                      _pendingDragId = null;
+                      _pendingGrabOffset = null;
+                      _endDrag3D(state);
+                    },
+                    onPointerSignal: (signal) {
+                      if (signal is PointerScrollEvent) {
+                        setState(() {
+                          _cameraDistance =
+                              (_cameraDistance + signal.scrollDelta.dy * 0.02).clamp(6.0, 32.0);
+                        });
+                      }
+                    },
+                    child: GestureDetector(
+                      key: const ValueKey('rig3d_canvas'),
+                      behavior: HitTestBehavior.opaque,
+                      onTapUp: (details) {
+                        if (_dragItemId != null || _pendingDragId != null) return;
+                        final picked = _pickItemIn3D(details.localPosition, canvasSize, state);
+                        if (picked != null) {
+                          if (picked.isScanObject) {
+                            state.selectScanObject(picked.id, toggle: true);
+                          } else {
+                            state.selectFurniture(picked.id, toggle: true);
+                          }
+                        } else if (!state.hasPendingPlacement) {
+                          state.clearSelection();
+                          if (_rigMoveMode) setState(() => _rigMoveMode = false);
+                        }
+                      },
+                      onScaleStart: (details) {
+                        _scaleStartDistance = _cameraDistance;
+                      },
+                      onScaleUpdate: (details) {
+                        if (details.pointerCount >= 2) {
+                          _pendingDragId = null;
+                          _pendingGrabOffset = null;
+                          if (_dragItemId != null) {
+                            _endDrag3D(state);
+                          }
+                        } else if (_dragItemId != null || _pendingDragId != null) {
+                          return;
+                        }
+                        setState(() {
+                          if (details.pointerCount >= 2) {
+                            // Two fingers: pinch zoom + pan the orbit pivot.
+                            final next = _scaleStartDistance / details.scale.clamp(0.15, 6.0);
+                            _cameraDistance = next.clamp(6.0, 32.0);
+                            final cols = state.currentRoomData.gridCols.toDouble();
+                            final rows = state.currentRoomData.gridRows.toDouble();
+                            final pose = CameraPose(
+                              roomWidth: cols,
+                              roomDepth: rows,
+                              roomHeight: roomHeight,
+                              yaw: _cameraYawRad,
+                              pitch: _cameraPitchRad,
+                              distance: _cameraDistance,
+                              lookAtX: _lookAtX,
+                              lookAtZ: _lookAtZ,
+                            );
+                            final (right, fwd) = RoomProjection.floorPanAxes(pose);
+                            final pan = _cameraDistance * 0.00165;
+                            final dx = -details.focalPointDelta.dx * pan;
+                            final dz = details.focalPointDelta.dy * pan;
+                            _lookAtX =
+                                (pose.pivotX + right.x * dx + fwd.x * dz).clamp(-2.0, cols + 2.0);
+                            _lookAtZ =
+                                (pose.pivotZ + right.z * dx + fwd.z * dz).clamp(-2.0, rows + 2.0);
+                          } else {
+                            _cameraYawRad = _cameraYawRad + details.focalPointDelta.dx * 0.008;
+                            _cameraPitchRad = (_cameraPitchRad - details.focalPointDelta.dy * 0.006)
+                                .clamp(-0.1, 1.0);
+                          }
+                        });
+                      },
+                      onDoubleTap: () {
+                        setState(() {
+                          _cameraYawRad = 0;
+                          _cameraPitchRad = 0.34;
+                          _cameraDistance = 15;
+                          _lookAtX = null;
+                          _lookAtZ = null;
+                        });
+                      },
+                      child: Builder(
+                        builder: (context) {
+                          Widget buildScene() {
+                            return CustomPaint(
+                              size: Size(w, h),
+                              painter: RoomOrbit3DPainter(
+                                roomWidth: gridCols.toDouble(),
+                                roomDepth: gridRows.toDouble(),
+                                roomHeight: roomHeight,
+                                gridCols: gridCols,
+                                gridRows: gridRows,
+                                yaw: _cameraYawRad,
+                                pitch: _cameraPitchRad,
+                                distance: _cameraDistance,
+                                lookAtX: _lookAtX,
+                                lookAtZ: _lookAtZ,
+                                items: renderItems,
+                              ),
+                            );
+                          }
+
+                          return Stack(
+                            children: [
+                              buildScene(),
+                              if (_dragItemId != null && _dragPointerLocal != null)
+                                RigDragMagnifier(
+                                  pointerLocal: _dragPointerLocal!,
+                                  canvasSize: Size(w, h),
+                                  blocked: state.dragPoseBlocked,
+                                  scene: buildScene(),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
                   ),
-                  Positioned(
-                    top: 8,
-                    left: 10,
+                ),
+                Positioned(
+                  top: 8,
+                  left: 10,
+                  child: IgnorePointer(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
@@ -1012,15 +1047,54 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: AppColors.border),
                       ),
-                      child: const Text(
-                        '1 finger orbit · 2 fingers pan + pinch · double-tap reset',
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
+                      child: Text(
+                        _rigMoveMode
+                            ? 'MOVE on · drag item · tap empty floor to exit'
+                            : '1 finger orbit · tap MOVE to drag · 2 fingers pan + pinch',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
+                ),
+                if (showMove)
                   Positioned(
-                    top: 40,
+                    top: 8,
                     right: 10,
+                    child: Material(
+                      color: _rigMoveMode
+                          ? AppColors.cyan
+                          : AppColors.surface.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(8),
+                      child: InkWell(
+                        key: const ValueKey('rig3d_move_mode'),
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() => _rigMoveMode = !_rigMoveMode);
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          child: Text(
+                            'MOVE',
+                            style: TextStyle(
+                              color: _rigMoveMode ? Colors.black : AppColors.cyan,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  top: showMove ? 40 : 8,
+                  right: 10,
+                  child: IgnorePointer(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
@@ -1030,13 +1104,19 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       ),
                       child: Text(
                         'yaw ${_orbitYawDegrees()}°  pitch ${(_cameraPitchRad * 180 / math.pi).round()}°',
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                  Positioned(
-                    bottom: 10,
-                    right: 10,
+                ),
+                Positioned(
+                  bottom: 10,
+                  right: 10,
+                  child: IgnorePointer(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                       decoration: BoxDecoration(
@@ -1046,15 +1126,20 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       ),
                       child: Text(
                         state.selectedFurniture != null
-                            ? 'Drag item · Facing buttons aim fans / coolers / heaters'
-                            : 'Select an item, then drag to move it',
-                        style: const TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
+                            ? (_rigMoveMode
+                                ? 'Drag the item · Facing aims jets'
+                                : 'Tap MOVE, then drag · or orbit freely')
+                            : 'Select an item, tap MOVE to drag, or orbit empty floor',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
-                ],
                 ),
-              ),
+              ],
             );
           },
         ),
@@ -1062,16 +1147,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  /// A one-finger drag that starts on the already-selected item moves it;
-  /// anywhere else keeps orbiting the camera, so a crowded room stays inspectable.
+  /// When MOVE mode is on, pointer-down near a movable item arms a floor drag.
+  /// Otherwise one-finger gestures orbit so crowded rooms stay inspectable.
   void _armItemDrag3D(Offset localPos, Size size, AppState state) {
     _pendingDragId = null;
     _pendingGrabOffset = null;
     _dragItemId = null;
     _dragGrabOffset = null;
 
-    final selected = state.selectedFurniture;
     FurnitureItem? item;
+    final selected = state.selectedFurniture;
     if (selected != null &&
         !state.selectedIsScanObject &&
         !selected.hidden &&
@@ -1081,11 +1166,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     } else {
       final picked = _pickItemIn3D(localPos, size, state);
       if (picked == null || picked.isScanObject) return;
-      if (state.selectedItemId != picked.id || state.selectedIsScanObject) return;
       final matches = state.furniture.where((f) => f.id == picked.id);
       if (matches.isEmpty) return;
       item = matches.first;
       if (!state.canMoveFurniture(item) || item.hidden) return;
+      state.selectFurniture(item.id);
     }
 
     final floor = RoomProjection.unprojectToFloor(localPos, size, _cameraFor(state));
@@ -2592,7 +2677,6 @@ class _AddCatalogTile extends StatelessWidget {
   final String detail;
   final String category;
   final String? trailing;
-  final bool installed;
   final VoidCallback? onTap;
 
   const _AddCatalogTile({
@@ -2601,7 +2685,6 @@ class _AddCatalogTile extends StatelessWidget {
     required this.detail,
     required this.category,
     this.trailing,
-    this.installed = false,
     this.onTap,
   });
 
@@ -2665,28 +2748,17 @@ class _AddCatalogTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  if (installed)
+                  if (trailing != null)
                     Text(
-                      'ADDED',
-                      style: TextStyle(
-                        color: AppColors.green,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
+                      trailing!,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
                       ),
-                    )
-                  else ...[
-                    if (trailing != null)
-                      Text(
-                        trailing!,
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.add_circle_outline_rounded, size: 20, color: AppColors.cyan),
-                  ],
+                    ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.add_circle_outline_rounded, size: 20, color: AppColors.cyan),
                 ],
               ),
             ),
