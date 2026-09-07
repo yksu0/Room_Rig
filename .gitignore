@@ -55,3 +55,17 @@ PROJECT_PROGRESS.md
 to_be_continued.md
 SIMULATED_PROTOTYPE_PLAN.md
 PAGE_DIAGNOSTICS*.md
+
+# Local ML export workspace (weights / venv / TFLite outs — regenerate via script)
+/ml/.venv/
+/ml/out/
+/ml/**/*.pt
+/ml/**/*.onnx
+/ml/**/*_saved_model/
+/assets/models/*.tflite
+
+# Root / accidental Ultralytics dumps (keep repo lean)
+/yolov8n.*
+*.onnx
+*.onnx.data
+*.pt
