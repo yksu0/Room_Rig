@@ -1,12 +1,19 @@
 # Model Assets
 
-Place on-device detection models in this folder.
+Expected detector path (gitignored — generate locally):
 
-Expected path used by the scanner pipeline:
 - `assets/models/yolo_roomrig.tflite`
+- `assets/models/yolo_roomrig_labels.txt` (COCO-80 when using the smoke-test model)
+- `assets/models/yolo_roomrig_target_labels.txt` (aspirational Room Rig classes; written by export script)
 
-Until that file is present, Room Rig uses `LumaStructureObjectDetector`
-(contrast blobs → desk / chair / window / door labels) via the hybrid fallback.
+Until the `.tflite` file exists, Scan uses the approximate Luma/heuristic fallback.
 
-Optional labels file (future):
-- `assets/models/yolo_roomrig_labels.txt`
+## Generate / download
+
+```powershell
+python -m venv ml\.venv
+ml\.venv\Scripts\pip install -r ml\requirements.txt
+ml\.venv\Scripts\python ml\export_yolo_tflite.py
+```
+
+See `ml/README.md` for custom-train steps. Rebuild the app after the file appears.
