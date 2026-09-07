@@ -36,6 +36,10 @@ class AppState extends ChangeNotifier {
   int get currentTab => _currentTab;
 
   void setTab(int tab) {
+    // Unfinished Place ghosts must not ride into Hub stash / Bench / other tabs.
+    if (_currentTab == 2 && tab != 2 && hasPendingPlacement) {
+      cancelPendingPlacement(notify: false);
+    }
     _currentTab = tab;
     if (tab == 0) {
       _stashActiveRoom();
@@ -472,6 +476,13 @@ class AppState extends ChangeNotifier {
   String? get pendingPlacementId => _pendingPlacementId;
   bool get hasPendingPlacement => _pendingPlacementId != null;
   bool isPendingPlacement(String id) => _pendingPlacementId == id;
+
+  /// Furniture that counts for Bench / Auto-Rig — unfinished Place ghosts are excluded.
+  List<FurnitureItem> get committedFurniture {
+    final pending = _pendingPlacementId;
+    if (pending == null) return furniture;
+    return _furniture.where((f) => f.id != pending).toList(growable: false);
+  }
 
   /// Places a catalog blueprint. [pending] drops a ghost in the room centre
   /// until [confirmPendingPlacement]; otherwise it occupies the first free cell.
@@ -1666,6 +1677,8 @@ class AppState extends ChangeNotifier {
   /// Auto-Rig: rearranges furniture using weighted multi-objective blending.
   /// [goal] optionally applies a weight preset before solving.
   void runOptimization({String? goal}) {
+    // Drop unfinished Place ghosts so Auto-Rig does not treat them as real.
+    cancelPendingPlacement(notify: false);
     if (goal != null) {
       applyOptimizeGoalPreset(goal);
     }
@@ -1713,6 +1726,8 @@ class AppState extends ChangeNotifier {
   /// is a rearrange of their own room — it must not swap their preset back to
   /// the gaming setup or throw away a completed scan.
   void applyFurnitureLayout(List<FurnitureItem> items, {bool markOptimized = false}) {
+    // Clear pending Place state; the incoming layout replaces the ghost entirely.
+    cancelPendingPlacement(notify: false);
     _pushUndoCheckpoint();
     if (markOptimized) _captureOriginalIfNeeded();
     final room = currentRoomData;
