@@ -295,9 +295,9 @@ class ArCoreSessionManager(
 		val ty = pose.ty().toDouble()
 		val tz = pose.tz().toDouble()
 
-		// Convert pose quaternion-ish orientation to yaw/pitch approx via rotated axes.
+		// Camera looks along local -Z in ARCore; +Z is behind the lens.
 		val forward = FloatArray(3)
-		pose.getTransformedAxis(2, 1.0f, forward, 0)
+		pose.getTransformedAxis(2, -1.0f, forward, 0)
 		val yaw = Math.toDegrees(atan2(forward[0].toDouble(), forward[2].toDouble()))
 		val pitch = Math.toDegrees(
 			atan2(
