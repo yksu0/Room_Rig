@@ -61,9 +61,10 @@ class AppState extends ChangeNotifier {
       _furniture.any((f) => f.id.startsWith('upg_'));
 
   /// Recompute optimizer-based scores for Hub/Upgrades display.
+  /// Does not mark metrics clean — only Bench Apply / Auto-Rig should flip BENCH OK.
   void refreshSimulatedScores() {
     if (_furniture.isEmpty) return;
-    _refreshLayoutScores();
+    _refreshLayoutScores(markClean: false);
   }
 
   // Scan state
@@ -81,6 +82,14 @@ class AppState extends ChangeNotifier {
   void resetScan() {
     _scanProgress = 0.0;
     _scanComplete = false;
+    notifyListeners();
+  }
+
+  /// Restore scan-complete flag after a cancelled scan (does not rewrite layout).
+  void restoreScanComplete(bool complete) {
+    if (_scanComplete == complete) return;
+    _scanComplete = complete;
+    if (complete && _scanProgress < 1.0) _scanProgress = 1.0;
     notifyListeners();
   }
 
@@ -1947,10 +1956,10 @@ class AppState extends ChangeNotifier {
     _recalcUpgrades();
   }
 
-  void _refreshLayoutScores() {
-    _setAirflowMetrics(AirflowOptimizer.evaluate(_furniture));
-    _setLightingMetrics(LightingOptimizer.evaluate(_furniture));
-    _setErgonomicsMetrics(ErgonomicsOptimizer.evaluate(_furniture));
+  void _refreshLayoutScores({bool markClean = true}) {
+    _setAirflowMetrics(AirflowOptimizer.evaluate(_furniture), markClean: markClean);
+    _setLightingMetrics(LightingOptimizer.evaluate(_furniture), markClean: markClean);
+    _setErgonomicsMetrics(ErgonomicsOptimizer.evaluate(_furniture), markClean: markClean);
   }
 
   void _recalcUpgrades() {
