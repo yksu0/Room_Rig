@@ -449,6 +449,45 @@ void main() {
         expect((f.gridX, f.gridY), before[f.id], reason: '${f.id} should not have moved');
       }
     });
+
+    testWidgets('pending ghost can be dragged without tapping MOVE', (tester) async {
+      final state = await pumpRig(tester);
+
+      await tester.tap(find.text('3D'));
+      await tester.pumpAndSettle();
+
+      final lamp = RigCatalog.items.firstWhere((e) => e.name == 'Task Lamp');
+      final id = state.addCatalogFurniture(lamp, pending: true);
+      expect(id, isNotNull);
+      await tester.pumpAndSettle();
+
+      final before = state.furniture.firstWhere((f) => f.id == id);
+      final canvasRect = tester.getRect(find.byKey(const ValueKey('rig3d_canvas')));
+      final cam = CameraPose(
+        roomWidth: state.currentRoomData.gridCols.toDouble(),
+        roomDepth: state.currentRoomData.gridRows.toDouble(),
+        roomHeight: 2.8,
+        yaw: 0,
+        pitch: 0.34,
+        distance: 15,
+      );
+      final projected = RoomProjection.project(
+        OrbitVec3(before.gridX + before.width / 2, 0.5, before.gridY + before.height / 2),
+        canvasRect.size,
+        cam,
+      );
+      expect(projected, isNotNull);
+      final start = canvasRect.topLeft + projected!.offset;
+
+      // No MOVE tap — pending placement alone should arm drag.
+      await tester.dragFrom(start, const Offset(0, 50));
+      await tester.pumpAndSettle();
+
+      final after = state.furniture.firstWhere((f) => f.id == id);
+      final moved = (after.gridX - before.gridX).abs() + (after.gridY - before.gridY).abs();
+      expect(moved, greaterThan(0.05), reason: 'pending ghost should move without MOVE mode');
+      expect(state.hasPendingPlacement, isTrue);
+    });
   });
 
   group('add-item sheet', () {

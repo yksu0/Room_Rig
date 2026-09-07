@@ -14,6 +14,7 @@ import '../services/bench_layouts.dart';
 import '../models/scan_layout_model.dart';
 import '../services/layout_collision.dart';
 import '../theme/app_theme.dart';
+import '../widgets/confirm_dialogs.dart';
 import '../widgets/rig_customizer/rig_scan_action_button.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/furniture_shapes.dart';
@@ -129,7 +130,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 children: [
                   Expanded(child: _buildCanvas(state)),
                   if (state.hasPendingPlacement) _buildPlacementBar(state),
-                  if (selectedFurniture != null) _buildFurnitureInfoCard(state, selectedFurniture),
+                  if (selectedFurniture != null && !state.hasPendingPlacement)
+                    _buildFurnitureInfoCard(state, selectedFurniture),
                   if (selectedScanObject != null) _buildScanInfoCard(state, selectedScanObject),
                   _buildOptimizationPanel(state),
                 ],
@@ -890,7 +892,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       _pointerDownPos = event.localPosition;
                       _pendingDragId = null;
                       _pendingGrabOffset = null;
-                      if (_rigMoveMode) {
+                      // Pending catalog ghosts must be draggable without tapping MOVE.
+                      if (_rigMoveMode || state.hasPendingPlacement) {
                         _armItemDrag3D(event.localPosition, canvasSize, state);
                       }
                     },
@@ -1048,9 +1051,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                         border: Border.all(color: AppColors.border),
                       ),
                       child: Text(
-                        _rigMoveMode
-                            ? 'MOVE on · drag item · tap empty floor to exit'
-                            : '1 finger orbit · tap MOVE to drag · 2 fingers pan + pinch',
+                        state.hasPendingPlacement
+                            ? 'Drag the ghost to place · tap Place when ready'
+                            : _rigMoveMode
+                                ? 'MOVE on · drag item · tap empty floor to exit'
+                                : '1 finger orbit · tap MOVE to drag · 2 fingers pan + pinch',
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 11,
@@ -1125,11 +1130,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                         border: Border.all(color: AppColors.border),
                       ),
                       child: Text(
-                        state.selectedFurniture != null
-                            ? (_rigMoveMode
-                                ? 'Drag the item · Facing aims jets'
-                                : 'Tap MOVE, then drag · or orbit freely')
-                            : 'Select an item, tap MOVE to drag, or orbit empty floor',
+                        state.hasPendingPlacement
+                            ? 'Drag the ghost · then Place / Cancel below'
+                            : state.selectedFurniture != null
+                                ? (_rigMoveMode
+                                    ? 'Drag the item · Facing aims jets'
+                                    : 'Tap MOVE, then drag · or orbit freely')
+                                : 'Select an item, tap MOVE to drag, or orbit empty floor',
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 10,
@@ -1147,8 +1154,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  /// When MOVE mode is on, pointer-down near a movable item arms a floor drag.
-  /// Otherwise one-finger gestures orbit so crowded rooms stay inspectable.
+  /// When MOVE mode is on (or a pending ghost is active), pointer-down near a
+  /// movable item arms a floor drag. Otherwise one-finger gestures orbit.
   void _armItemDrag3D(Offset localPos, Size size, AppState state) {
     _pendingDragId = null;
     _pendingGrabOffset = null;
@@ -1518,6 +1525,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       _showAddResult(sheetContext, 'No free space for a ${entry.name}', ok: false);
       return;
     }
+    setState(() => _rigMoveMode = true);
     _showAddResult(sheetContext, '${entry.name} — drag the ghost, then Place');
   }
 
@@ -1588,6 +1596,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       _showAddResult(sheetContext, 'No free space for that object', ok: false);
       return;
     }
+    setState(() => _rigMoveMode = true);
     _showAddResult(sheetContext, '$label — drag the ghost, then Place');
   }
 
@@ -1892,6 +1901,31 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             _buildFacingStrip(state, item),
             const SizedBox(height: 8),
             _buildSizeStrip(state, item),
+            if (item.iconName != 'door' &&
+                item.iconName != 'window' &&
+                (state.invasiveEdit || !SurfaceMounts.isStructuralMount(item))) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: RigScanActionButton(
+                  icon: Icons.delete_outline_rounded,
+                  label: 'Delete',
+                  color: AppColors.red,
+                  onTap: () async {
+                    final ok = await confirmAction(
+                      context,
+                      title: 'Delete ${item.name}?',
+                      body:
+                          'This removes the item from your Rig. Use Undo in the Rig header if you change your mind.',
+                      confirmLabel: 'Delete',
+                      danger: true,
+                    );
+                    if (!ok || !mounted) return;
+                    state.deleteFurniture(item.id);
+                  },
+                ),
+              ),
+            ],
             if (_furnitureDetailsExpanded) ...[
               const SizedBox(height: 10),
               Row(
@@ -2017,7 +2051,17 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   icon: Icons.delete_outline_rounded,
                   label: 'Delete',
                   color: AppColors.red,
-                  onTap: () => _deleteScanObjectWithUndo(state, obj),
+                  onTap: () async {
+                    final ok = await confirmAction(
+                      context,
+                      title: 'Delete ${obj.label}?',
+                      body: 'You can undo from the snackbar after delete.',
+                      confirmLabel: 'Delete',
+                      danger: true,
+                    );
+                    if (!ok || !mounted) return;
+                    _deleteScanObjectWithUndo(state, obj);
+                  },
                 ),
               ],
             ),
