@@ -25,6 +25,7 @@ import '../widgets/scan_guidance_banner.dart';
 import '../widgets/scan_luma_preview.dart';
 import '../widgets/scan_minimap.dart';
 import '../widgets/scan_pre_coach_sheet.dart';
+import '../widgets/confirm_dialogs.dart';
 import 'scanner/scan_bottom_bar.dart';
 import '../widgets/scanner/scan_detection_overlay.dart';
 import '../widgets/scanner/scan_log_panel.dart';
@@ -45,8 +46,12 @@ class _ScannerScreenState extends State<ScannerScreen>
   static const String _logAutoScrollPrefKey = 'room_rig.scanner.log_auto_scroll';
   static const double _requiredCoverageToFinish = 0.68;
   static const int _requiredStableQualityFrames = 5;
+  static const int _scanTabIndex = 1;
 
   late AnimationController _pulseController;
+  AppState? _appState;
+  bool _scanTabActive = false;
+  int _tabVisibilityEpoch = 0;
   CameraController? _cameraController;
   ScanPipeline? _scanPipeline;
   ScanInputProvider? _inputProvider;
@@ -71,6 +76,8 @@ class _ScannerScreenState extends State<ScannerScreen>
   bool _didFinishHaptic = false;
 
   bool _isScanning = false;
+  RoomLayoutModel? _layoutBeforeScan;
+  bool _scanCompleteBeforeScan = false;
   final List<ScanLogEntry> _logs = [];
   final List<DetectedBox> _detectedBoxes = [];
   final Map<String, DateTime> _logLastAt = {};
@@ -102,7 +109,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1200),
       vsync: this,
-    )..repeat(reverse: true);
+    );
 
     _readiness = ScanFinishReadinessController(
       requiredCoverage: _requiredCoverageToFinish,
@@ -117,6 +124,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     unawaited(_refreshDetectorLabel());
     // On Android, ARCore owns the camera during scan (S10+). Defer Flutter
     // camera until AR is unavailable so the two never fight for the lens.
+    // Camera / pulse start only when the Scan tab is visible (IndexedStack).
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -125,13 +133,73 @@ class _ScannerScreenState extends State<ScannerScreen>
           key: 'android-arcore-pref',
         );
       });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final app = context.read<AppState>();
+    if (!identical(_appState, app)) {
+      _appState?.removeListener(_onAppStateChanged);
+      _appState = app;
+      _appState!.addListener(_onAppStateChanged);
+    }
+    _syncScanTabVisibility();
+  }
+
+  void _onAppStateChanged() => _syncScanTabVisibility();
+
+  void _syncScanTabVisibility() {
+    final active = (_appState?.currentTab ?? 0) == _scanTabIndex;
+    if (active == _scanTabActive) return;
+    _scanTabActive = active;
+    if (active) {
+      unawaited(_onScanTabVisible());
     } else {
-      _initializeCamera();
+      unawaited(_onScanTabHidden());
+    }
+  }
+
+  Future<void> _onScanTabHidden() async {
+    final epoch = ++_tabVisibilityEpoch;
+    if (_pulseController.isAnimating) {
+      _pulseController.stop();
+    }
+    // Keep scan session state; release the lens / AR input while off-tab.
+    await _stopCameraStream();
+    if (epoch != _tabVisibilityEpoch) return;
+    await _stopInputProvider();
+    if (epoch != _tabVisibilityEpoch) return;
+    _arCoreOwnsCamera = false;
+    await _releaseFlutterCamera();
+    if (epoch != _tabVisibilityEpoch || !mounted) return;
+    if (_isScanning) {
+      _appendLog(
+        '> Capture paused (left Scan tab). Return here to resume.',
+        key: 'scan-tab-paused',
+        minInterval: const Duration(seconds: 4),
+      );
+    }
+  }
+
+  Future<void> _onScanTabVisible() async {
+    final epoch = ++_tabVisibilityEpoch;
+    if (!_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    }
+    if (_isScanning) {
+      await _startInputSource();
+      if (epoch != _tabVisibilityEpoch || !mounted) return;
+      _appendLog('> Capture resumed.', key: 'scan-tab-resumed');
+    } else if (!Platform.isAndroid && !_cameraReady) {
+      await _initializeCamera();
     }
   }
 
   @override
   void dispose() {
+    _appState?.removeListener(_onAppStateChanged);
     _pulseController.dispose();
     unawaited(_stopInputProvider());
     unawaited(_stopCameraStream());
@@ -217,6 +285,19 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   Future<void> _requestStartScan() async {
     if (_isScanning) return;
+    final state = context.read<AppState>();
+    if (state.hasLayoutWork || state.roomIsReady) {
+      final ok = await confirmAction(
+        context,
+        title: 'Start a new scan?',
+        body:
+            'Scanning replaces the active room layout with a fresh scan seed. '
+            'Cancel during the scan to restore what you have now.',
+        confirmLabel: 'Start scan',
+        danger: true,
+      );
+      if (!ok || !mounted) return;
+    }
     await _refreshDetectorLabel();
     if (!mounted) return;
     final go = await showScanPreCoachSheet(
@@ -229,6 +310,8 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   Future<void> _startScan() async {
     final state = context.read<AppState>();
+    _layoutBeforeScan = state.activeRoomLayout;
+    _scanCompleteBeforeScan = state.scanComplete;
     state.resetScan();
 
     await _stopInputProvider();
@@ -486,6 +569,15 @@ class _ScannerScreenState extends State<ScannerScreen>
     await _scanPipeline?.dispose();
     _scanPipeline = null;
     if (!mounted) return;
+    final state = context.read<AppState>();
+    final prior = _layoutBeforeScan;
+    if (prior != null) {
+      state.applyScannedRoomLayout(prior);
+    }
+    if (_scanCompleteBeforeScan) {
+      state.restoreScanComplete(true);
+    }
+    _layoutBeforeScan = null;
     setState(() {
       _isScanning = false;
       _arCoreOwnsCamera = false;

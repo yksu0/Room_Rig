@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../services/scan_pipeline.dart';
 import '../services/scan_pipeline_stubs.dart';
 import '../services/scan_readiness.dart';
 import '../theme/app_theme.dart';
+import '../widgets/confirm_dialogs.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/scan_guidance_banner.dart';
 import '../widgets/scan_minimap.dart';
@@ -27,12 +29,17 @@ class ScannerScreen extends StatefulWidget {
 class _ScannerScreenState extends State<ScannerScreen> {
   static const double _requiredCoverageToFinish = 0.68;
   static const int _requiredStableQualityFrames = 5;
+  static const int _scanTabIndex = 1;
 
   ScanPipeline? _pipeline;
   SimulatedScanInputProvider? _input;
   late final ScanFinishReadinessController _readiness;
+  AppState? _appState;
+  bool _scanTabActive = false;
 
   bool _isScanning = false;
+  RoomLayoutModel? _layoutBeforeScan;
+  bool _scanCompleteBeforeScan = false;
   bool _processing = false;
   double _coverage = 0;
   int _objects = 0;
@@ -56,7 +63,44 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final app = context.read<AppState>();
+    if (!identical(_appState, app)) {
+      _appState?.removeListener(_onAppStateChanged);
+      _appState = app;
+      _appState!.addListener(_onAppStateChanged);
+    }
+    _syncScanTabVisibility();
+  }
+
+  void _onAppStateChanged() => _syncScanTabVisibility();
+
+  void _syncScanTabVisibility() {
+    final active = (_appState?.currentTab ?? 0) == _scanTabIndex;
+    if (active == _scanTabActive) return;
+    _scanTabActive = active;
+    if (active) {
+      _onScanTabVisible();
+    } else {
+      _onScanTabHidden();
+    }
+  }
+
+  void _onScanTabHidden() {
+    // IndexedStack keeps this screen mounted; stop simulated capture off-tab.
+    unawaited(_input?.stop() ?? Future<void>.value());
+  }
+
+  void _onScanTabVisible() {
+    if (_isScanning && _input != null) {
+      unawaited(_input!.start(_onFrame));
+    }
+  }
+
+  @override
   void dispose() {
+    _appState?.removeListener(_onAppStateChanged);
     _input?.dispose();
     _pipeline?.dispose();
     super.dispose();
@@ -64,6 +108,20 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
   Future<void> _start() async {
     final state = context.read<AppState>();
+    if (state.hasLayoutWork || state.roomIsReady) {
+      final ok = await confirmAction(
+        context,
+        title: 'Start a new scan?',
+        body:
+            'Scanning replaces the active room layout with a fresh scan seed. '
+            'Cancel during the scan to restore what you have now.',
+        confirmLabel: 'Start scan',
+        danger: true,
+      );
+      if (!ok || !mounted) return;
+    }
+    _layoutBeforeScan = state.activeRoomLayout;
+    _scanCompleteBeforeScan = state.scanComplete;
     state.resetScan();
 
     await _input?.dispose();
@@ -109,6 +167,15 @@ class _ScannerScreenState extends State<ScannerScreen> {
     _pipeline = null;
     _input = null;
     if (!mounted) return;
+    final state = context.read<AppState>();
+    final prior = _layoutBeforeScan;
+    if (prior != null) {
+      state.applyScannedRoomLayout(prior);
+    }
+    if (_scanCompleteBeforeScan) {
+      state.restoreScanComplete(true);
+    }
+    _layoutBeforeScan = null;
     setState(() {
       _isScanning = false;
       _liveLayout = null;
