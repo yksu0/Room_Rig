@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "note": "Bench domains are deterministic heuristics — not CFD, radiosity, or ML. Scan YOLO lives under assets/models/ and is unrelated.",
+  "domains": {
+    "airflow": {
+      "model": "coarse_voxel_force_field",
+      "not": "CFD / Navier-Stokes",
+      "roomMeters": { "width": 6.0, "depth": 8.0, "height": 2.8 },
+      "voxel": { "nx": 18, "ny": 10, "nz": 24 },
+      "emitters": {
+        "acColdStrength": 1.0,
+        "pcHeatStrength": 0.85,
+        "fanPush": 0.7,
+        "openingLeakFraction": 0.22
+      },
+      "passBarCirculation": 55
+    },
+    "lighting": {
+      "model": "2d_lux_proxy_with_soft_occlusion",
+      "not": "radiosity / measured lux",
+      "grid": { "nx": 24, "nz": 32 },
+      "ceilingFillIntensity": 0.42,
+      "windowIntensity": 1.0,
+      "lampIntensity": 0.7,
+      "inventGhostWindow": false,
+      "passBarExposure": 45
+    },
+    "ergonomics": {
+      "model": "clearance_reach_and_grid_paths",
+      "not": "ISO lab / motion capture",
+      "idealChairGapCells": 0.95,
+      "minPullbackCells": 0.85,
+      "reachRadiusCells": 1.35,
+      "pathGrid": { "cols": 24, "rows": 32 },
+      "deskTopItemsCountAsConflicts": false,
+      "passBarComfort": 58
+    }
+  }
+}
