@@ -116,7 +116,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     final room = state.currentRoomData;
     final layouts = BenchLayoutBuilder.build(
       mode: BenchMode.airflow,
-      roomFurniture: state.furniture,
+      roomFurniture: state.committedFurniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
     );
@@ -154,7 +154,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       _selectedFurnitureId = null;
     }
     final fp = BenchLayoutBuilder.fingerprintOf(
-      state.furniture.where((f) => !f.hidden).toList(growable: false),
+      state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
     );
     if (_layouts != null && fp == _layouts!.fingerprint) return;
     _recomputeLayouts(state, resetStep: false);
@@ -863,8 +863,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                         lookAtX: sim.field.roomWidth * 0.5,
                         lookAtZ: sim.field.roomDepth * 0.5,
                         resetNonce: _simOrbitResetNonce,
-                        animating: _airflowStep == _AirflowStep.simulate ||
-                            _airflowStep == _AirflowStep.results,
+                        animating: state.currentTab == benchTabIndex &&
+                            (_airflowStep == _AirflowStep.simulate ||
+                                _airflowStep == _AirflowStep.results),
                         onDoubleTap: () {
                           HapticFeedback.lightImpact();
                           setState(() => _simOrbitResetNonce++);
@@ -883,8 +884,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                         lookAtX: sim.field.roomWidth * 0.5,
                         lookAtZ: sim.field.roomDepth * 0.5,
                         resetNonce: _simOrbitResetNonce,
-                        animating: _airflowStep == _AirflowStep.simulate ||
-                            _airflowStep == _AirflowStep.results,
+                        animating: state.currentTab == benchTabIndex &&
+                            (_airflowStep == _AirflowStep.simulate ||
+                                _airflowStep == _AirflowStep.results),
                         onDoubleTap: () {
                           HapticFeedback.lightImpact();
                           setState(() => _simOrbitResetNonce++);

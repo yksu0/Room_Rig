@@ -66,7 +66,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
     final room = state.currentRoomData;
     final layouts = BenchLayoutBuilder.build(
       mode: BenchMode.spatial,
-      roomFurniture: state.furniture,
+      roomFurniture: state.committedFurniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
     );
@@ -106,7 +106,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       _analyzeVariant = state.benchLayoutFocus;
     }
     final fp = BenchLayoutBuilder.fingerprintOf(
-      state.furniture.where((f) => !f.hidden).toList(growable: false),
+      state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
     );
     if (_layouts != null && fp == _layouts!.fingerprint) return;
     _recompute(state, resetStep: false);

@@ -58,7 +58,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
+    _pulse = AnimationController(vsync: this, duration: const Duration(seconds: 2));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // The bench reads the Rig; opening this tab must never write to it.
       _rebuild();
@@ -82,7 +82,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     final room = state.currentRoomData;
     final layouts = BenchLayoutBuilder.build(
       mode: BenchMode.lighting,
-      roomFurniture: state.furniture,
+      roomFurniture: state.committedFurniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
     );
@@ -107,6 +107,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   /// Picks up Rig edits so the light field always describes the current room.
   /// Called from build, so it must not call setState.
   void _syncFromState(AppState state) {
+    _syncPulseForTab(state);
     if (state.currentTab != benchTabIndex) return;
     if (state.benchLayoutFocusToken != _seenFocusToken) {
       _seenFocusToken = state.benchLayoutFocusToken;
@@ -115,10 +116,19 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       _selectedFurnitureId = null;
     }
     final fp = BenchLayoutBuilder.fingerprintOf(
-      state.furniture.where((f) => !f.hidden).toList(growable: false),
+      state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
     );
     if (_layouts != null && fp == _layouts!.fingerprint) return;
     _recompute(state, resetStep: false);
+  }
+
+  void _syncPulseForTab(AppState state) {
+    final onBench = state.currentTab == benchTabIndex;
+    if (onBench) {
+      if (!_pulse.isAnimating) _pulse.repeat(reverse: true);
+    } else if (_pulse.isAnimating) {
+      _pulse.stop();
+    }
   }
 
   List<FurnitureItem> _furnitureFor(BenchLayoutKind kind) =>
