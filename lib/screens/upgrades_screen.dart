@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/score_ring.dart';
+import '../widgets/confirm_dialogs.dart';
 
 class UpgradesScreen extends StatelessWidget {
   const UpgradesScreen({super.key});
@@ -194,8 +195,18 @@ class UpgradesScreen extends StatelessWidget {
                   upgrade: u,
                   isAdded: isAdded,
                   categoryColor: cat.$3,
-                  onToggle: () {
+                  onToggle: () async {
                     final adding = !(u['added'] as bool);
+                    if (!adding) {
+                      final ok = await confirmAction(
+                        context,
+                        title: 'Remove ${u['name']}?',
+                        body: 'This removes the upgrade from your Rig layout.',
+                        confirmLabel: 'Remove',
+                        danger: true,
+                      );
+                      if (!ok || !context.mounted) return;
+                    }
                     final ok = state.toggleUpgrade(i);
                     if (!ok) {
                       ScaffoldMessenger.of(context).showSnackBar(

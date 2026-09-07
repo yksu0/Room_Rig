@@ -7,6 +7,7 @@ import '../../models/surface_mount.dart';
 import '../../theme/app_theme.dart';
 import '../empty_state.dart';
 import '../room_icons.dart';
+import '../confirm_dialogs.dart';
 import 'rig_scan_action_button.dart';
 
 Color _categoryColor(String cat) {
@@ -284,7 +285,17 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                       icon: Icons.delete_outline_rounded,
                                       label: 'Del',
                                       color: AppColors.red,
-                                      onTap: () => state.deleteFurniture(item.id),
+                                      onTap: () async {
+                                        final ok = await confirmAction(
+                                          context,
+                                          title: 'Delete ${item.name}?',
+                                          body: 'This removes the item from your Rig. Use Undo in the Rig header if you change your mind.',
+                                          confirmLabel: 'Delete',
+                                          danger: true,
+                                        );
+                                        if (!ok || !context.mounted) return;
+                                        state.deleteFurniture(item.id);
+                                      },
                                     ),
                                   ],
                                 ],
@@ -429,7 +440,17 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                     icon: Icons.delete_outline_rounded,
                                     label: 'Del',
                                     color: AppColors.red,
-                                    onTap: () => onDeleteScanObject(obj),
+                                    onTap: () async {
+                                      final ok = await confirmAction(
+                                        context,
+                                        title: 'Delete ${obj.label}?',
+                                        body: 'You can undo from the snackbar after delete.',
+                                        confirmLabel: 'Delete',
+                                        danger: true,
+                                      );
+                                      if (!ok || !context.mounted) return;
+                                      onDeleteScanObject(obj);
+                                    },
                                   ),
                                 ],
                               ),

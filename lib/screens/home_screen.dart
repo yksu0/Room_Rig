@@ -11,6 +11,7 @@ import '../widgets/glass_card.dart';
 import '../widgets/onboarding_sheet.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/score_ring.dart';
+import '../widgets/confirm_dialogs.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -773,6 +774,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _showCreateRoomSheet(BuildContext context, AppState state) async {
+    if (state.hasLayoutWork) {
+      final ok = await confirmAction(
+        context,
+        title: 'Replace current layout?',
+        body:
+            'Creating a room saves your current lot and starts an empty rectangle with a door and window.',
+        confirmLabel: 'Create room',
+        danger: true,
+      );
+      if (!ok || !context.mounted) return;
+    }
     final nameCtrl = TextEditingController(text: 'My Room');
     var length = 3.6;
     var width = 4.8;
