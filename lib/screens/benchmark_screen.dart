@@ -344,10 +344,18 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         Builder(
           builder: (context) {
             final validation = _validationForSimVariant(state);
-            final blocked = validation.hasHardLayoutConflicts;
+            final noOp = improvedLayoutIsNoOp(_layouts);
+            final blocked = noOp || validation.hasHardLayoutConflicts;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (noOp) ...[
+                  benchImprovedNoOpBanner(
+                    message:
+                        'Improved layout matches your room — airflow is already as good as the optimizer found.',
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Row(
                   children: [
                     Expanded(
@@ -382,7 +390,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                 if (blocked) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Fix overlaps or blocked doorways before applying.',
+                    validation.hasHardLayoutConflicts
+                        ? 'Fix overlaps or blocked doorways before applying.'
+                        : 'Improved layout matches your room — nothing to apply.',
                     style: TextStyle(
                       color: AppColors.amber.withValues(alpha: 0.95),
                       fontSize: 11,

@@ -521,6 +521,43 @@ Future<bool> confirmBenchApply(
   return ok == true;
 }
 
+/// True when improved furniture matches my-room — Apply would be a no-op.
+bool improvedLayoutIsNoOp(BenchLayouts? layouts) {
+  if (layouts == null) return false;
+  return BenchLayoutBuilder.fingerprintOf(layouts.myRoom) ==
+      BenchLayoutBuilder.fingerprintOf(layouts.improved);
+}
+
+Widget benchImprovedNoOpBanner({String message = 'Improved layout matches your room — nothing new to apply.'}) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: AppColors.amber.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: AppColors.amber.withValues(alpha: 0.45)),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.info_outline_rounded, size: 18, color: AppColors.amber),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            message,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Orchestrates the common bench panel column: tabs, step content, progress, results, apply.
 class BenchPanelScaffold extends StatelessWidget {
   final Color accentColor;

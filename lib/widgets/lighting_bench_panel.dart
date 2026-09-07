@@ -220,7 +220,8 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     }
 
     final applyValidation = _validationForSimVariant(state);
-    final applyBlocked = applyValidation.hasHardLayoutConflicts;
+    final noOp = improvedLayoutIsNoOp(_layouts);
+    final applyBlocked = noOp || applyValidation.hasHardLayoutConflicts;
 
     return BenchPanelScaffold(
       accentColor: AppColors.lightingColor,
@@ -239,11 +240,17 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       middleBody: _simSection(state),
       progress: _progress,
       progressLabel: 'Tracing daylight + task lamps',
+      resultsExtra: noOp
+          ? benchImprovedNoOpBanner(
+              message:
+                  'Improved layout matches your room — lighting is already as good as the optimizer found.',
+            )
+          : null,
       resultsBody: _results(state),
       applyEnabled: !applyBlocked,
-      applyBlockedReason: applyBlocked
+      applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
-          : null,
+          : (noOp ? 'Improved layout matches your room — nothing to apply.' : null),
       onApply: () async {
         if (!await confirmBenchApply(context, validation: applyValidation)) return;
         if (!context.mounted) return;

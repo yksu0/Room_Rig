@@ -231,7 +231,8 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     }
 
     final applyValidation = _validationForSimVariant(state);
-    final applyBlocked = applyValidation.hasHardLayoutConflicts;
+    final noOp = improvedLayoutIsNoOp(_layouts);
+    final applyBlocked = noOp || applyValidation.hasHardLayoutConflicts;
 
     return BenchPanelScaffold(
       accentColor: AppColors.ergonomicsColor,
@@ -250,11 +251,17 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       middleBody: _simSection(state),
       progress: _progress,
       progressLabel: 'Tracing frequent walk paths',
+      resultsExtra: noOp
+          ? benchImprovedNoOpBanner(
+              message:
+                  'Improved layout matches your room — paths are already as good as the optimizer found.',
+            )
+          : null,
       resultsBody: _results(state),
       applyEnabled: !applyBlocked,
-      applyBlockedReason: applyBlocked
+      applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
-          : null,
+          : (noOp ? 'Improved layout matches your room — nothing to apply.' : null),
       onApply: () async {
         if (!await confirmBenchApply(context, validation: applyValidation)) return;
         if (!context.mounted) return;

@@ -126,12 +126,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
     }
   }
 
-  bool get _improvedIsNoOp {
-    final layouts = _layouts;
-    if (layouts == null) return false;
-    return BenchLayoutBuilder.fingerprintOf(layouts.myRoom) ==
-        BenchLayoutBuilder.fingerprintOf(layouts.improved);
-  }
+  bool get _improvedIsNoOp => improvedLayoutIsNoOp(_layouts);
 
   int get _stepIndex => switch (_step) {
         _SpatialStep.layout => benchStepLayout,
@@ -246,7 +241,12 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
         icon: RoomSvg.scan,
         onRun: _runAnalysis,
       ),
-      resultsExtra: _improvedIsNoOp ? _noOpBanner() : null,
+      resultsExtra: _improvedIsNoOp
+          ? benchImprovedNoOpBanner(
+              message:
+                  'Improved layout matches your room — walkways are already clear enough to leave in place.',
+            )
+          : null,
       resultsBody: _results(state),
       applyEnabled: !applyBlocked,
       applyBlockedReason: applyValidation.hasHardLayoutConflicts
@@ -515,31 +515,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
           'Walkable +${((opt.walkableRatio - base.walkableRatio) * 100).toStringAsFixed(0)} pts · '
           'Aisle +${(opt.largestAisleCells - base.largestAisleCells).toStringAsFixed(1)} cells · '
           'Space +${(opt.overallScore - base.overallScore).toStringAsFixed(0)}',
-    );
-  }
-
-  Widget _noOpBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.amber.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.amber.withValues(alpha: 0.45)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline_rounded, size: 18, color: AppColors.amber),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Improved layout matches your room — walkways are already clear enough to leave in place.',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.w600, height: 1.3),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
