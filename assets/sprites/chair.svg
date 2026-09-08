@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Top-down chair: seat + backrest -->
+  <rect x="18" y="22" width="28" height="26" rx="4" stroke="currentColor" stroke-width="3" fill="currentColor" fill-opacity="0.25"/>
+  <rect x="16" y="14" width="32" height="10" rx="3" stroke="currentColor" stroke-width="3" fill="currentColor" fill-opacity="0.45"/>
+  <circle cx="22" cy="48" r="2.5" fill="currentColor"/>
+  <circle cx="42" cy="48" r="2.5" fill="currentColor"/>
+</svg>
