@@ -3,6 +3,7 @@
 import 'dart:math';
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
+import 'comfort_heuristics.dart';
 
 class AirflowVec3 {
   final double x;
@@ -134,6 +135,12 @@ class AirflowMetrics {
   final double deadZoneRatio;
   final double heatPocketRatio;
   final double mixingScore;
+  /// 0-100: air still moving near exits (exhaust / window / door) — channels out.
+  final double exitChannelScore;
+  /// 0-100: cool moving air around heat / desk work zone.
+  final double workZoneCooling;
+  /// 0-100: large furniture kept off HVAC faces (~6–18 in practice).
+  final double hvacClearance;
   final int deadVoxelCount;
   final int heatVoxelCount;
   final int fluidVoxelCount;
@@ -143,6 +150,9 @@ class AirflowMetrics {
     required this.deadZoneRatio,
     required this.heatPocketRatio,
     required this.mixingScore,
+    this.exitChannelScore = 0,
+    this.workZoneCooling = 0,
+    this.hvacClearance = 55,
     required this.deadVoxelCount,
     required this.heatVoxelCount,
     required this.fluidVoxelCount,
@@ -297,7 +307,7 @@ class AirflowSimulator {
   }) {
     final boxes = _buildBoxes(furniture);
     final field = _solveField(boxes);
-    final metrics = _computeMetrics(field);
+    final metrics = _computeMetrics(field, boxes, furniture);
     final particles = _seedParticles(
       field,
       boxes,
@@ -1528,7 +1538,11 @@ class AirflowSimulator {
     }
   }
 
-  static AirflowMetrics _computeMetrics(AirflowVoxelField field) {
+  static AirflowMetrics _computeMetrics(
+    AirflowVoxelField field,
+    List<AirflowBox> boxes,
+    List<FurnitureItem> furniture,
+  ) {
     var fluid = 0;
     var dead = 0;
     var heat = 0;
@@ -1556,6 +1570,9 @@ class AirflowSimulator {
         deadZoneRatio: 1,
         heatPocketRatio: 1,
         mixingScore: 0,
+        exitChannelScore: 0,
+        workZoneCooling: 0,
+        hvacClearance: 0,
         deadVoxelCount: 0,
         heatVoxelCount: 0,
         fluidVoxelCount: 0,
@@ -1566,7 +1583,38 @@ class AirflowSimulator {
     final heatRatio = heat / fluid;
     final avgSpeed = speedSum / fluid;
     final mixing = (1 - (tempVar / fluid).clamp(0.0, 1.0)).clamp(0.0, 1.0);
-    final circulation = ((avgSpeed * 55) + (1 - deadRatio) * 30 + (1 - heatRatio) * 25 + mixing * 15)
+
+    // Exit channeling: moving air near exhaust / window / door — does supply leave?
+    final exits = boxes
+        .where((b) =>
+            b.kind == 'exhaust' ||
+            b.kind == 'opening' ||
+            b.kind == 'door' ||
+            (b.kind == 'opening' && b.leakSign > 0))
+        .toList();
+    final exitChannel = _zoneSpeedScore(field, exits, radius: 1.15, yMid: yMid);
+
+    // Work-zone cooling: speed + cool temp around heat sources and desk-ish furniture.
+    final workBoxes = boxes
+        .where((b) =>
+            b.kind == 'heat' ||
+            b.id.contains('desk') ||
+            b.id.contains('chair') ||
+            b.id.contains('pc'))
+        .toList();
+    final workZoneCooling = _workZoneCoolingScore(field, workBoxes, yMid: yMid);
+    final hvacClearance =
+        ComfortHeuristics.hvacClearanceScore(furniture) * 100;
+
+    // Human-readable mix stays in the calibrated range. Rewards exit flow,
+    // work cooling, and keeping vents unblocked (HVAC practice).
+    final circulation = ((avgSpeed * 44) +
+            (1 - deadRatio) * 24 +
+            (1 - heatRatio) * 18 +
+            mixing * 10 +
+            (exitChannel / 100) * 8 +
+            (workZoneCooling / 100) * 8 +
+            (hvacClearance / 100) * 8)
         .clamp(0.0, 100.0);
 
     return AirflowMetrics(
@@ -1574,10 +1622,81 @@ class AirflowSimulator {
       deadZoneRatio: deadRatio,
       heatPocketRatio: heatRatio,
       mixingScore: mixing * 100,
+      exitChannelScore: exitChannel,
+      workZoneCooling: workZoneCooling,
+      hvacClearance: hvacClearance,
       deadVoxelCount: dead,
       heatVoxelCount: heat,
       fluidVoxelCount: fluid,
     );
+  }
+
+  /// Average mid-height speed near boxes, mapped to 0-100.
+  /// Samples slightly inward from wall devices so solid/boundary cells don't zero the score.
+  static double _zoneSpeedScore(
+    AirflowVoxelField field,
+    List<AirflowBox> zones, {
+    required double radius,
+    required int yMid,
+  }) {
+    if (zones.isEmpty) return 45; // neutral when no exits exist
+    var sum = 0.0;
+    var n = 0;
+    for (final b in zones) {
+      final c = b.center;
+      // Prefer the room-side of wall openings.
+      final sampleX = (c.x + b.inwardX * 0.55).clamp(0.15, roomWidth - 0.15);
+      final sampleZ = (c.z + b.inwardZ * 0.55).clamp(0.15, roomDepth - 0.15);
+      final x0 = ((sampleX - radius) / roomWidth * field.nx).floor().clamp(0, field.nx - 1);
+      final x1 = ((sampleX + radius) / roomWidth * field.nx).ceil().clamp(0, field.nx);
+      final z0 = ((sampleZ - radius) / roomDepth * field.nz).floor().clamp(0, field.nz - 1);
+      final z1 = ((sampleZ + radius) / roomDepth * field.nz).ceil().clamp(0, field.nz);
+      for (int z = z0; z < z1; z++) {
+        for (int x = x0; x < x1; x++) {
+          final i = field.index(x, yMid, z);
+          if (field.solid[i]) continue;
+          sum += field.speed[i];
+          n++;
+        }
+      }
+    }
+    if (n == 0) return 20;
+    final avg = sum / n;
+    return ((avg / 0.35) * 100).clamp(0.0, 100.0);
+  }
+
+  /// Cool + moving air near heat / desk — higher is better for people at the work zone.
+  static double _workZoneCoolingScore(
+    AirflowVoxelField field,
+    List<AirflowBox> zones, {
+    required int yMid,
+  }) {
+    if (zones.isEmpty) return 50;
+    var speedSum = 0.0;
+    var coolSum = 0.0;
+    var n = 0;
+    const radius = 1.0;
+    for (final b in zones) {
+      final c = b.center;
+      final x0 = ((c.x - radius) / roomWidth * field.nx).floor().clamp(0, field.nx - 1);
+      final x1 = ((c.x + radius) / roomWidth * field.nx).ceil().clamp(0, field.nx);
+      final z0 = ((c.z - radius) / roomDepth * field.nz).floor().clamp(0, field.nz - 1);
+      final z1 = ((c.z + radius) / roomDepth * field.nz).ceil().clamp(0, field.nz);
+      for (int z = z0; z < z1; z++) {
+        for (int x = x0; x < x1; x++) {
+          final i = field.index(x, yMid, z);
+          if (field.solid[i]) continue;
+          speedSum += field.speed[i];
+          // temperature: negative = cool supply; map cool+moving as good.
+          coolSum += (1.0 - field.temperature[i].clamp(0.0, 1.0));
+          n++;
+        }
+      }
+    }
+    if (n == 0) return 30;
+    final speedPart = ((speedSum / n) / 0.4).clamp(0.0, 1.0);
+    final coolPart = (coolSum / n).clamp(0.0, 1.0);
+    return ((speedPart * 55 + coolPart * 45)).clamp(0.0, 100.0);
   }
 
   static List<AirflowParticle> _seedParticles(
