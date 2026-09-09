@@ -12,6 +12,8 @@ import 'room_scale.dart';
 import 'saved_room.dart';
 import 'surface_mount.dart';
 import 'scan_layout_model.dart';
+import 'room_revision.dart';
+import 'upgrade_catalog.dart';
 import '../services/airflow_optimizer.dart';
 import '../services/airflow_simulator.dart';
 import '../services/bench_layouts.dart';
@@ -19,6 +21,7 @@ import '../services/benchmark_validator.dart';
 import '../services/ergonomics_optimizer.dart';
 import '../services/ergonomics_simulator.dart';
 import '../services/layout_collision.dart';
+import '../services/layout_snap_guides.dart';
 import '../services/lighting_optimizer.dart';
 import '../services/lighting_simulator.dart';
 import '../services/multi_objective_optimizer.dart';
@@ -35,22 +38,133 @@ class AppState extends ChangeNotifier {
   int _currentTab = 0;
   int get currentTab => _currentTab;
 
+  String? _tabNotice;
+
+  /// One-shot notice after [setTab] (e.g. Place cancelled). Cleared when read.
+  String? takeTabNotice() {
+    final notice = _tabNotice;
+    _tabNotice = null;
+    return notice;
+  }
+
   void setTab(int tab) {
     // Unfinished Place ghosts must not ride into Hub stash / Bench / other tabs.
-    if (_currentTab == 2 && tab != 2 && hasPendingPlacement) {
-      cancelPendingPlacement(notify: false);
+    if (_currentTab == 2 && tab != 2) {
+      if (hasPendingPlacement) {
+        cancelPendingPlacement(notify: false);
+        _tabNotice = 'Place cancelled — unfinished item removed';
+      }
+      endFurnitureGesture();
     }
     _currentTab = tab;
     if (tab == 0) {
-      _stashActiveRoom();
+      // Mid-scan seed layouts must not overwrite My Rooms snapshots.
+      if (!isScanSessionActive) {
+        _stashActiveRoom();
+      }
       refreshSimulatedScores();
     }
     notifyListeners();
   }
 
-  /// True when the user has a usable room (scanned or manually created).
-  bool get roomIsReady =>
-      _scanComplete || _activeRoomLayout?.scanSource == 'manual';
+  // --- Scan session ownership (binds Cancel/Finish to the room that started) ---
+  String? _scanSessionRoomId;
+  int _scanSessionGeneration = 0;
+  RoomLayoutModel? _scanSessionPriorLayout;
+  bool _scanSessionPriorComplete = false;
+  double _scanSessionPriorProgress = 0;
+
+  bool get isScanSessionActive => _scanSessionRoomId != null;
+  int get scanSessionGeneration => _scanSessionGeneration;
+  String? get scanSessionRoomId => _scanSessionRoomId;
+
+  /// Call when Scan starts so Cancel/Finish cannot land on a different room.
+  void beginScanSession({
+    required RoomLayoutModel? priorLayout,
+    required bool priorScanComplete,
+    double? priorScanProgress,
+  }) {
+    _scanSessionRoomId = _activeRoomId;
+    _scanSessionPriorLayout = priorLayout;
+    _scanSessionPriorComplete = priorScanComplete;
+    _scanSessionPriorProgress = priorScanProgress ?? _scanProgress;
+    _scanSessionGeneration++;
+    notifyListeners();
+  }
+
+  void endScanSession() {
+    if (_scanSessionRoomId == null &&
+        _scanSessionPriorLayout == null &&
+        !_scanSessionPriorComplete) {
+      return;
+    }
+    _scanSessionRoomId = null;
+    _scanSessionPriorLayout = null;
+    _scanSessionPriorComplete = false;
+    _scanSessionPriorProgress = 0;
+    notifyListeners();
+  }
+
+  /// True when Finish/Cancel may safely write into the active room.
+  bool get scanSessionMatchesActiveRoom =>
+      _scanSessionRoomId != null && _scanSessionRoomId == _activeRoomId;
+
+  /// Abort an in-flight scan before room/preset swaps. Restores the pre-scan
+  /// layout onto the scan owner (if still active), then bumps generation so
+  /// the Scan UI tears down without writing into the newly selected room.
+  void invalidateScanSession({String notice = 'Scan cancelled — room changed'}) {
+    if (_scanSessionRoomId == null) return;
+    final owner = _scanSessionRoomId;
+    final prior = _scanSessionPriorLayout;
+    final priorComplete = _scanSessionPriorComplete;
+    final priorProgress = _scanSessionPriorProgress;
+    _scanSessionRoomId = null;
+    _scanSessionPriorLayout = null;
+    _scanSessionPriorComplete = false;
+    _scanSessionPriorProgress = 0;
+    _scanSessionGeneration++;
+    if (owner == _activeRoomId) {
+      if (prior != null) {
+        _activeRoomLayout = prior;
+      }
+      _scanComplete = priorComplete;
+      _scanProgress = priorProgress;
+      if (priorComplete && _scanProgress < 1.0) _scanProgress = 1.0;
+    }
+    _tabNotice = notice;
+  }
+
+  /// Restore scan progress after a cancelled scan (pairs with [restoreScanComplete]).
+  void restoreScanProgress(double progress) {
+    _scanProgress = progress.clamp(0.0, 1.0);
+    notifyListeners();
+  }
+
+  /// Mark the active preset room as demo-ready (Hub leaves Getting Started).
+  void acceptPresetAsReady() {
+    _abandonInFlightHydrate();
+    final layout = _activeRoomLayout;
+    if (layout == null) return;
+    _activeRoomLayout = layout.copyMeta(scanSource: 'demo');
+    _scanComplete = true;
+    _scanProgress = 1.0;
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
+
+  /// Layout edits that should show Hub ROUGH EST and drop Applied.
+  void _markScoresDirty({bool clearOptimized = true}) {
+    _airflowMetricsDirty = true;
+    _lightingMetricsDirty = true;
+    _ergonomicsMetricsDirty = true;
+    if (clearOptimized) _isOptimized = false;
+  }
+
+  /// True when the user has a usable room (scanned, manual, or professor demo).
+  bool get roomIsReady {
+    final source = _activeRoomLayout?.scanSource;
+    return _scanComplete || source == 'manual' || source == 'demo';
+  }
 
   /// Scores are furniture-impact estimates until Bench/optimizer marks them clean.
   bool get scoresAreSimulated =>
@@ -105,11 +219,18 @@ class AppState extends ChangeNotifier {
   String _activeRoomId = 'room_default';
   final List<SavedRoom> _rooms = [];
 
+  /// Bumped when the user mutates session state so a late prefs hydrate cannot
+  /// overwrite in-memory Place ghosts / demo work.
+  int _hydrateEpoch = 0;
+
   AppState() {
     _loadPreset(RoomPreset.gamingSetup);
-    unawaited(_restorePersistedLayout());
+    final epoch = _hydrateEpoch;
+    unawaited(_restorePersistedLayout(expectedEpoch: epoch));
     unawaited(_restoreOnboardingFlag());
   }
+
+  void _abandonInFlightHydrate() => _hydrateEpoch++;
 
   void _loadPreset(RoomPreset preset) {
     final data = RoomPresets.getPreset(preset);
@@ -135,9 +256,11 @@ class AppState extends ChangeNotifier {
     final name = (layout != null && layout.roomName.trim().isNotEmpty)
         ? layout.roomName
         : preset.name;
-    final subtitle = layout?.scanSource == 'manual'
-        ? 'Created without a scan'
-        : preset.subtitle;
+    final subtitle = switch (layout?.scanSource) {
+      'manual' => 'Created without a scan',
+      'demo' => 'Professor demo room',
+      _ => preset.subtitle,
+    };
     return RoomData(
       name: name,
       subtitle: subtitle,
@@ -262,6 +385,14 @@ class AppState extends ChangeNotifier {
   void deleteDetectedScanObject(String id) {
     final layout = _activeRoomLayout;
     if (layout == null) return;
+    ScanObject? hit;
+    for (final o in layout.objects) {
+      if (o.id == id) {
+        hit = o;
+        break;
+      }
+    }
+    if (hit == null || hit.locked) return;
     final next = layout.objects.where((o) => o.id != id).toList(growable: false);
     _activeRoomLayout = layout.withObjects(next);
     if (_selectedItemId == id && _selectedIsScanObject) {
@@ -305,7 +436,7 @@ class AppState extends ChangeNotifier {
         break;
       }
     }
-    if (source == null) return false;
+    if (source == null || source.locked) return false;
 
     final cloneId = _uniqueScanId('${source.id}_copy', layout.objects.map((o) => o.id).toSet());
     final clone = ScanObject(
@@ -335,6 +466,8 @@ class AppState extends ChangeNotifier {
   }) {
     final layout = _activeRoomLayout;
     if (layout == null) return;
+    final locked = layout.objects.any((o) => o.id == id && o.locked);
+    if (locked) return;
 
     final next = layout.objects
         .map((o) => o.id == id
@@ -354,6 +487,7 @@ class AppState extends ChangeNotifier {
     final objIdx = layout.objects.indexWhere((o) => o.id == id);
     if (objIdx < 0) return false;
     final obj = layout.objects[objIdx];
+    if (obj.locked) return false;
     final room = currentRoomData;
     final usedIds = _furniture.map((f) => f.id).toSet();
 
@@ -392,9 +526,7 @@ class AppState extends ChangeNotifier {
     _activeRoomLayout = layout.withObjects(nextObjects).withFurniture(_furniture);
     _selectedItemId = item.id;
     _selectedIsScanObject = false;
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _markScoresDirty();
     _rememberFurniture();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
@@ -412,6 +544,7 @@ class AppState extends ChangeNotifier {
     _pushUndoCheckpoint();
     _furniture[idx] = _furniture[idx].copyWith(hidden: !_furniture[idx].hidden);
     _activeRoomLayout = _activeRoomLayout?.withFurniture(_furniture);
+    _markScoresDirty();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
@@ -463,9 +596,7 @@ class AppState extends ChangeNotifier {
     _activeRoomLayout = _activeRoomLayout?.withFurniture(_furniture);
     _selectedItemId = cloneId;
     _selectedIsScanObject = false;
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _markScoresDirty();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
     return true;
@@ -487,6 +618,7 @@ class AppState extends ChangeNotifier {
   /// Places a catalog blueprint. [pending] drops a ghost in the room centre
   /// until [confirmPendingPlacement]; otherwise it occupies the first free cell.
   String? addCatalogFurniture(RigCatalogEntry entry, {bool pending = false}) {
+    _abandonInFlightHydrate();
     final room = currentRoomData;
     final id = _uniqueScanId(entry.baseId, _furniture.map((f) => f.id).toSet());
     if (pending) {
@@ -533,15 +665,14 @@ class AppState extends ChangeNotifier {
     _rememberFurniture();
     _selectedItemId = id;
     _selectedIsScanObject = false;
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _markScoresDirty();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
     return id;
   }
 
   bool confirmPendingPlacement() {
+    _abandonInFlightHydrate();
     final id = _pendingPlacementId;
     if (id == null) return true;
     final idx = _furniture.indexWhere((f) => f.id == id);
@@ -563,9 +694,7 @@ class AppState extends ChangeNotifier {
     _pendingPlacementId = null;
     _pendingUpgradeIndex = null;
     _rememberFurniture();
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _markScoresDirty();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
     return true;
@@ -624,9 +753,7 @@ class AppState extends ChangeNotifier {
     if (_selectedItemId == id && !_selectedIsScanObject) {
       _selectedItemId = null;
     }
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _markScoresDirty();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
     return true;
@@ -642,6 +769,8 @@ class AppState extends ChangeNotifier {
   }
 
   void selectPreset(RoomPreset preset) {
+    _abandonInFlightHydrate();
+    invalidateScanSession();
     _stashActiveRoom();
     _loadPreset(preset);
     _scanComplete = false;
@@ -673,6 +802,7 @@ class AppState extends ChangeNotifier {
     required double widthMeters,
     double heightMeters = RoomScale.defaultHeightMeters,
   }) {
+    invalidateScanSession();
     _stashActiveRoom();
     final cols = RoomScale.cellsFromMeters(lengthMeters);
     final rows = RoomScale.cellsFromMeters(widthMeters);
@@ -766,6 +896,7 @@ class AppState extends ChangeNotifier {
   }
 
   void loadSavedRoom(String id) {
+    _abandonInFlightHydrate();
     if (id == _activeRoomId) return;
     SavedRoom? found;
     for (final r in _rooms) {
@@ -775,6 +906,7 @@ class AppState extends ChangeNotifier {
       }
     }
     if (found == null) return;
+    invalidateScanSession();
     _stashActiveRoom();
     _applySavedRoom(found);
     unawaited(_persistActiveRoomLayout());
@@ -782,10 +914,13 @@ class AppState extends ChangeNotifier {
   }
 
   bool duplicateActiveRoom() {
+    invalidateScanSession();
     _stashActiveRoom();
     final copyId = 'room_${DateTime.now().millisecondsSinceEpoch}';
     final layout = _activeRoomLayout;
     if (layout == null) return false;
+    final srcIdx = _rooms.indexWhere((r) => r.id == _activeRoomId);
+    final src = srcIdx >= 0 ? _rooms[srcIdx] : null;
     final copy = SavedRoom(
       id: copyId,
       name: '${currentRoomData.name} Copy',
@@ -799,6 +934,24 @@ class AppState extends ChangeNotifier {
           .map((u) => u['furnitureId'])
           .whereType<String>()
           .toList(growable: false),
+      originalFurniture: _originalFurniture == null ? null : _cloneFurniture(_originalFurniture!),
+      originalScores: _originalScores == null ? null : Map<String, double>.from(_originalScores!),
+      scoresClean: !scoresAreSimulated,
+      isOptimized: _isOptimized,
+      revisions: src == null
+          ? const []
+          : List.unmodifiable(
+              src.revisions.map(
+                (r) => RoomRevision(
+                  id: '${r.id}_copy_$copyId',
+                  label: r.label,
+                  savedAt: r.savedAt,
+                  furniture: _cloneFurniture(r.furniture),
+                  layout: r.layout,
+                  scores: r.scores == null ? null : Map<String, double>.from(r.scores!),
+                ),
+              ),
+            ),
     );
     _rooms.add(copy);
     _applySavedRoom(copy);
@@ -809,6 +962,7 @@ class AppState extends ChangeNotifier {
 
   bool deleteSavedRoom(String id) {
     if (_rooms.length <= 1 && id == _activeRoomId) return false;
+    invalidateScanSession();
     _stashActiveRoom();
     _rooms.removeWhere((r) => r.id == id);
     if (id == _activeRoomId) {
@@ -839,25 +993,37 @@ class AppState extends ChangeNotifier {
     if (match.isNotEmpty) _selectedPreset = match.first;
     _selectedItemId = null;
     _selectedIsScanObject = false;
-    _isOptimized = _originalFurniture != null;
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _pendingPlacementId = null;
+    _pendingUpgradeIndex = null;
+    _isOptimized = room.isOptimized;
+    _airflowMetricsDirty = !room.scoresClean;
+    _lightingMetricsDirty = !room.scoresClean;
+    _ergonomicsMetricsDirty = !room.scoresClean;
     _syncUpgradesFromFurniture();
     clearLayoutHistory();
+    if (_furniture.isNotEmpty) {
+      _refreshLayoutScores(markClean: room.scoresClean);
+    }
   }
 
   void _stashActiveRoom() {
+    // Never write mid-scan seed layouts into My Rooms.
+    if (isScanSessionActive) return;
     final layout = _activeRoomLayout;
     if (layout == null) return;
+    final existingIdx = _rooms.indexWhere((r) => r.id == _activeRoomId);
+    final priorRevisions =
+        existingIdx >= 0 ? _rooms[existingIdx].revisions : const <RoomRevision>[];
+    // Never stash unfinished Place ghosts into My Rooms / cold-start restore.
+    final committed = committedFurniture;
     final snap = SavedRoom(
       id: _activeRoomId,
       name: currentRoomData.name,
       presetName: _selectedPreset.name,
       scanComplete: _scanComplete,
       scanProgress: _scanProgress,
-      layout: layout.withFurniture(_furniture),
-      furniture: _cloneFurniture(_furniture),
+      layout: layout.withFurniture(committed),
+      furniture: _cloneFurniture(committed),
       installedUpgrades: upgrades
           .where((u) => u['added'] == true)
           .map((u) => u['furnitureId'])
@@ -865,13 +1031,87 @@ class AppState extends ChangeNotifier {
           .toList(growable: false),
       originalFurniture: _originalFurniture,
       originalScores: _originalScores,
+      revisions: priorRevisions,
+      scoresClean: !scoresAreSimulated,
+      isOptimized: _isOptimized,
     );
-    final idx = _rooms.indexWhere((r) => r.id == _activeRoomId);
-    if (idx >= 0) {
-      _rooms[idx] = snap;
+    if (existingIdx >= 0) {
+      _rooms[existingIdx] = snap;
     } else {
       _rooms.add(snap);
     }
+  }
+
+  /// Append a named layout checkpoint to the active room's history timeline.
+  /// Returns false when there is no active layout to save.
+  bool checkpointActiveRoom(String label) {
+    final layout = _activeRoomLayout;
+    if (layout == null) return false;
+    _stashActiveRoom();
+    final idx = _rooms.indexWhere((r) => r.id == _activeRoomId);
+    if (idx < 0) return false;
+    final room = _rooms[idx];
+    final scores = <String, double>{
+      'overall': overallScore,
+      'airflow': airflowScore,
+      'lighting': lightingScore,
+      'ergonomics': ergonomicsScore,
+      'spatial': spatialScore,
+    };
+    final rev = RoomRevision(
+      id: 'rev_${DateTime.now().millisecondsSinceEpoch}',
+      label: label,
+      savedAt: DateTime.now(),
+      furniture: _cloneFurniture(_furniture),
+      layout: layout.withFurniture(_furniture),
+      scores: scores,
+    );
+    final next = [...room.revisions, rev];
+    while (next.length > SavedRoom.maxRevisions) {
+      next.removeAt(0);
+    }
+    _rooms[idx] = room.copyWith(revisions: List.unmodifiable(next));
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+    return true;
+  }
+
+  List<RoomRevision> get activeRoomRevisions {
+    final idx = _rooms.indexWhere((r) => r.id == _activeRoomId);
+    if (idx < 0) return const [];
+    return List.unmodifiable(_rooms[idx].revisions);
+  }
+
+  /// Restore a checkpoint into the live editor (pushes undo).
+  bool restoreRoomRevision(String revisionId) {
+    final idx = _rooms.indexWhere((r) => r.id == _activeRoomId);
+    if (idx < 0) return false;
+    RoomRevision? hit;
+    for (final r in _rooms[idx].revisions) {
+      if (r.id == revisionId) {
+        hit = r;
+        break;
+      }
+    }
+    if (hit == null) return false;
+    cancelPendingPlacement(notify: false);
+    _pushUndoCheckpoint();
+    _furniture = _cloneFurniture(hit.furniture);
+    if (hit.layout != null) {
+      _activeRoomLayout = hit.layout;
+    } else {
+      _activeRoomLayout = _activeRoomLayout?.withFurniture(_furniture);
+    }
+    _rememberFurniture();
+    _selectedItemId = null;
+    _selectedIsScanObject = false;
+    _markScoresDirty();
+    _originalFurniture = null;
+    _originalScores = null;
+    _syncUpgradesFromFurniture();
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+    return true;
   }
 
   void moveFurniture(String id, double newX, double newY, {bool respectCollision = true}) {
@@ -886,12 +1126,26 @@ class AppState extends ChangeNotifier {
     }
 
     final room = currentRoomData;
+    var proposedX = newX;
+    var proposedY = newY;
+    if (_gestureCheckpointOpen && !SurfaceMounts.isStructuralMount(current)) {
+      final snap = LayoutSnapGuides.apply(
+        moving: current,
+        proposedX: newX,
+        proposedY: newY,
+        others: _furniture,
+        gridCols: room.gridCols,
+        gridRows: room.gridRows,
+      );
+      proposedX = snap.gridX;
+      proposedY = snap.gridY;
+    }
     final allowOverlap =
         _gestureCheckpointOpen || !respectCollision || id == _pendingPlacementId;
     var resolved = LayoutCollision.resolveMove(
       id: id,
-      proposedX: newX,
-      proposedY: newY,
+      proposedX: proposedX,
+      proposedY: proposedY,
       furniture: _furniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
@@ -919,6 +1173,19 @@ class AppState extends ChangeNotifier {
     );
     resolved = LayoutMoveResult(gridX: hosted.gridX, gridY: hosted.gridY);
 
+    // Guides must match the final seated pose, not the pre-collision proposal.
+    var guides = const <SnapGuideLine>[];
+    if (_gestureCheckpointOpen && !SurfaceMounts.isStructuralMount(current)) {
+      guides = LayoutSnapGuides.apply(
+        moving: current,
+        proposedX: resolved.gridX,
+        proposedY: resolved.gridY,
+        others: _furniture,
+        gridCols: room.gridCols,
+        gridRows: room.gridRows,
+      ).guides;
+    }
+
     if ((current.gridX - resolved.gridX).abs() < 0.001 &&
         (current.gridY - resolved.gridY).abs() < 0.001) {
       if (_gestureCheckpointOpen) {
@@ -926,14 +1193,17 @@ class AppState extends ChangeNotifier {
           current.copyWith(gridX: resolved.gridX, gridY: resolved.gridY),
           _furniture,
         );
+        _activeSnapGuides = guides;
+        notifyListeners();
       }
       return;
     }
 
     _furniture[idx] = current.copyWith(gridX: resolved.gridX, gridY: resolved.gridY);
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    // Place ghosts are not committed — dragging them must not clear BENCH OK.
+    if (id != _pendingPlacementId) {
+      _markScoresDirty();
+    }
 
     if (_gestureCheckpointOpen) {
       final posed = _furniture[idx];
@@ -942,10 +1212,15 @@ class AppState extends ChangeNotifier {
         _dragLastValidX = posed.gridX;
         _dragLastValidY = posed.gridY;
       }
+      _activeSnapGuides = guides;
       notifyListeners();
       return;
     }
 
+    if (id == _pendingPlacementId) {
+      notifyListeners();
+      return;
+    }
     _rememberFurniture();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
@@ -991,9 +1266,7 @@ class AppState extends ChangeNotifier {
       return true;
     }
     _rememberFurniture();
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _markScoresDirty();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
     return true;
@@ -1027,12 +1300,17 @@ class AppState extends ChangeNotifier {
       return false;
     }
 
-    _pushUndoCheckpoint();
+    if (id != _pendingPlacementId) {
+      _pushUndoCheckpoint();
+    }
     _furniture[idx] = next;
+    if (id == _pendingPlacementId) {
+      // Ghost rotate is in-memory only until Place; never harden via persist.
+      notifyListeners();
+      return true;
+    }
     _activeRoomLayout = _activeRoomLayout?.withFurniture(_furniture);
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _markScoresDirty();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
     return true;
@@ -1045,6 +1323,8 @@ class AppState extends ChangeNotifier {
   bool _gestureCheckpointOpen = false;
   bool _dragPoseBlocked = false;
   String? _dragItemId;
+  List<SnapGuideLine> _activeSnapGuides = const [];
+  List<SnapGuideLine> get activeSnapGuides => _activeSnapGuides;
   double? _dragLastValidX;
   double? _dragLastValidY;
 
@@ -1071,6 +1351,7 @@ class AppState extends ChangeNotifier {
     _dragItemId = _selectedItemId;
     _dragLastValidX = null;
     _dragLastValidY = null;
+    _activeSnapGuides = const [];
   }
 
   /// Flushes the work [moveFurniture] skipped while the drag was in flight.
@@ -1095,6 +1376,7 @@ class AppState extends ChangeNotifier {
     _dragItemId = null;
     _dragLastValidX = null;
     _dragLastValidY = null;
+    _activeSnapGuides = const [];
     if (keepOverlap) {
       notifyListeners();
       return;
@@ -1118,9 +1400,7 @@ class AppState extends ChangeNotifier {
     _furniture = _undoStack.removeLast().map((f) => f.copyWith()).toList();
     _rememberFurniture();
     _syncUpgradesFromFurniture();
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _markScoresDirty();
     _gestureCheckpointOpen = false;
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
@@ -1132,9 +1412,7 @@ class AppState extends ChangeNotifier {
     _furniture = _redoStack.removeLast().map((f) => f.copyWith()).toList();
     _rememberFurniture();
     _syncUpgradesFromFurniture();
-    _airflowMetricsDirty = true;
-    _lightingMetricsDirty = true;
-    _ergonomicsMetricsDirty = true;
+    _markScoresDirty();
     _gestureCheckpointOpen = false;
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
@@ -1175,12 +1453,18 @@ class AppState extends ChangeNotifier {
           _activeRoomLayout!.scanSource != 'scan-seed');
 
   /// Commit a finished scan into the editable furniture model + persist session.
+  /// No-ops if the active room is no longer the scan owner.
   void commitScannedRoomLayout(
     RoomLayoutModel layout, {
     String inputProviderId = 'unknown',
     bool usedFallback = false,
     ScanPipelineDiagnostics? diagnostics,
   }) {
+    if (isScanSessionActive && !scanSessionMatchesActiveRoom) {
+      endScanSession();
+      return;
+    }
+    endScanSession();
     final aligned = RoomScale.alignCoverage(layout);
     final cols = RoomScale.colsFrom(aligned);
     final rows = RoomScale.rowsFrom(aligned);
@@ -1217,9 +1501,9 @@ class AppState extends ChangeNotifier {
     _ergonomicsMetricsDirty = true;
     _lastOptimizeReasons = const [];
     clearLayoutHistory();
-    unawaited(_persistActiveRoomLayout());
+    // Checkpoint stashes + persists once (includes "After scan" revision).
+    checkpointActiveRoom('After scan');
     unawaited(_persistSuccessfulScanSession());
-    notifyListeners();
   }
 
   String? exportRoomLayoutJson() {
@@ -1266,15 +1550,16 @@ class AppState extends ChangeNotifier {
     try {
       _stashActiveRoom();
       final prefs = await SharedPreferences.getInstance();
+      final committed = committedFurniture;
       final raw = jsonEncode({
-        'version': 4,
+        'version': 5,
         'activeRoomId': _activeRoomId,
         'rooms': _rooms.map((r) => r.toJson()).toList(growable: false),
         'scanComplete': _scanComplete,
         'scanProgress': _scanProgress,
         'preset': _selectedPreset.name,
-        'layout': layout.toJson(),
-        'furniture': _furniture.map((f) => f.toJson()).toList(growable: false),
+        'layout': layout.withFurniture(committed).toJson(),
+        'furniture': committed.map((f) => f.toJson()).toList(growable: false),
         'installedUpgrades': upgrades
             .where((u) => u['added'] == true)
             .map((u) => u['furnitureId'])
@@ -1309,17 +1594,23 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _restorePersistedLayout() async {
+  Future<void> _restorePersistedLayout({required int expectedEpoch}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final sessionRaw = prefs.getString(_persistedScanSessionKey);
-      if (sessionRaw != null && sessionRaw.isNotEmpty) {
-        if (_tryRestoreSessionJson(sessionRaw)) return;
+      if (expectedEpoch != _hydrateEpoch) return;
+      // Prefer the multi-room blob (v4+) so scan-session caches cannot wipe
+      // My Rooms / revision history on cold start.
+      final raw = prefs.getString(_persistedLayoutKey);
+      if (raw != null && raw.isNotEmpty) {
+        if (expectedEpoch != _hydrateEpoch) return;
+        if (_tryRestoreSessionJson(raw)) return;
       }
 
-      final raw = prefs.getString(_persistedLayoutKey);
-      if (raw == null || raw.isEmpty) return;
-      _tryRestoreSessionJson(raw);
+      final sessionRaw = prefs.getString(_persistedScanSessionKey);
+      if (sessionRaw != null && sessionRaw.isNotEmpty) {
+        if (expectedEpoch != _hydrateEpoch) return;
+        if (_tryRestoreSessionJson(sessionRaw)) return;
+      }
     } catch (_) {
       // Ignore invalid cached layouts and continue with preset state.
     }
@@ -1510,35 +1801,48 @@ class AppState extends ChangeNotifier {
   List<FurnitureItem>? _originalFurniture;
   Map<String, double>? _originalScores;
 
+  /// Ranked Auto-Rig proposals for the current weight + inventory key.
+  List<MultiObjectiveResult>? _autoRigCandidates;
+  String? _autoRigCacheKey;
+  int _autoRigCursor = 0;
+  String _lastAutoRigRankLabel = '';
+
   AirflowMetrics? get airflowMetrics => _airflowMetrics;
   LightingMetrics? get lightingMetrics => _lightingMetrics;
   ErgonomicsMetrics? get ergonomicsMetrics => _ergonomicsMetrics;
   SpatialMetrics get spatialMetrics => SpatialAnalyzer.evaluate(
-        furniture: _furniture,
+        furniture: committedFurniture,
         gridCols: currentRoomData.gridCols,
         gridRows: currentRoomData.gridRows,
       );
 
   List<String> get lastOptimizeReasons => _lastOptimizeReasons;
+  String get lastAutoRigRankLabel => _lastAutoRigRankLabel;
   List<FurnitureItem>? get originalFurniture => _originalFurniture;
   Map<String, double>? get originalScores => _originalScores;
   bool get hasCompareSnapshot => _originalFurniture != null;
 
   double get _baseAirflowScore {
     double score = 50;
-    for (final f in _furniture) { score += f.airflowImpact * 15; }
+    for (final f in committedFurniture) {
+      score += f.airflowImpact * 15;
+    }
     return score.clamp(0, 100);
   }
 
   double get _baseLightingScore {
     double score = 40;
-    for (final f in _furniture) { score += f.lightingImpact * 12; }
+    for (final f in committedFurniture) {
+      score += f.lightingImpact * 12;
+    }
     return score.clamp(0, 100);
   }
 
   double get _baseErgonomicsScore {
     double score = 45;
-    for (final f in _furniture) { score += f.ergonomicsImpact * 13; }
+    for (final f in committedFurniture) {
+      score += f.ergonomicsImpact * 13;
+    }
     return score.clamp(0, 100);
   }
 
@@ -1604,10 +1908,20 @@ class AppState extends ChangeNotifier {
     if (original != null && original['overall'] != null) {
       return original['overall']!;
     }
+    // Prefer frozen spatial from the pre-optimize snapshot so delta doesn't
+    // mix old air/light/ergo baselines with a later spatial rearrange.
+    final spatialPrev = original?['spatial'] ??
+        (_originalFurniture == null
+            ? spatialScore
+            : SpatialAnalyzer.evaluate(
+                furniture: _originalFurniture!,
+                gridCols: currentRoomData.gridCols,
+                gridRows: currentRoomData.gridRows,
+              ).overallScore);
     return (baselineAirflowScore +
             baselineLightingScore +
             baselineErgonomicsScore +
-            spatialScore) /
+            spatialPrev) /
         4;
   }
 
@@ -1621,15 +1935,15 @@ class AppState extends ChangeNotifier {
   }
 
   void _captureAirflowBaselineIfNeeded() {
-    _preOptimizeAirflowMetrics ??= AirflowOptimizer.evaluate(_furniture);
+    _preOptimizeAirflowMetrics ??= AirflowOptimizer.evaluate(committedFurniture);
   }
 
   void _captureLightingBaselineIfNeeded() {
-    _preOptimizeLightingMetrics ??= LightingOptimizer.evaluate(_furniture);
+    _preOptimizeLightingMetrics ??= LightingOptimizer.evaluate(committedFurniture);
   }
 
   void _captureErgonomicsBaselineIfNeeded() {
-    _preOptimizeErgonomicsMetrics ??= ErgonomicsOptimizer.evaluate(_furniture);
+    _preOptimizeErgonomicsMetrics ??= ErgonomicsOptimizer.evaluate(committedFurniture);
   }
 
   void _setAirflowMetrics(AirflowMetrics metrics, {bool markClean = true}) {
@@ -1649,13 +1963,30 @@ class AppState extends ChangeNotifier {
 
   void _captureOriginalIfNeeded() {
     if (_originalFurniture != null) return;
-    _originalFurniture = _cloneFurniture(_furniture);
+    final scored = committedFurniture;
+    final air = AirflowOptimizer.evaluate(scored).circulationScore.clamp(0.0, 100.0).toDouble();
+    final light = LightingOptimizer.evaluate(scored).exposureScore.clamp(0.0, 100.0).toDouble();
+    final ergo = ErgonomicsOptimizer.evaluate(scored).comfortScore.clamp(0.0, 100.0).toDouble();
+    final spatial = SpatialAnalyzer.evaluate(
+      furniture: scored,
+      gridCols: currentRoomData.gridCols,
+      gridRows: currentRoomData.gridRows,
+    ).overallScore.clamp(0.0, 100.0).toDouble();
+    final total = _airflowSlider + _lightingSlider + _ergonomicsSlider + _spatialSlider;
+    final overall = total == 0
+        ? (air + light + ergo + spatial) / 4
+        : (air * _airflowSlider +
+                light * _lightingSlider +
+                ergo * _ergonomicsSlider +
+                spatial * _spatialSlider) /
+            total;
+    _originalFurniture = _cloneFurniture(committedFurniture);
     _originalScores = {
-      'airflow': airflowScore,
-      'lighting': lightingScore,
-      'ergonomics': ergonomicsScore,
-      'spatial': spatialScore,
-      'overall': overallScore,
+      'airflow': air,
+      'lighting': light,
+      'ergonomics': ergo,
+      'spatial': spatial,
+      'overall': overall,
     };
   }
 
@@ -1669,18 +2000,40 @@ class AppState extends ChangeNotifier {
     _airflowMetricsDirty = true;
     _lightingMetricsDirty = true;
     _ergonomicsMetricsDirty = true;
+    _lastOptimizeReasons = const [];
+    _clearAutoRigCandidateCache();
+    // Drop the snapshot so Hub/Rig no longer offer a stale Restore.
+    _originalFurniture = null;
+    _originalScores = null;
     _syncUpgradesFromFurniture();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
 
-  /// Auto-Rig: rearranges furniture using weighted multi-objective blending.
+  void _clearAutoRigCandidateCache() {
+    _autoRigCandidates = null;
+    _autoRigCacheKey = null;
+    _autoRigCursor = 0;
+    _lastAutoRigRankLabel = '';
+  }
+
+  String _autoRigInventoryKey(List<FurnitureItem> items) {
+    final ids = items.map((f) => f.id).toList()..sort();
+    return ids.join(',');
+  }
+
+  /// Auto-Rig: scored best-of-N under the current weight mix.
   /// [goal] optionally applies a weight preset before solving.
+  ///
+  /// Searches from the original compare snapshot when present, applies the
+  /// best first, then cycles ranked alternates on later taps.
   void runOptimization({String? goal}) {
+    _abandonInFlightHydrate();
     // Drop unfinished Place ghosts so Auto-Rig does not treat them as real.
     cancelPendingPlacement(notify: false);
     if (goal != null) {
       applyOptimizeGoalPreset(goal);
+      _clearAutoRigCandidateCache();
     }
 
     _pushUndoCheckpoint();
@@ -1689,23 +2042,39 @@ class AppState extends ChangeNotifier {
     _captureLightingBaselineIfNeeded();
     _captureErgonomicsBaselineIfNeeded();
 
-    final result = MultiObjectiveOptimizer.optimize(
-      furniture: _furniture,
-      gridCols: currentRoomData.gridCols,
-      gridRows: currentRoomData.gridRows,
-      weights: optimizeWeights,
-    );
+    final searchRoot = _originalFurniture ?? committedFurniture;
+    final weights = optimizeWeights;
+    final cacheKey =
+        '${weights.cacheKey}|${_autoRigInventoryKey(searchRoot)}|'
+        '${currentRoomData.gridCols}x${currentRoomData.gridRows}';
 
-    _furniture = result.furniture;
+    if (_autoRigCacheKey != cacheKey ||
+        _autoRigCandidates == null ||
+        _autoRigCandidates!.isEmpty) {
+      _autoRigCandidates = MultiObjectiveOptimizer.optimizeCandidates(
+        furniture: searchRoot,
+        gridCols: currentRoomData.gridCols,
+        gridRows: currentRoomData.gridRows,
+        weights: weights,
+      );
+      _autoRigCacheKey = cacheKey;
+      _autoRigCursor = 0;
+    } else {
+      _autoRigCursor = (_autoRigCursor + 1) % _autoRigCandidates!.length;
+    }
+
+    final result = _autoRigCandidates![_autoRigCursor];
+    _lastAutoRigRankLabel = result.rankLabel;
+
+    _furniture = _cloneFurniture(result.furniture);
     _setAirflowMetrics(result.airflowMetrics);
     _setLightingMetrics(result.lightingMetrics);
     _setErgonomicsMetrics(result.ergonomicsMetrics);
     _lastOptimizeReasons = result.reasons;
     _rememberFurniture();
-    unawaited(_persistActiveRoomLayout());
-
     _isOptimized = true;
-    notifyListeners();
+    // Single persist via checkpoint.
+    checkpointActiveRoom(goal == null ? 'Auto-Rig' : 'Auto-Rig ($goal)');
   }
 
   void applyAirflowOptimizedLayout() {
@@ -1725,11 +2094,24 @@ class AppState extends ChangeNotifier {
   /// in. The Bench now derives its layouts from this furniture, so applying one
   /// is a rearrange of their own room — it must not swap their preset back to
   /// the gaming setup or throw away a completed scan.
-  void applyFurnitureLayout(List<FurnitureItem> items, {bool markOptimized = false}) {
+  void applyFurnitureLayout(
+    List<FurnitureItem> items, {
+    bool markOptimized = false,
+    /// When set, only this Bench mode clears its dirty flag (others stay ROUGH EST.).
+    /// Use `airflow` | `lighting` | `ergonomics` | `spatial`. Null = lock all three sims.
+    String? lockMode,
+  }) {
+    _abandonInFlightHydrate();
     // Clear pending Place state; the incoming layout replaces the ghost entirely.
     cancelPendingPlacement(notify: false);
     _pushUndoCheckpoint();
+
+    // Snapshot BEFORE swap so Hub Score Delta compares sim-to-sim, not estimate-to-sim.
+    final beforeAir = markOptimized ? AirflowOptimizer.evaluate(committedFurniture) : null;
+    final beforeLight = markOptimized ? LightingOptimizer.evaluate(committedFurniture) : null;
+    final beforeErgo = markOptimized ? ErgonomicsOptimizer.evaluate(committedFurniture) : null;
     if (markOptimized) _captureOriginalIfNeeded();
+
     final room = currentRoomData;
     _furniture = RigCatalog.retainV1(
       items
@@ -1748,17 +2130,33 @@ class AppState extends ChangeNotifier {
     final light = LightingOptimizer.evaluate(_furniture);
     final ergo = ErgonomicsOptimizer.evaluate(_furniture);
     if (markOptimized) {
-      _preOptimizeAirflowMetrics ??= air;
-      _preOptimizeLightingMetrics ??= light;
-      _preOptimizeErgonomicsMetrics ??= ergo;
+      _preOptimizeAirflowMetrics ??= beforeAir;
+      _preOptimizeLightingMetrics ??= beforeLight;
+      _preOptimizeErgonomicsMetrics ??= beforeErgo;
     }
-    _setAirflowMetrics(air);
-    _setLightingMetrics(light);
-    _setErgonomicsMetrics(ergo);
+    final mode = lockMode?.toLowerCase();
+    final lockAll = markOptimized && (mode == null || mode == 'balanced');
+    final lockAir = lockAll || mode == 'airflow';
+    final lockLight = lockAll || mode == 'lighting';
+    final lockErgo = lockAll || mode == 'ergonomics';
+    // Spatial Apply rearranges furniture but does not lock air/light/ergo sims.
+    _setAirflowMetrics(air, markClean: lockAir);
+    _setLightingMetrics(light, markClean: lockLight);
+    _setErgonomicsMetrics(ergo, markClean: lockErgo);
+    if (markOptimized && mode == 'spatial') {
+      _airflowMetricsDirty = true;
+      _lightingMetricsDirty = true;
+      _ergonomicsMetricsDirty = true;
+    }
     _lastOptimizeReasons = const [];
     _syncUpgradesFromFurniture();
-    unawaited(_persistActiveRoomLayout());
-    notifyListeners();
+    if (markOptimized) {
+      // Single persist via checkpoint (includes revision).
+      checkpointActiveRoom('Bench applied');
+    } else {
+      unawaited(_persistActiveRoomLayout());
+      notifyListeners();
+    }
   }
 
   // Room Shape Layout support
@@ -1776,6 +2174,8 @@ class AppState extends ChangeNotifier {
   double get baseRoomCost {
     double total = 0;
     for (final f in _furniture) {
+      // Upgrade catalog prices are counted in [upgradesCost] only.
+      if (f.id.startsWith('upg_')) continue;
       total += f.cost;
     }
     return total;
@@ -1849,7 +2249,7 @@ class AppState extends ChangeNotifier {
 
   BenchmarkValidation validateActiveLayout({String? mode}) {
     return BenchmarkValidator.validateLayout(
-      furniture: _furniture,
+      furniture: committedFurniture,
       gridCols: currentRoomData.gridCols,
       gridRows: currentRoomData.gridRows,
       mode: mode ?? _benchmarkMode,
@@ -1857,16 +2257,8 @@ class AppState extends ChangeNotifier {
   }
 
   // Upgrade catalog — installing places a real item on the Rig layout.
-  final List<Map<String, dynamic>> upgrades = [
-    {'name': 'Air Circulator Fan', 'iconName': 'fan', 'furnitureId': 'upg_fan', 'type': 'airflow', 'desc': 'Places a stand fan on your Rig — oscilates into open floor', 'airflowBoost': 15.0, 'lightingBoost': 0.0, 'ergonomicsBoost': 0.0, 'price': 89.0, 'added': false},
-    {'name': 'Smart Air Purifier', 'iconName': 'purifier', 'furnitureId': 'upg_purifier', 'type': 'airflow', 'desc': 'Adds a floor purifier that also stirs room air', 'airflowBoost': 10.0, 'lightingBoost': 0.0, 'ergonomicsBoost': 5.0, 'price': 189.0, 'added': false},
-    {'name': 'Smart Light Bar', 'iconName': 'lightBar', 'furnitureId': 'upg_light_bar', 'type': 'lighting', 'desc': 'Bias light near the desk for task illumination', 'airflowBoost': 0.0, 'lightingBoost': 18.0, 'ergonomicsBoost': 5.0, 'price': 99.0, 'added': false},
-    {'name': 'Diffused Floor Lamp', 'iconName': 'floorLamp', 'furnitureId': 'upg_floor_lamp', 'type': 'lighting', 'desc': 'Soft ambient lamp on the Rig floor plan', 'airflowBoost': 0.0, 'lightingBoost': 12.0, 'ergonomicsBoost': 2.0, 'price': 79.0, 'added': false},
-    {'name': 'Monitor Arm', 'iconName': 'monitorArm', 'furnitureId': 'upg_monitor_arm', 'type': 'ergonomics', 'desc': 'Monitor arm at the desk — frees surface, better eye line', 'airflowBoost': 5.0, 'lightingBoost': 0.0, 'ergonomicsBoost': 20.0, 'price': 129.0, 'added': false},
-    {'name': 'Cable Tray', 'iconName': 'cableTray', 'furnitureId': 'upg_cable_tray', 'type': 'ergonomics', 'desc': 'Under-desk tray that clears walk/air paths', 'airflowBoost': 8.0, 'lightingBoost': 0.0, 'ergonomicsBoost': 10.0, 'price': 39.0, 'added': false},
-    {'name': 'Anti-Fatigue Mat', 'iconName': 'mat', 'furnitureId': 'upg_mat', 'type': 'ergonomics', 'desc': 'Standing mat at the work zone', 'airflowBoost': 0.0, 'lightingBoost': 0.0, 'ergonomicsBoost': 15.0, 'price': 49.0, 'added': false},
-    {'name': 'Smart Blinds', 'iconName': 'smartBlinds', 'furnitureId': 'upg_blinds', 'type': 'lighting', 'desc': 'Blinds on the window wall to cut glare', 'airflowBoost': 2.0, 'lightingBoost': 14.0, 'ergonomicsBoost': 0.0, 'price': 249.0, 'added': false},
-  ];
+  // Source of truth: [UpgradeCatalog] (demo prices + authored boost tags).
+  final List<Map<String, dynamic>> upgrades = UpgradeCatalog.mutableShop();
 
   double _upgradeAirflowBonus = 0;
   double _upgradeLightingBonus = 0;
@@ -1930,7 +2322,9 @@ class AppState extends ChangeNotifier {
 
     _rememberFurniture();
     _recalcUpgrades();
-    _refreshLayoutScores();
+    // Layout mutation — never flip Hub to BENCH OK from Upgrades alone.
+    _markScoresDirty();
+    _refreshLayoutScores(markClean: false);
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
     return true;
@@ -1952,9 +2346,15 @@ class AppState extends ChangeNotifier {
       gridY: gridY,
       width: 1,
       height: 1,
-      airflowImpact: ((u['airflowBoost'] as num?)?.toDouble() ?? 0) / 20,
-      lightingImpact: ((u['lightingBoost'] as num?)?.toDouble() ?? 0) / 20,
-      ergonomicsImpact: ((u['ergonomicsBoost'] as num?)?.toDouble() ?? 0) / 20,
+      airflowImpact: UpgradeCatalog.impactFromBoost(
+        (u['airflowBoost'] as num?)?.toDouble() ?? 0,
+      ),
+      lightingImpact: UpgradeCatalog.impactFromBoost(
+        (u['lightingBoost'] as num?)?.toDouble() ?? 0,
+      ),
+      ergonomicsImpact: UpgradeCatalog.impactFromBoost(
+        (u['ergonomicsBoost'] as num?)?.toDouble() ?? 0,
+      ),
       cost: (u['price'] as num?)?.toDouble() ?? 0,
       description: (u['desc'] as String?) ?? 'Installed upgrade',
     );
@@ -1972,9 +2372,10 @@ class AppState extends ChangeNotifier {
   }
 
   void _refreshLayoutScores({bool markClean = true}) {
-    _setAirflowMetrics(AirflowOptimizer.evaluate(_furniture), markClean: markClean);
-    _setLightingMetrics(LightingOptimizer.evaluate(_furniture), markClean: markClean);
-    _setErgonomicsMetrics(ErgonomicsOptimizer.evaluate(_furniture), markClean: markClean);
+    final scored = committedFurniture;
+    _setAirflowMetrics(AirflowOptimizer.evaluate(scored), markClean: markClean);
+    _setLightingMetrics(LightingOptimizer.evaluate(scored), markClean: markClean);
+    _setErgonomicsMetrics(ErgonomicsOptimizer.evaluate(scored), markClean: markClean);
   }
 
   void _recalcUpgrades() {
@@ -2005,6 +2406,10 @@ class AppState extends ChangeNotifier {
       ..writeln('Grid: ${room.gridCols} × ${room.gridRows} cells')
       ..writeln('')
       ..writeln('Scores')
+      ..writeln(
+        '  Status: ${scoresAreSimulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk}',
+      )
+      ..writeln('  Note: ${HubScoreLabels.honestyNote}')
       ..writeln('  Overall: ${overallScore.toStringAsFixed(0)}  (grade $scoreGrade)')
       ..writeln('  Airflow: ${airflowScore.toStringAsFixed(0)}')
       ..writeln('  Lighting: ${lightingScore.toStringAsFixed(0)}')
@@ -2024,7 +2429,7 @@ class AppState extends ChangeNotifier {
     buf
       ..writeln('')
       ..writeln('Furniture');
-    for (final f in _furniture) {
+    for (final f in committedFurniture) {
       buf.writeln(
         '  - ${f.name}  ${RoomScale.formatCellsAsMeters(f.width)} × ${RoomScale.formatCellsAsMeters(f.height)}  @ (${f.gridX.toStringAsFixed(1)}, ${f.gridY.toStringAsFixed(1)})',
       );
@@ -2041,5 +2446,52 @@ class AppState extends ChangeNotifier {
       buf.writeln('  - $n');
     }
     return buf.toString();
+  }
+
+  /// JSON snapshot of the committed room for export / backup.
+  String buildShareJson() {
+    final room = currentRoomData;
+    final payload = <String, dynamic>{
+      'app': 'Room Rig',
+      'room': {
+        'name': room.name,
+        'gridCols': room.gridCols,
+        'gridRows': room.gridRows,
+        'heightMeters': room.heightMeters,
+      },
+      'scores': {
+        'overall': overallScore,
+        'airflow': airflowScore,
+        'lighting': lightingScore,
+        'ergonomics': ergonomicsScore,
+        'spatial': spatialScore,
+        'grade': scoreGrade,
+        'benchOk': !scoresAreSimulated,
+      },
+      'furniture': [
+        for (final f in committedFurniture) f.toJson(),
+      ],
+    };
+    return const JsonEncoder.withIndent('  ').convert(payload);
+  }
+
+  /// First uninstalled upgrade that targets the weakest score category under 70.
+  ({String category, String name, int index})? suggestedUpgrade() {
+    final scores = <String, double>{
+      'airflow': airflowScore,
+      'lighting': lightingScore,
+      'ergonomics': ergonomicsScore,
+    };
+    final weakest = scores.entries.reduce((a, b) => a.value <= b.value ? a : b);
+    if (weakest.value >= 70) return null;
+    final idx = upgrades.indexWhere(
+      (u) => u['type'] == weakest.key && !(u['added'] as bool),
+    );
+    if (idx < 0) return null;
+    return (
+      category: weakest.key,
+      name: upgrades[idx]['name'] as String,
+      index: idx,
+    );
   }
 }
