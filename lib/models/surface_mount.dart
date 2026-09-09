@@ -16,6 +16,18 @@ enum RoomWall { north, east, south, west }
 /// Drives which symbol the Rig draws for the item.
 enum MountStyle { floorItem, window, door, vent, intake, exhaust, ceilingFixture, deskItem }
 
+/// How a desk-top item uses the host surface in real life.
+enum _DeskTopLayer {
+  /// Exclusive surface footprints: PC tower, task lamp.
+  surfaceOther,
+  /// Monitor panel on the back edge.
+  surfaceScreen,
+  /// Shares the screen stack: monitor arm, light bar.
+  screenMount,
+  /// Under-desk: cable tray.
+  under,
+}
+
 /// A wall-mounted item's footprint, expressed on the floor in grid units.
 class WallSpan {
   final RoomWall wall;
@@ -143,18 +155,36 @@ class SurfaceMounts {
     return hay.contains('ceiling') || f.iconName == 'ceilingLight';
   }
 
-  /// Desks and tables that can hold a monitor, PC or task lamp.
+  /// Desks and tables that can hold monitors, PCs, lamps, TVs, or plants.
   static bool isDeskHost(FurnitureItem f) {
     final hay = _hay(f);
     if (hay.contains('fan') || hay.contains('lamp')) return false;
-    return f.iconName == 'desk' || hay.contains('desk') || hay.contains('table');
+    // "portable_ac" contains the substring "table" — coolers are never hosts.
+    if (hay.contains('portable')) return false;
+    if (f.iconName == 'ac' || f.iconName == 'acUnit') return false;
+    if (f.iconName == 'desk' || hay.contains('desk')) return true;
+    return RegExp(r'\btable\b').hasMatch(hay) || f.iconName == 'table';
   }
 
-  /// Small items that may sit on a desk instead of the floor.
+  /// True for coffee / dining tables (not the primary work desk).
+  static bool isTableHost(FurnitureItem f) {
+    final hay = _hay(f);
+    if (hay.contains('portable')) return false;
+    if (RegExp(r'\btable\b').hasMatch(hay) || f.iconName == 'table') return true;
+    // Catalog "Table" reuses the desk icon; id stays table / table_2.
+    if (f.iconName == 'desk' && f.id.toLowerCase().startsWith('table')) return true;
+    return false;
+  }
+
+  /// Small items that may sit on a desk / table instead of the floor.
   static bool isDeskTopItem(FurnitureItem f) {
     final hay = _hay(f);
     if (hay.contains('floor') && hay.contains('lamp')) return false;
-    if (f.iconName == 'monitor' || hay.contains('monitor') || hay.contains('display')) {
+    if (f.iconName == 'monitor' ||
+        f.iconName == 'monitorArm' ||
+        hay.contains('monitor') ||
+        hay.contains('display') ||
+        hay.contains('monitor arm')) {
       return true;
     }
     if (f.iconName == 'pc' ||
@@ -166,10 +196,66 @@ class SurfaceMounts {
         (hay.contains('tower') && !hay.contains('fan'))) {
       return true;
     }
-    if (hay.contains('task lamp') || (f.iconName == 'lamp' && !hay.contains('floor'))) {
+    if (hay.contains('task lamp') ||
+        (f.iconName == 'lamp' && !hay.contains('floor')) ||
+        f.iconName == 'lightBar' ||
+        hay.contains('light bar')) {
+      return true;
+    }
+    // Under-desk cable trays still ride with the host footprint.
+    if (f.iconName == 'cableTray' || hay.contains('cable tray') || hay.contains('cabletray')) {
+      return true;
+    }
+    if (f.iconName == 'tv' || hay.contains('tv') || hay.contains('television')) {
+      return true;
+    }
+    if (f.iconName == 'plant' || hay.contains('plant')) {
       return true;
     }
     return false;
+  }
+
+  /// Desk accessories occupy different real heights / mounts. Only surface
+  /// competitors (monitor vs PC vs lamp) need exclusive 2D footprints.
+  /// Cable trays hang under; light bars ride the monitor; arms hold the screen.
+  static bool deskTopFootprintsConflict(FurnitureItem a, FurnitureItem b) {
+    if (!isDeskTopItem(a) || !isDeskTopItem(b)) return true;
+    final la = _deskTopLayer(a);
+    final lb = _deskTopLayer(b);
+    if (la == _DeskTopLayer.under || lb == _DeskTopLayer.under) return false;
+    if (la == _DeskTopLayer.screenMount || lb == _DeskTopLayer.screenMount) {
+      // Monitor arm / light bar may share the screen stack with a monitor.
+      if (la == _DeskTopLayer.surfaceScreen || lb == _DeskTopLayer.surfaceScreen) {
+        return false;
+      }
+      if (la == _DeskTopLayer.screenMount && lb == _DeskTopLayer.screenMount) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static _DeskTopLayer _deskTopLayer(FurnitureItem f) {
+    final hay = _hay(f);
+    if (f.iconName == 'cableTray' || hay.contains('cable')) {
+      return _DeskTopLayer.under;
+    }
+    if (f.iconName == 'lightBar' ||
+        f.iconName == 'monitorArm' ||
+        hay.contains('light bar') ||
+        hay.contains('monitor arm')) {
+      return _DeskTopLayer.screenMount;
+    }
+    if (f.iconName == 'monitor' ||
+        hay.contains('monitor') ||
+        hay.contains('display') ||
+        hay.contains('screen') ||
+        f.iconName == 'tv' ||
+        hay.contains('tv') ||
+        hay.contains('television')) {
+      return _DeskTopLayer.surfaceScreen;
+    }
+    return _DeskTopLayer.surfaceOther; // pc, lamp, plant
   }
 
   static bool _containsPoint(FurnitureItem host, double x, double y) {
@@ -187,20 +273,45 @@ class SurfaceMounts {
   }
 
   /// The desk/table [item] is sitting on, if it overlaps one or its centre is over one.
+  /// Prefer a lounge table when both a work desk and a table overlap (TV / plant).
   static FurnitureItem? hostUnder(FurnitureItem item, List<FurnitureItem> furniture) {
     if (!isDeskTopItem(item)) return null;
     final cx = item.gridX + item.width / 2;
     final cy = item.gridY + item.height / 2;
-    FurnitureItem? best;
+    FurnitureItem? bestDesk;
+    FurnitureItem? bestTable;
     for (final host in furniture) {
       if (host.id == item.id) continue;
       if (!isDeskHost(host)) continue;
-      if (_containsPoint(host, cx, cy) || _overlaps(item, host)) {
-        best = host;
-        break;
+      if (!_containsPoint(host, cx, cy) && !_overlaps(item, host)) continue;
+      if (isTableHost(host)) {
+        bestTable ??= host;
+      } else {
+        bestDesk ??= host;
       }
     }
-    return best;
+    final hay = _hay(item);
+    final preferTable = hay.contains('tv') ||
+        hay.contains('television') ||
+        hay.contains('plant') ||
+        item.iconName == 'tv' ||
+        item.iconName == 'plant';
+    if (preferTable && bestTable != null) return bestTable;
+    // Monitor / PC / lamp: never report a lounge table when a work desk overlaps.
+    final preferWorkDesk = hay.contains('monitor') ||
+        hay.contains('display') ||
+        hay.contains('pc') ||
+        hay.contains('tower') ||
+        hay.contains('computer') ||
+        hay.contains('cable') ||
+        item.iconName == 'monitor' ||
+        item.iconName == 'monitorArm' ||
+        item.iconName == 'pc' ||
+        item.iconName == 'lightBar' ||
+        item.iconName == 'cableTray' ||
+        ((hay.contains('lamp') || item.iconName == 'lamp') && !hay.contains('floor'));
+    if (preferWorkDesk) return bestDesk ?? bestTable;
+    return bestDesk ?? bestTable;
   }
 
   /// If a desktop item is over (or just beside) a desk, keep it on that top.
