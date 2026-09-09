@@ -1,11 +1,18 @@
 // lib/screens/home_screen.dart
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
+import '../models/saved_room.dart';
+import '../models/room_revision.dart';
 import '../models/scan_layout_model.dart';
+import '../models/upgrade_catalog.dart';
+import '../services/layout_share_image.dart';
+import '../services/room_compare.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/onboarding_sheet.dart';
@@ -36,32 +43,51 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _confirmSelectPreset(
+  /// Returns true when a preset was loaded (so pickers can dismiss).
+  Future<bool> _confirmSelectPreset(
     BuildContext context,
     AppState state,
-    RoomPreset preset,
-  ) async {
-    if (preset == state.selectedPreset) return;
+    RoomPreset preset, {
+    bool fromPicker = false,
+  }) async {
+    final samePreset = preset == state.selectedPreset;
     final hasWork = state.hasLayoutWork;
-    if (hasWork) {
+    if (samePreset && !hasWork && state.roomIsReady) {
+      // Already on this preset with no edits — nothing to do.
+      return false;
+    }
+    if (hasWork || (samePreset && state.roomIsReady)) {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppColors.surface,
-          title: const Text('Replace current layout?', style: TextStyle(color: AppColors.textPrimary)),
-          content: const Text(
-            'This saves your current room and starts a new lot from the preset.',
-            style: TextStyle(color: AppColors.textSecondary),
+          title: Text(
+            samePreset ? 'Reload this preset?' : 'Replace current layout?',
+            style: const TextStyle(color: AppColors.textPrimary),
+          ),
+          content: Text(
+            samePreset
+                ? 'This reloads the preset layout and saves your current room first.'
+                : 'This saves your current room and starts a new lot from the preset.',
+            style: const TextStyle(color: AppColors.textSecondary),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Load preset')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(samePreset ? 'Reload' : 'Load preset'),
+            ),
           ],
         ),
       );
-      if (ok != true) return;
+      if (ok != true) return false;
     }
     state.selectPreset(preset);
+    state.acceptPresetAsReady();
+    if (fromPicker && context.mounted && Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+    return true;
   }
 
   Future<void> _confirmLoadSavedRoom(
@@ -77,7 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
           backgroundColor: AppColors.surface,
           title: const Text('Switch room?', style: TextStyle(color: AppColors.textPrimary)),
           content: const Text(
-            'Unsaved layout changes on this room may be lost.',
+            'This room will be saved to My Rooms, then you will switch.',
             style: TextStyle(color: AppColors.textSecondary),
           ),
           actions: [
@@ -110,7 +136,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (ok != true || !context.mounted) return;
     state.restoreOriginalLayout();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Original layout restored')),
+      const SnackBar(content: Text('Original layout restored · scores are ROUGH EST. until Bench')),
     );
   }
 
@@ -127,10 +153,104 @@ class _HomeScreenState extends State<HomeScreen> {
           Navigator.of(ctx).pop();
           state.completeOnboarding();
         },
-        onJumpTab: (tab) => state.setTab(tab),
+        onJumpTab: (tab) {
+          Navigator.of(ctx).pop();
+          state.setTab(tab);
+          state.completeOnboarding();
+        },
       ),
     );
     if (mounted) state.completeOnboarding();
+  }
+
+  /// Golden path for demos that must not depend on camera Scan.
+  Future<void> _startProfessorDemo(AppState state) async {
+    final go = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'PROFESSOR DEMO',
+                  style: TextStyle(
+                    color: AppColors.cyan,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'No camera required',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '1. Load Gaming Setup preset\n'
+                  '2. Open Rig — drag one item\n'
+                  '3. Open Bench — Simulate (My Room → Improved)\n'
+                  '4. Apply → Hub shows ${HubScoreLabels.benchOk}\n'
+                  '5. Optional: Upgrades → Place on Rig',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.cyan,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text(
+                      'LOAD PRESET & OPEN RIG',
+                      style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.8),
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: AppColors.textMuted),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (go != true || !mounted) return;
+    state.selectPreset(RoomPreset.gamingSetup);
+    state.acceptPresetAsReady();
+    state.setTab(2);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Demo: drag something, then open Bench → Simulate → Apply'),
+        duration: Duration(seconds: 4),
+      ),
+    );
   }
 
   @override
@@ -152,6 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _GettingStartedBanner(
                   onScan: () => state.setTab(1),
                   onCreate: () => _showCreateRoomSheet(context, state),
+                  onDemo: () => _startProfessorDemo(state),
                 ),
                 const SizedBox(height: 16),
               ] else if (state.scanComplete && state.lastScanConfidence != null) ...[
@@ -163,9 +284,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 _ManualRoomBanner(state: state),
                 const SizedBox(height: 12),
                 _JourneySteps(state: state),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => _startProfessorDemo(state),
+                    icon: Icon(Icons.school_outlined, size: 16, color: AppColors.green),
+                    label: Text(
+                      'Replay professor demo path',
+                      style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
               ],
               _buildScoreSection(context, state),
+              if (state.roomIsReady && state.suggestedUpgrade() != null) ...[
+                const SizedBox(height: 12),
+                _UpgradeSuggestionBanner(suggestion: state.suggestedUpgrade()!),
+              ],
               const SizedBox(height: 24),
               _buildMyRooms(context, state),
               const SizedBox(height: 24),
@@ -221,9 +358,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 ),
                 builder: (ctx) => OnboardingSheet(
-                  onDone: () => Navigator.of(ctx).pop(),
+                  onDone: () {
+                    if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
+                  },
                   onJumpTab: (tab) {
-                    Navigator.of(ctx).pop();
+                    if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
                     state.setTab(tab);
                   },
                 ),
@@ -265,32 +404,46 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Row(
             children: [
-              Text(
-                'Overall Rig Score',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1,
+              Flexible(
+                child: Text(
+                  'Overall Rig Score',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.15),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: simulated
+                      ? () {
+                          state.setTab(3);
+                        }
+                      : null,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.4),
-                  ),
-                ),
-                child: Text(
-                  simulated ? 'ROUGH EST.' : 'BENCH OK',
-                  style: TextStyle(
-                    color: simulated ? AppColors.amber : AppColors.green,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Text(
+                      simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk,
+                      style: TextStyle(
+                        color: simulated ? AppColors.amber : AppColors.green,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -314,6 +467,44 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+          if (simulated) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: () => state.setTab(3),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.amber.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        HubScoreLabels.roughSubtitle,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'OPEN BENCH',
+                      style: TextStyle(
+                        color: AppColors.amber,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -373,6 +564,32 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const Spacer(),
+          ],
+        ),
+        Wrap(
+          spacing: 0,
+          runSpacing: 0,
+          alignment: WrapAlignment.end,
+          children: [
+            TextButton(
+              onPressed: () {
+                final ok = state.checkpointActiveRoom('Manual save');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(ok ? 'Checkpoint saved' : 'Nothing to checkpoint yet'),
+                  ),
+                );
+              },
+              child: const Text('Save checkpoint', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            TextButton(
+              onPressed: () => _showRoomHistorySheet(context, state),
+              child: const Text('History', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            TextButton(
+              onPressed: () => _showCompareRoomsSheet(context, state),
+              child: const Text('Compare rooms', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
             TextButton(
               onPressed: () => _showCreateRoomSheet(context, state),
               child: const Text('New', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -408,6 +625,8 @@ class _HomeScreenState extends State<HomeScreen> {
               if (r.id != state.activeRoomId) {
                 await _confirmLoadSavedRoom(context, state, r.id);
                 if (!context.mounted) return;
+                // Cancelled switch — do not duplicate the wrong room.
+                if (state.activeRoomId != r.id) return;
               }
               state.duplicateActiveRoom();
               if (context.mounted) {
@@ -422,6 +641,172 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  String _formatRevisionTime(DateTime dt) {
+    final local = dt.toLocal();
+    final y = local.year.toString().padLeft(4, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    return '$y-$m-$d $hh:$mm';
+  }
+
+  Future<void> _showRoomHistorySheet(BuildContext context, AppState state) async {
+    final List<RoomRevision> revisions =
+        state.activeRoomRevisions.reversed.toList(growable: false);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'ROOM HISTORY',
+                  style: TextStyle(
+                    color: AppColors.cyan,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Checkpoints for ${state.currentRoomData.name}',
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                if (revisions.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'No checkpoints yet. Use Save checkpoint to capture this layout.',
+                      style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(ctx).size.height * 0.5,
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: revisions.length,
+                      separatorBuilder: (_, _) => const Divider(color: AppColors.border, height: 1),
+                      itemBuilder: (context, index) {
+                        final rev = revisions[index];
+                        final overall = rev.scores?['overall'];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            rev.label,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                          subtitle: Text(
+                            _formatRevisionTime(rev.savedAt),
+                            style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+                          ),
+                          trailing: overall != null
+                              ? Text(
+                                  overall.toStringAsFixed(0),
+                                  style: const TextStyle(
+                                    color: AppColors.cyan,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14,
+                                  ),
+                                )
+                              : null,
+                          onTap: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (dCtx) => AlertDialog(
+                                backgroundColor: AppColors.surface,
+                                title: const Text(
+                                  'Restore checkpoint?',
+                                  style: TextStyle(color: AppColors.textPrimary),
+                                ),
+                                content: Text(
+                                  'Replace the current layout with “${rev.label}”? Scores become ROUGH EST. until you run Bench again.',
+                                  style: const TextStyle(color: AppColors.textSecondary),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(dCtx, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(dCtx, true),
+                                    child: const Text('Restore'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirm != true || !context.mounted) return;
+                            final ok = state.restoreRoomRevision(rev.id);
+                            if (Navigator.canPop(ctx)) Navigator.pop(ctx);
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  ok ? 'Restored “${rev.label}”' : 'Could not restore checkpoint',
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showCompareRoomsSheet(BuildContext context, AppState state) async {
+    final rooms = state.savedRooms;
+    if (rooms.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Save or duplicate a room first — need two lots to compare'),
+        ),
+      );
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+          child: _CompareRoomsSheetBody(
+            rooms: rooms,
+            fallbackCols: state.currentRoomData.gridCols,
+            fallbackRows: state.currentRoomData.gridRows,
+          ),
+        );
+      },
     );
   }
 
@@ -468,14 +853,18 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 16),
             ),
             const SizedBox(height: 12),
-            _buildPresetGrid(context, state),
+            _buildPresetGrid(ctx, state, fromPicker: true),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildPresetGrid(BuildContext context, AppState state) {
+  Widget _buildPresetGrid(
+    BuildContext context,
+    AppState state, {
+    bool fromPicker = false,
+  }) {
     final presets = [
       (RoomPreset.gamingSetup, RoomSvg.gaming, 'Gaming'),
       (RoomPreset.homeOffice, RoomSvg.briefcase, 'Office'),
@@ -497,44 +886,55 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 12),
         Row(
-          children: presets.map((p) {
-            final isSelected = state.selectedPreset == p.$1;
-            return Expanded(
-              child: GestureDetector(
-                onTap: () => _confirmSelectPreset(context, state, p.$1),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isSelected ? AppColors.cyan.withValues(alpha: 0.15) : AppColors.card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected ? AppColors.cyan : AppColors.border,
-                      width: isSelected ? 1.5 : 1,
-                    ),
-                    boxShadow: isSelected
-                        ? [BoxShadow(color: AppColors.cyan.withValues(alpha: 0.2), blurRadius: 12)]
-                        : [],
-                  ),
-                  child: Column(
-                    children: [
-                      SvgIcon(p.$2, size: 24, color: isSelected ? AppColors.cyan : AppColors.textSecondary),
-                      const SizedBox(height: 6),
-                      Text(
-                        p.$3,
-                        style: TextStyle(
-                          color: isSelected ? AppColors.cyan : AppColors.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+          children: [
+            for (var i = 0; i < presets.length; i++)
+              Expanded(
+                child: Builder(
+                  builder: (context) {
+                    final p = presets[i];
+                    final isSelected = state.selectedPreset == p.$1;
+                    return GestureDetector(
+                      onTap: () => _confirmSelectPreset(
+                        context,
+                        state,
+                        p.$1,
+                        fromPicker: fromPicker,
+                      ),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        margin: EdgeInsets.only(right: i == presets.length - 1 ? 0 : 8),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.cyan.withValues(alpha: 0.15) : AppColors.card,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected ? AppColors.cyan : AppColors.border,
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                          boxShadow: isSelected
+                              ? [BoxShadow(color: AppColors.cyan.withValues(alpha: 0.2), blurRadius: 12)]
+                              : [],
+                        ),
+                        child: Column(
+                          children: [
+                            SvgIcon(p.$2, size: 24, color: isSelected ? AppColors.cyan : AppColors.textSecondary),
+                            const SizedBox(height: 6),
+                            Text(
+                              p.$3,
+                              style: TextStyle(
+                                color: isSelected ? AppColors.cyan : AppColors.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
-            );
-          }).toList(),
+          ],
         ),
       ],
     );
@@ -662,8 +1062,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 const Divider(color: AppColors.border, height: 24),
                 _SpecRow(
                   svgString: RoomSvg.star,
-                  label: 'Compare',
-                  value: 'Original saved',
+                  label: 'Before/after',
+                  value: 'Open Bench',
                   valueColor: AppColors.cyan,
                   onTap: () {
                     state.setBenchmarkMode('airflow');
@@ -681,8 +1081,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   const Spacer(),
                   TextButton(
-                    onPressed: () => Share.share(state.buildShareReport(), subject: 'Room Rig report'),
+                    onPressed: () => Share.share(
+                      state.buildShareReport(),
+                      subject: 'Room Rig report',
+                    ),
                     child: const Text('Share report'),
+                  ),
+                  TextButton(
+                    onPressed: () => _exportRoomJson(context, state),
+                    child: const Text('Export JSON'),
                   ),
                 ],
               ),
@@ -700,6 +1107,25 @@ class _HomeScreenState extends State<HomeScreen> {
     final w = dims?.widthMeters ?? RoomScale.metersFromCells(room.gridRows);
     final h = dims?.heightMeters ?? room.heightMeters;
     return '${RoomScale.formatMeters(l)} × ${RoomScale.formatMeters(w)} × ${RoomScale.formatMeters(h)}';
+  }
+
+  Future<void> _exportRoomJson(BuildContext context, AppState state) async {
+    try {
+      final raw = state.currentRoomData.name;
+      final safe = raw.replaceAll(RegExp(r'[^\w\-]+'), '_');
+      final file = File('${Directory.systemTemp.path}/room_rig_${safe}_layout.json');
+      await file.writeAsString(state.buildShareJson());
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'application/json')],
+        subject: '$raw layout.json',
+        text: 'Room Rig layout export (heuristic scores — see benchOk in JSON)',
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    }
   }
 
   Future<void> _confirmDeleteRoom(
@@ -887,7 +1313,12 @@ class _HomeScreenState extends State<HomeScreen> {
 class _GettingStartedBanner extends StatelessWidget {
   final VoidCallback onScan;
   final VoidCallback onCreate;
-  const _GettingStartedBanner({required this.onScan, required this.onCreate});
+  final VoidCallback onDemo;
+  const _GettingStartedBanner({
+    required this.onScan,
+    required this.onCreate,
+    required this.onDemo,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -899,55 +1330,100 @@ class _GettingStartedBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.cyan.withValues(alpha: 0.35)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SvgIcon(RoomSvg.scan, size: 22, color: AppColors.cyan),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'No scan loaded yet',
-                  style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 13),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Scan if the camera works, or create a room by hand.',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Column(
+          Row(
             children: [
-              GestureDetector(
-                onTap: onScan,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.cyan.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text('Scan', style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w800, fontSize: 12)),
+              SvgIcon(RoomSvg.scan, size: 22, color: AppColors.cyan),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Start a room',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Demo path needs no camera. Scan is optional.',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 6),
-              GestureDetector(
-                onTap: onCreate,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.purple.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text('Create', style: TextStyle(color: AppColors.purple, fontWeight: FontWeight.w800, fontSize: 12)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _StartChip(
+                  label: 'Demo',
+                  color: AppColors.green,
+                  onTap: onDemo,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StartChip(
+                  label: 'Create',
+                  color: AppColors.purple,
+                  onTap: onCreate,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _StartChip(
+                  label: 'Scan',
+                  color: AppColors.cyan,
+                  onTap: onScan,
                 ),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _StartChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _StartChip({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12),
+        ),
       ),
     );
   }
@@ -1157,14 +1633,24 @@ class _SpecRow extends StatelessWidget {
       children: [
         SvgIcon(svgString, size: 18, color: AppColors.textMuted),
         const SizedBox(width: 10),
-        Text(label, style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-        const Spacer(),
-        Text(
-          value,
-          style: TextStyle(
-            color: valueColor ?? AppColors.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
+        Flexible(
+          child: Text(
+            label,
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              color: valueColor ?? AppColors.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
         if (onTap != null) ...[
@@ -1222,6 +1708,62 @@ class _MeterSlider extends StatelessWidget {
   }
 }
 
+class _UpgradeSuggestionBanner extends StatelessWidget {
+  final ({String category, String name, int index}) suggestion;
+
+  const _UpgradeSuggestionBanner({required this.suggestion});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final label = switch (suggestion.category) {
+      'airflow' => 'Airflow',
+      'lighting' => 'Lighting',
+      'ergonomics' => 'Ergonomics',
+      _ => suggestion.category,
+    };
+    return GlassCard(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$label looks weak',
+                  style: const TextStyle(
+                    color: AppColors.amber,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Try ${suggestion.name} on Upgrades to place it on your Rig.',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              state.setBenchmarkMode(suggestion.category);
+              state.setTab(4);
+            },
+            child: const Text('UPGRADES', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _RoomSlotTile extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -1271,6 +1813,267 @@ class _RoomSlotTile extends StatelessWidget {
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompareRoomsSheetBody extends StatefulWidget {
+  final List<SavedRoom> rooms;
+  final int fallbackCols;
+  final int fallbackRows;
+
+  const _CompareRoomsSheetBody({
+    required this.rooms,
+    required this.fallbackCols,
+    required this.fallbackRows,
+  });
+
+  @override
+  State<_CompareRoomsSheetBody> createState() => _CompareRoomsSheetBodyState();
+}
+
+class _CompareRoomsSheetBodyState extends State<_CompareRoomsSheetBody> {
+  String? _idA;
+  String? _idB;
+
+  SavedRoom? _byId(String? id) {
+    if (id == null) return null;
+    for (final r in widget.rooms) {
+      if (r.id == id) return r;
+    }
+    return null;
+  }
+
+  Widget _roomPicker({
+    required String label,
+    required String? value,
+    required ValueChanged<String?> onChanged,
+    required String? excludeId,
+  }) {
+    final options = widget.rooms.where((r) => r.id != excludeId).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: value != null && options.any((r) => r.id == value) ? value : null,
+              dropdownColor: AppColors.card,
+              hint: const Text('Select room', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
+              items: [
+                for (final r in options)
+                  DropdownMenuItem(value: r.id, child: Text(r.name)),
+              ],
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _scoreRow(String label, double a, double b, double delta) {
+    final deltaColor = delta > 0.05
+        ? AppColors.green
+        : (delta < -0.05 ? AppColors.amber : AppColors.textSecondary);
+    final sign = delta > 0 ? '+' : '';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 88,
+            child: Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          ),
+          Expanded(
+            child: Text(
+              a.toStringAsFixed(0),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 12),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              b.toStringAsFixed(0),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 12),
+            ),
+          ),
+          SizedBox(
+            width: 52,
+            child: Text(
+              '$sign${delta.toStringAsFixed(1)}',
+              textAlign: TextAlign.right,
+              style: TextStyle(color: deltaColor, fontWeight: FontWeight.w800, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = _byId(_idA);
+    final b = _byId(_idB);
+    final result = (a != null && b != null && a.id != b.id) ? RoomCompare.compare(a, b) : null;
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'COMPARE ROOMS',
+              style: TextStyle(
+                color: AppColors.cyan,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Pick two saved lots to see score deltas and layout changes.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 14),
+            _roomPicker(
+              label: 'ROOM A',
+              value: _idA,
+              excludeId: _idB,
+              onChanged: (v) => setState(() => _idA = v),
+            ),
+            const SizedBox(height: 12),
+            _roomPicker(
+              label: 'ROOM B',
+              value: _idB,
+              excludeId: _idA,
+              onChanged: (v) => setState(() => _idB = v),
+            ),
+            if (result != null) ...[
+              const SizedBox(height: 16),
+              GlassCard(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${result.a.name}  →  ${result.b.name}',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Row(
+                      children: [
+                        SizedBox(width: 88, child: Text('', style: TextStyle(fontSize: 11))),
+                        Expanded(
+                          child: Text(
+                            'A',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            'B',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 52,
+                          child: Text(
+                            'Δ',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(color: AppColors.border, height: 16),
+                    for (final key in const [
+                      'overall',
+                      'airflow',
+                      'lighting',
+                      'ergonomics',
+                      'spatial',
+                    ])
+                      _scoreRow(
+                        key[0].toUpperCase() + key.substring(1),
+                        result.scoresA[key] ?? 0,
+                        result.scoresB[key] ?? 0,
+                        result.delta(key),
+                      ),
+                    const Divider(color: AppColors.border, height: 20),
+                    Text(
+                      result.layoutDiff,
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.35),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () async {
+                          final colsA = RoomScale.colsFrom(
+                            result.a.layout,
+                            fallback: widget.fallbackCols,
+                          );
+                          final rowsA = RoomScale.rowsFrom(
+                            result.a.layout,
+                            fallback: widget.fallbackRows,
+                          );
+                          final colsB = RoomScale.colsFrom(
+                            result.b.layout,
+                            fallback: widget.fallbackCols,
+                          );
+                          final rowsB = RoomScale.rowsFrom(
+                            result.b.layout,
+                            fallback: widget.fallbackRows,
+                          );
+                          await LayoutShareImage.shareBeforeAfter(
+                            gridCols: colsA > colsB ? colsA : colsB,
+                            gridRows: rowsA > rowsB ? rowsA : rowsB,
+                            before: result.a.furniture,
+                            after: result.b.furniture,
+                            beforeLabel: result.a.name,
+                            afterLabel: result.b.name,
+                            footer: result.layoutDiff,
+                          );
+                        },
+                        icon: const Icon(Icons.ios_share_rounded, size: 18),
+                        label: const Text('Share image'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
