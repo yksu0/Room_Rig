@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../models/upgrade_catalog.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/room_icons.dart';
@@ -29,6 +30,15 @@ class UpgradesScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildImpactPreview(state),
+                    const SizedBox(height: 10),
+                    Text(
+                      UpgradeCatalog.honestyNote,
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                        height: 1.35,
+                      ),
+                    ),
                     const SizedBox(height: 24),
                     _buildUpgradeList(context, state),
                     const SizedBox(height: 32),
@@ -142,11 +152,16 @@ class UpgradesScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            _BoostRow(label: 'Airflow boost', value: state.upgradeAirflowBonus, color: AppColors.airflowColor),
+            const Text(
+              'Catalog tags (not Hub score points). Hub rings use Bench sims / layout impacts.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 11, height: 1.35),
+            ),
+            const SizedBox(height: 10),
+            _BoostRow(label: 'Airflow tag', value: state.upgradeAirflowBonus, color: AppColors.airflowColor),
             const SizedBox(height: 6),
-            _BoostRow(label: 'Lighting boost', value: state.upgradeLightingBonus, color: AppColors.lightingColor),
+            _BoostRow(label: 'Lighting tag', value: state.upgradeLightingBonus, color: AppColors.lightingColor),
             const SizedBox(height: 6),
-            _BoostRow(label: 'Ergonomics boost', value: state.upgradeErgonomicsBonus, color: AppColors.ergonomicsColor),
+            _BoostRow(label: 'Ergo tag', value: state.upgradeErgonomicsBonus, color: AppColors.ergonomicsColor),
           ],
         ],
       ),
@@ -414,7 +429,7 @@ class _BoostRow extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Text(
-          '+${value.toInt()} pts',
+          '+${value.toInt()}',
           style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800),
         ),
       ],
