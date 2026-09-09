@@ -83,6 +83,8 @@ class RigCatalog {
       name: 'Monitor',
       iconName: 'monitor',
       category: 'ergonomics',
+      width: 0.8,
+      height: 0.35,
       ergonomicsImpact: 0.4,
       lightingImpact: -0.1,
       cost: 260,
@@ -93,6 +95,8 @@ class RigCatalog {
       name: 'PC Tower',
       iconName: 'pc',
       category: 'airflow',
+      width: 0.45,
+      height: 0.5,
       airflowImpact: -0.5,
       cost: 900,
       description: 'Heat source — Auto-Rig parks it on the desk when one is present',
@@ -126,7 +130,7 @@ class RigCatalog {
       width: 2,
       height: 1,
       cost: 180,
-      description: 'Dining or coffee table — also holds a lamp',
+      description: 'Lounge table — holds TV, plant, or a small lamp',
     ),
     RigCatalogEntry(
       baseId: 'wardrobe',
@@ -155,7 +159,7 @@ class RigCatalog {
       iconName: 'plant',
       category: 'neutral',
       cost: 35,
-      description: 'Small pot',
+      description: 'Small pot — stacks on the lounge table',
     ),
     RigCatalogEntry(
       baseId: 'tv',
@@ -163,9 +167,10 @@ class RigCatalog {
       iconName: 'tv',
       category: 'lighting',
       width: 2,
+      height: 0.45,
       lightingImpact: 0.15,
       cost: 400,
-      description: 'Wide thin screen on a stand',
+      description: 'Wide thin screen — sits on the lounge table',
     ),
     RigCatalogEntry(
       baseId: 'door',
@@ -237,7 +242,7 @@ class RigCatalog {
     RigCatalogEntry(
       baseId: 'space_heater',
       name: 'Space Heater',
-      iconName: 'floorLamp',
+      iconName: 'heater',
       category: 'airflow',
       airflowImpact: -0.7,
       cost: 80,
@@ -276,7 +281,8 @@ class RigCatalog {
     final id = f.id.toLowerCase();
     if (id.startsWith('custom')) return true;
     if (id.startsWith('scan')) return true;
-    if (id.startsWith('upg_')) return false;
+    // Placed upgrades must survive Apply / room load / persist.
+    if (id.startsWith('upg_')) return true;
     final hay = '$id ${f.name} ${f.iconName}'.toLowerCase();
     if (f.iconName == 'kitchen' ||
         f.iconName == 'purifier' ||
