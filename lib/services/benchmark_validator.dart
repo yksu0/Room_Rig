@@ -59,10 +59,10 @@ class BenchmarkValidator {
   // Bars are calibrated against each simulator's observed range for this room
   // size, so they sit between a clearly bad arrangement and a clearly good one.
   // They are not reachable by simply relabelling a layout as "optimized".
-  // Calibrated against the 6×8 voxel sim on the gaming reference room:
-  // a strong rearrange lands ~55 circulation / ~0.66 dead ratio; the cluttered
-  // baseline sits ~54 / ~0.71. Bars sit between those observed values.
-  static const airflowPass = 55.0;
+  // Calibrated against the 6×8 voxel sim on the gaming reference room with the
+  // human-readable mix (dead air + exit channel + work cooling). Improved lands
+  // ~51 circulation / ~0.66 dead; cluttered baseline ~49 / ~0.71.
+  static const airflowPass = 50.5;
   static const lightingPass = 45.0; // exposure saturates near 48 in this model
   static const ergonomicsPass = 58.0;
   static const deadZoneMax = 0.695;
@@ -124,10 +124,10 @@ class BenchmarkValidator {
       checks.add(
         BenchCheck(
           id: 'circulation',
-          label: 'Circulation score',
+          label: 'Circulation',
           detail: air.circulationScore >= airflowPass
-              ? 'Airflow paths clear enough for the room'
-              : 'Circulation is below the ${airflowPass.toInt()} pass mark',
+              ? 'Air mixes (exit ${air.exitChannelScore.round()}, work cool ${air.workZoneCooling.round()}, HVAC clear ${air.hvacClearance.round()})'
+              : 'Too much stagnant air — circulation ${air.circulationScore.round()} / ${airflowPass.round()}',
           status: air.circulationScore >= airflowPass
               ? BenchCheckStatus.pass
               : (air.circulationScore >= airflowPass - 10
@@ -140,10 +140,10 @@ class BenchmarkValidator {
       checks.add(
         BenchCheck(
           id: 'dead_zones',
-          label: 'Dead zone ratio',
+          label: 'Dead air',
           detail: air.deadZoneRatio <= deadZoneMax
-              ? 'Stagnant pockets are within tolerance'
-              : 'Too much of the room is stuck / under-circulated',
+              ? 'Stagnant pockets cover ≤${(deadZoneMax * 100).round()}% of the mid-plane'
+              : '${(air.deadZoneRatio * 100).round()}% of the mid-plane is barely moving',
           status: air.deadZoneRatio <= deadZoneMax
               ? BenchCheckStatus.pass
               : BenchCheckStatus.fail,
@@ -157,9 +157,9 @@ class BenchmarkValidator {
       checks.add(
         BenchCheck(
           id: 'exposure',
-          label: 'Exposure score',
+          label: 'Exposure',
           detail: light.exposureScore >= lightingPass
-              ? 'Task zone gets enough useful light'
+              ? 'Useful light at work spots (task ${(light.taskIllumination * 100).round()}%, side-light ${(light.sideLightScore * 100).round()}%)'
               : 'Desk lighting / daylight exposure is too low',
           status: light.exposureScore >= lightingPass
               ? BenchCheckStatus.pass
@@ -175,7 +175,7 @@ class BenchmarkValidator {
           id: 'glare',
           label: 'Glare risk',
           detail: light.glareRisk <= glareMax
-              ? 'Desk is not square-on to harsh daylight'
+              ? 'Desk is offset from harsh window glare'
               : 'Desk faces the window too directly — glare risk',
           status: light.glareRisk <= glareMax
               ? BenchCheckStatus.pass
@@ -190,9 +190,9 @@ class BenchmarkValidator {
       checks.add(
         BenchCheck(
           id: 'comfort',
-          label: 'Comfort score',
+          label: 'Comfort',
           detail: ergo.comfortScore >= ergonomicsPass
-              ? 'Clearances and reach are in a workable range'
+              ? 'Clearances, walks, door view ${(ergo.doorProspect * 100).round()}%, bed privacy ${(ergo.bedPrivacy * 100).round()}%'
               : 'Desk/chair/path comfort is below the pass mark',
           status: ergo.comfortScore >= ergonomicsPass
               ? BenchCheckStatus.pass
@@ -206,10 +206,10 @@ class BenchmarkValidator {
       checks.add(
         BenchCheck(
           id: 'paths',
-          label: 'Walk-path quality',
+          label: 'Walk distance & turns',
           detail: ergo.pathScore >= pathMin
-              ? 'Frequent routes can navigate the room'
-              : 'High-traffic paths are blocked or heavily detoured',
+              ? 'Frequent routes stay short with fewer zigzags'
+              : 'High-traffic paths are blocked, long, or full of turns',
           status: ergo.pathScore >= pathMin
               ? BenchCheckStatus.pass
               : BenchCheckStatus.fail,
