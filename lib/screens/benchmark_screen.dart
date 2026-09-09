@@ -1,12 +1,18 @@
 // lib/screens/benchmark_screen.dart
+import 'dart:async';
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
 import '../services/airflow_simulator.dart';
 import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
+import '../services/layout_share_image.dart';
 import '../theme/app_theme.dart';
 import '../widgets/airflow_voxel_painter.dart';
 import '../widgets/bench_room_views.dart';
@@ -59,7 +65,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   AirflowSimSnapshot? _sampleSim;
   bool _prototypeReady = false;
   String? _selectedFurnitureId;
+  bool _sampleWowStarted = false;
+  int _sampleWowGen = 0;
 
+  static const _sampleWowPrefKey = 'room_rig.bench_sample_wow_seen';
   static const _defaultYaw = 0.75;
   static const _defaultPitch = 0.38;
   static const _defaultDistance = 16.0;
@@ -71,11 +80,57 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // The bench reads the Rig; opening this tab must never write to it.
       _rebuildFromRoom(context.read<AppState>());
+      unawaited(_maybePlaySampleWow());
     });
+  }
+
+  Future<void> _maybePlaySampleWow() async {
+    if (_sampleWowStarted || !mounted) return;
+    _sampleWowStarted = true;
+    // Widget tests assert "defaults to My Room"; skip auto-tour under flutter_test.
+    if (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST')) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_sampleWowPrefKey) == true) return;
+      await prefs.setBool(_sampleWowPrefKey, true);
+    } catch (_) {
+      // Still play once per process if prefs fail.
+    }
+    if (!mounted) return;
+    if (context.read<AppState>().benchmarkMode != 'airflow') return;
+
+    final gen = ++_sampleWowGen;
+    setState(() {
+      _layoutVariant = BenchLayoutKind.myRoom;
+      _simVariant = BenchLayoutKind.myRoom;
+      _airflowStep = _AirflowStep.layout;
+    });
+    if (!mounted || gen != _sampleWowGen) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.showSnackBar(
+      const SnackBar(
+        content: Text('My Room — current layout (before)'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 1600));
+    if (!mounted || gen != _sampleWowGen) return;
+    setState(() {
+      _layoutVariant = BenchLayoutKind.improved;
+      _simVariant = BenchLayoutKind.improved;
+    });
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(
+        content: Text('Improved — your room, Auto-Rig layout (after)'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _sampleWowGen++;
     _scrollLocked.dispose();
     super.dispose();
   }
@@ -168,7 +223,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       _showResults = false;
       _runProgress = 0;
       _airflowStep = _AirflowStep.simulate;
+      // My Room → Improved matches Apply (optimizer on live Rig, not Sample).
       _simVariant = BenchLayoutKind.myRoom;
+      _layoutVariant = BenchLayoutKind.myRoom;
     });
 
     for (int i = 1; i <= 24; i++) {
@@ -176,8 +233,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       if (!mounted) return;
       setState(() {
         _runProgress = i / 24;
-        // Flip to the improved field mid-run so both are seen.
-        if (i == 12) _simVariant = BenchLayoutKind.improved;
+        if (i == 10) {
+          _simVariant = BenchLayoutKind.improved;
+          _layoutVariant = BenchLayoutKind.improved;
+        }
       });
     }
 
@@ -233,18 +292,82 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   }
 
   Widget _buildHeader() {
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'BENCHMARK CENTER',
-          style: TextStyle(color: AppColors.cyan, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 3),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'BENCHMARK CENTER',
+                style: TextStyle(
+                  color: AppColors.cyan,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 3,
+                ),
+              ),
+              Text(
+                'Room Stress Tests',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
         ),
-        const Text(
-          'Room Stress Tests',
-          style: TextStyle(color: AppColors.textPrimary, fontSize: 26, fontWeight: FontWeight.w800),
+        TextButton(
+          onPressed: _replayBeforeAfter,
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.amber,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          ),
+          child: const Text(
+            'Before/After',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
+          ),
         ),
       ],
+    );
+  }
+
+  Future<void> _replayBeforeAfter() async {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    if (state.benchmarkMode != 'airflow') {
+      state.setBenchmarkMode('airflow');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    if (!mounted) return;
+    _sampleWowStarted = false;
+    // Force replay even if prefs already marked seen.
+    final gen = ++_sampleWowGen;
+    setState(() {
+      _layoutVariant = BenchLayoutKind.myRoom;
+      _simVariant = BenchLayoutKind.myRoom;
+      _airflowStep = _AirflowStep.layout;
+      _showResults = false;
+    });
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(
+        content: Text('My Room — current layout (before)'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 1400));
+    if (!mounted || gen != _sampleWowGen) return;
+    setState(() {
+      _layoutVariant = BenchLayoutKind.improved;
+      _simVariant = BenchLayoutKind.improved;
+    });
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(
+        content: Text('Improved — your room, Auto-Rig layout (after)'),
+        duration: Duration(seconds: 2),
+      ),
     );
   }
 
@@ -325,7 +448,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         Text(
           _layouts?.fellBackToSample ?? false
               ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-              : 'Simulates the furniture in your Rig right now, then compares it against an optimized rearrange of the same room.',
+              : 'Coarse voxel airflow (not CFD) on your Rig furniture, then compares a rule-based rearrange of the same room.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ],
@@ -355,6 +478,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                         'Improved layout matches your room — airflow is already as good as the optimizer found.',
                   ),
                   const SizedBox(height: 12),
+                ] else ...[
+                  benchWhyWinsCard(
+                    reasons: _layouts?.improvedReasons ?? const [],
+                    accentColor: AppColors.airflowColor,
+                  ),
+                  const SizedBox(height: 12),
                 ],
                 Row(
                   children: [
@@ -365,15 +494,38 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                         onTap: blocked
                             ? null
                             : () async {
-                                if (!await confirmBenchApply(context, validation: validation)) return;
+                                if (!await confirmBenchApply(
+                                  context,
+                                  validation: validation,
+                                  fellBackToSample: _layouts?.fellBackToSample ?? false,
+                                )) {
+                                  return;
+                                }
                                 if (!context.mounted) return;
+                                final before = List<FurnitureItem>.from(state.committedFurniture);
                                 state.applyFurnitureLayout(
                                   _furnitureFor(BenchLayoutKind.improved),
                                   markOptimized: true,
+                                  lockMode: 'airflow',
                                 );
-                                _showAppliedToRigSnack(
-                                  state,
-                                  message: 'Improved airflow layout applied to Rig',
+                                final diff = summarizeLayoutDiff(before, state.furniture);
+                                final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+                                final room = state.currentRoomData;
+                                final after = List<FurnitureItem>.from(state.furniture);
+                                showBenchApplySnackBar(
+                                  context,
+                                  message: why.isEmpty
+                                      ? 'Airflow applied · $diff'
+                                      : 'Airflow applied · $diff · $why',
+                                  accentColor: AppColors.cyan,
+                                  onOpenRig: () => state.setTab(2),
+                                  onShareImage: () => LayoutShareImage.shareBeforeAfter(
+                                    gridCols: room.gridCols,
+                                    gridRows: room.gridRows,
+                                    before: before,
+                                    after: after,
+                                    footer: why.isEmpty ? diff : '$diff · $why',
+                                  ),
                                 );
                               },
                       ),
@@ -532,7 +684,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                         BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
                             ? 'Reference room — your Rig is empty'
                             : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                        BenchLayoutKind.improved => 'Improved — your room, rearranged for airflow',
+                        BenchLayoutKind.improved => 'Improved — your room, Auto-Rig layout',
                         BenchLayoutKind.sample => 'Sample room — AC in a corner, weak coverage',
                       },
                       style: const TextStyle(
@@ -779,21 +931,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     );
   }
 
-  void _showAppliedToRigSnack(AppState state, {required String message}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.cyan.withValues(alpha: 0.92),
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'OPEN RIG',
-          textColor: Colors.black,
-          onPressed: () => state.setTab(2),
-        ),
-      ),
-    );
-  }
-
   Widget _buildSimulationSection(AppState state) {
     _syncFromState(state);
     final sim = _activeSim;
@@ -906,7 +1043,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: _metricCard(
-                'Dead zones',
+                'Dead air',
                 metrics.deadZoneRatio * 100,
                 AppColors.red,
                 suffix: '%',
@@ -916,11 +1053,39 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: _metricCard(
+                'Exit flow',
+                metrics.exitChannelScore,
+                AppColors.airflowColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _metricCard(
                 'Heat pockets',
                 metrics.heatPocketRatio * 100,
                 AppColors.orange,
                 suffix: '%',
                 invertGood: true,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _metricCard(
+                'Work cool',
+                metrics.workZoneCooling,
+                AppColors.green,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _metricCard(
+                'HVAC clear',
+                metrics.hvacClearance,
+                AppColors.cyan,
               ),
             ),
           ],
