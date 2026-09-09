@@ -24,17 +24,19 @@ class LightingPrototypeLayouts {
     return _applyPositions(source, positions);
   }
 
-  /// Desk in the daylight band (offset to reduce glare), lamp on-task,
-  /// shelf cleared from the window path, bed on the dark perimeter.
+  /// Desk in the daylight band with side-light geometry (OSHA: display at
+  /// right angles to the window), lamp on-task, shelf cleared from the
+  /// window path, bed on the dark perimeter.
   static List<FurnitureItem> optimized(List<FurnitureItem> source) {
     final positions = <String, ({double x, double y})>{
       'window': (x: 2.0, y: 0.0),
       'door': (x: 0.0, y: 6.2),
-      'desk': (x: 0.5, y: 1.8), // in daylight, offset off the window axis to cut glare
-      'chair': (x: 1.0, y: 2.9),
-      'pc': (x: 2.8, y: 1.8),
-      'lamp': (x: 2.2, y: 1.8), // task light at desk
-      'shelf': (x: 5.0, y: 5.5), // out of daylight corridor
+      // Desk on west side; chair further west → seated faces east (window is north = side light).
+      'desk': (x: 1.2, y: 2.0),
+      'chair': (x: 0.15, y: 2.05),
+      'pc': (x: 2.4, y: 2.0),
+      'lamp': (x: 2.0, y: 2.0),
+      'shelf': (x: 5.0, y: 5.5),
       'bed': (x: 3.0, y: 5.5),
       'ac': (x: 5.0, y: 2.5),
       'fan': (x: 0.15, y: 4.2),
@@ -67,7 +69,7 @@ class LightingPrototypeLayouts {
   ];
 
   static const optimizedNotes = [
-    'Desk sits in the daylight band, offset to limit screen glare',
+    'Desk uses side daylight — screen roughly at right angles to the window',
     'Task lamp anchors the desk; shelf cleared from the window path',
     'Bed / storage kept on the darker perimeter wall',
   ];
