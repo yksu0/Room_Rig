@@ -13,6 +13,7 @@ import '../models/surface_mount.dart';
 import '../services/bench_layouts.dart';
 import '../models/scan_layout_model.dart';
 import '../services/layout_collision.dart';
+import '../services/layout_snap_guides.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confirm_dialogs.dart';
 import '../widgets/rig_customizer/rig_scan_action_button.dart';
@@ -186,6 +187,15 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 tooltip: 'Redo layout',
                 onTap: state.canRedoLayout ? state.redoLayout : null,
               ),
+              if (state.hasCompareSnapshot) ...[
+                const SizedBox(width: 4),
+                _HistoryButton(
+                  icon: Icons.restore_rounded,
+                  enabled: true,
+                  tooltip: 'Restore original',
+                  onTap: () => _confirmRestoreOriginal(state),
+                ),
+              ],
               const SizedBox(width: 4),
               GestureDetector(
                 onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
@@ -245,13 +255,15 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   Future<void> _runAutoRig(BuildContext context, AppState state) async {
+    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text('Run Auto-Rig?', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'This will rearrange furniture based on your current optimization goal.',
+          'Auto-Rig scores several layouts for your current goal and applies the best. '
+          'Run again to try the next-best alternate.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -285,13 +297,15 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     if (!mounted) return;
 
     final mix = state.optimizeWeights.summaryLabel;
-    ScaffoldMessenger.of(context).showSnackBar(
+    final rank = state.lastAutoRigRankLabel;
+    final headline = rank.isEmpty ? 'Auto-Rig applied · $mix' : '$rank · $mix';
+    messenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [
             SvgIcon(RoomSvg.star, size: 16, color: Colors.white),
             const SizedBox(width: 8),
-            Expanded(child: Text('Auto-Rig applied · $mix')),
+            Expanded(child: Text(headline)),
           ],
         ),
         backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
@@ -304,7 +318,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   void _openSampleRoom(AppState state) {
     state.focusBenchLayout(BenchLayoutKind.sample);
     state.setTab(benchTabIndex);
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
       SnackBar(
         content: const Text('Showing the reference room on the Bench. Your Rig is untouched — switch to My Room to bench it.'),
         backgroundColor: AppColors.card,
@@ -423,9 +438,34 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
+  Future<void> _confirmRestoreOriginal(AppState state) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Restore original layout?', style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          'This reverts to the layout saved before your last optimization. Scores become ROUGH EST. until Bench.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Restore')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    state.restoreOriginalLayout();
+    _toast('Original layout restored');
+  }
+
   void _rotateSelected(AppState state, FurnitureItem selected, double delta) {
     if (!state.canMoveFurniture(selected)) {
-      _toast('Turn on Invasive to rotate wall fittings', ok: false);
+      final locked = selected.locked;
+      _toast(
+        locked ? 'Unlock to rotate' : 'Turn on Invasive to rotate wall fittings',
+        ok: false,
+      );
       return;
     }
     if (!state.rotateFurniture(selected.id, deltaDegrees: delta)) {
@@ -616,6 +656,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
     if (hit != null) {
       state.selectFurniture(hit.id, toggle: true);
+      setState(() {
+        _furnitureDetailsExpanded = false;
+        // Selecting an item arms drag immediately so the canvas stays usable.
+        _rigMoveMode = state.selectedFurniture != null && state.canMoveFurniture(hit);
+      });
       if (!state.canMoveFurniture(hit) && SurfaceMounts.isStructuralMount(hit)) {
         _showStructuralLockedHint(context);
       }
@@ -790,6 +835,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                             );
                           });
                         }(),
+                        if (state.activeSnapGuides.isNotEmpty)
+                          CustomPaint(
+                            size: canvasSize,
+                            painter: _SnapGuidesPainter(
+                              roomRect: roomRect,
+                              gridCols: gridCols,
+                              gridRows: gridRows,
+                              guides: state.activeSnapGuides,
+                            ),
+                          ),
                       ],
                     );
                   }
@@ -797,12 +852,36 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   return Stack(
                     children: [
                       buildScene(),
-                      if (_drag2dGestureStarted && _dragPointerLocal != null)
-                        RigDragMagnifier(
-                          pointerLocal: _dragPointerLocal!,
-                          canvasSize: canvasSize,
-                          blocked: state.dragPoseBlocked,
-                          scene: buildScene(),
+                      if (_drag2dGestureStarted &&
+                          _dragPointerLocal != null &&
+                          _drag2dItemId != null)
+                        Builder(
+                          builder: (context) {
+                            final matches =
+                                state.furniture.where((f) => f.id == _drag2dItemId);
+                            if (matches.isEmpty) {
+                              return RigDragMagnifier(
+                                pointerLocal: _dragPointerLocal!,
+                                focalPoint: _dragPointerLocal!,
+                                canvasSize: canvasSize,
+                                blocked: state.dragPoseBlocked,
+                                scene: buildScene(),
+                              );
+                            }
+                            final focal = RoomPlanGeometry.itemRect(
+                              matches.first,
+                              roomRect,
+                              gridCols,
+                              gridRows,
+                            ).center;
+                            return RigDragMagnifier(
+                              pointerLocal: _dragPointerLocal!,
+                              focalPoint: focal,
+                              canvasSize: canvasSize,
+                              blocked: state.dragPoseBlocked,
+                              scene: buildScene(),
+                            );
+                          },
                         ),
                     ],
                   );
@@ -939,8 +1018,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                         if (picked != null) {
                           if (picked.isScanObject) {
                             state.selectScanObject(picked.id, toggle: true);
+                            setState(() => _scanDetailsExpanded = false);
                           } else {
                             state.selectFurniture(picked.id, toggle: true);
+                            setState(() {
+                              _furnitureDetailsExpanded = false;
+                              _rigMoveMode = state.selectedFurniture != null &&
+                                  state.canMoveFurniture(
+                                    state.furniture.firstWhere((f) => f.id == picked.id),
+                                  );
+                            });
                           }
                         } else if (!state.hasPendingPlacement) {
                           state.clearSelection();
@@ -1026,11 +1113,35 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                             children: [
                               buildScene(),
                               if (_dragItemId != null && _dragPointerLocal != null)
-                                RigDragMagnifier(
-                                  pointerLocal: _dragPointerLocal!,
-                                  canvasSize: Size(w, h),
-                                  blocked: state.dragPoseBlocked,
-                                  scene: buildScene(),
+                                Builder(
+                                  builder: (context) {
+                                    final canvas = Size(w, h);
+                                    final matches = state.furniture
+                                        .where((f) => f.id == _dragItemId);
+                                    Offset focal = _dragPointerLocal!;
+                                    if (matches.isNotEmpty) {
+                                      final item = matches.first;
+                                      final projected = RoomProjection.project(
+                                        OrbitVec3(
+                                          item.gridX + item.width * 0.5,
+                                          0,
+                                          item.gridY + item.height * 0.5,
+                                        ),
+                                        canvas,
+                                        _cameraFor(state),
+                                      );
+                                      if (projected != null) {
+                                        focal = projected.offset;
+                                      }
+                                    }
+                                    return RigDragMagnifier(
+                                      pointerLocal: _dragPointerLocal!,
+                                      focalPoint: focal,
+                                      canvasSize: canvas,
+                                      blocked: state.dragPoseBlocked,
+                                      scene: buildScene(),
+                                    );
+                                  },
                                 ),
                             ],
                           );
@@ -1055,7 +1166,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                             ? 'Drag the ghost to place · tap Place when ready'
                             : _rigMoveMode
                                 ? 'MOVE on · drag item · tap empty floor to exit'
-                                : '1 finger orbit · tap MOVE to drag · 2 fingers pan + pinch',
+                                : '1 finger orbit · double-tap reset · tap MOVE to drag · 2 fingers pan + pinch',
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 11,
@@ -1267,7 +1378,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
     final furnitureIds = state.furniture.map((f) => f.id).toSet();
     final pickItems = <RoomRenderItem>[
-      ...state.furniture.map(
+      ...state.furniture.where((item) => !item.hidden).map(
         (item) => furnitureRenderItem(
           item: item,
           gridCols: state.currentRoomData.gridCols,
@@ -1277,7 +1388,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
           selected: false,
         ),
       ),
-      ...state.detectedScanObjects.where((obj) => !furnitureIds.contains(obj.id)).map(
+      ...state.detectedScanObjects
+          .where((obj) => !furnitureIds.contains(obj.id) && !obj.hidden)
+          .map(
         (obj) => RoomRenderItem(
           id: obj.id,
           x: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
@@ -1470,6 +1583,26 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     state.replaceScanObjectWithCatalog(obj.id, selected);
   }
 
+  void _deleteFurnitureWithUndo(AppState state, FurnitureItem item) {
+    final name = item.name;
+    if (!state.deleteFurniture(item.id)) return;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Deleted "$name"'),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              if (state.canUndoLayout) state.undoLayout();
+            },
+          ),
+        ),
+      );
+  }
+
   void _deleteScanObjectWithUndo(AppState state, ScanObject obj) {
     final layoutBefore = state.activeRoomLayout;
     state.deleteDetectedScanObject(obj.id);
@@ -1533,6 +1666,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     final nameCtrl = TextEditingController(text: 'Custom');
     var cellsW = 1.0;
     var cellsH = 1.0;
+    final host = context;
+    final messenger = ScaffoldMessenger.of(host);
+    final state = host.read<AppState>();
+    final sheetNav = Navigator.of(sheetContext);
     final ok = await showDialog<bool>(
       context: sheetContext,
       builder: (ctx) {
@@ -1583,7 +1720,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       nameCtrl.dispose();
       return;
     }
-    final state = context.read<AppState>();
+    if (!mounted) {
+      nameCtrl.dispose();
+      return;
+    }
     final id = state.addCustomFurniture(
       name: nameCtrl.text,
       width: cellsW,
@@ -1592,18 +1732,34 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
     final label = nameCtrl.text;
     nameCtrl.dispose();
+    sheetNav.pop();
     if (id == null) {
-      _showAddResult(sheetContext, 'No free space for that object', ok: false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text('No free space for that object'),
+          backgroundColor: AppColors.red.withValues(alpha: 0.9),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
       return;
     }
     setState(() => _rigMoveMode = true);
-    _showAddResult(sheetContext, '$label — drag the ghost, then Place');
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('$label — drag the ghost, then Place'),
+        backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 
   void _showAddResult(BuildContext sheetContext, String message, {bool ok = true}) {
+    final rootContext = context;
     Navigator.of(sheetContext).pop();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    if (!rootContext.mounted) return;
+    ScaffoldMessenger.of(rootContext).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: (ok ? AppColors.cyan : AppColors.red).withValues(alpha: 0.9),
@@ -1879,6 +2035,22 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  tooltip: 'Rotate −90°',
+                  onPressed: () => _rotateSelected(state, item, -90),
+                  icon: const Icon(Icons.rotate_left_rounded, size: 20, color: AppColors.cyan),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  tooltip: 'Rotate +90°',
+                  onPressed: () => _rotateSelected(state, item, 90),
+                  icon: const Icon(Icons.rotate_right_rounded, size: 20, color: AppColors.cyan),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   tooltip: _furnitureDetailsExpanded ? 'Hide details' : 'Show details',
                   onPressed: () => setState(() => _furnitureDetailsExpanded = !_furnitureDetailsExpanded),
                   icon: Icon(
@@ -1897,36 +2069,69 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            _buildFacingStrip(state, item),
-            const SizedBox(height: 8),
-            _buildSizeStrip(state, item),
-            if (item.iconName != 'door' &&
-                item.iconName != 'window' &&
-                (state.invasiveEdit || !SurfaceMounts.isStructuralMount(item))) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: RigScanActionButton(
-                  icon: Icons.delete_outline_rounded,
-                  label: 'Delete',
-                  color: AppColors.red,
-                  onTap: () async {
-                    final ok = await confirmAction(
-                      context,
-                      title: 'Delete ${item.name}?',
-                      body:
-                          'This removes the item from your Rig. Use Undo in the Rig header if you change your mind.',
-                      confirmLabel: 'Delete',
-                      danger: true,
-                    );
-                    if (!ok || !mounted) return;
-                    state.deleteFurniture(item.id);
-                  },
-                ),
-              ),
-            ],
             if (_furnitureDetailsExpanded) ...[
+              const SizedBox(height: 8),
+              _buildFacingStrip(state, item),
+              const SizedBox(height: 8),
+              _buildSizeStrip(state, item),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  RigScanActionButton(
+                    expand: false,
+                    icon: item.hidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
+                    label: item.hidden ? 'Show' : 'Hide',
+                    color: AppColors.textSecondary,
+                    onTap: () => state.toggleFurnitureHidden(item.id),
+                  ),
+                  RigScanActionButton(
+                    expand: false,
+                    icon: item.locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                    label: item.locked ? 'Unlock' : 'Lock',
+                    color: item.locked ? AppColors.amber : AppColors.textSecondary,
+                    onTap: () => state.toggleFurnitureLock(item.id),
+                  ),
+                  if (state.invasiveEdit || !SurfaceMounts.isStructuralMount(item))
+                    RigScanActionButton(
+                      expand: false,
+                      icon: Icons.copy_rounded,
+                      label: 'Dup',
+                      color: AppColors.cyan,
+                      onTap: () {
+                        if (state.duplicateFurniture(item.id) && mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Duplicated ${item.name}'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  if (item.iconName != 'door' &&
+                      item.iconName != 'window' &&
+                      (state.invasiveEdit || !SurfaceMounts.isStructuralMount(item)))
+                    RigScanActionButton(
+                      expand: false,
+                      icon: Icons.delete_outline_rounded,
+                      label: 'Delete',
+                      color: AppColors.red,
+                      onTap: () async {
+                        final ok = await confirmAction(
+                          context,
+                          title: 'Delete ${item.name}?',
+                          body: 'You can undo from the snackbar after delete.',
+                          confirmLabel: 'Delete',
+                          danger: true,
+                        );
+                        if (!ok || !mounted) return;
+                        _deleteFurnitureWithUndo(state, item);
+                      },
+                    ),
+                ],
+              ),
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -2017,9 +2222,22 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               children: [
                 RigScanActionButton(
                   icon: Icons.upload_rounded,
-                  label: 'Promote',
+                  label: 'Add to Rig',
                   color: AppColors.green,
-                  onTap: () => state.promoteScanObject(obj.id),
+                  onTap: () {
+                    final ok = state.promoteScanObject(obj.id);
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          ok
+                              ? '${obj.label} added to Rig layout'
+                              : 'Could not add ${obj.label}',
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(width: 6),
                 RigScanActionButton(
@@ -2155,6 +2373,63 @@ Color _wallFittingColor(MountStyle style) {
     case MountStyle.deskItem:
     case MountStyle.ceilingFixture:
       return AppColors.textSecondary;
+  }
+}
+
+class _SnapGuidesPainter extends CustomPainter {
+  final Rect roomRect;
+  final int gridCols;
+  final int gridRows;
+  final List<SnapGuideLine> guides;
+
+  _SnapGuidesPainter({
+    required this.roomRect,
+    required this.gridCols,
+    required this.gridRows,
+    required this.guides,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (guides.isEmpty) return;
+    final cellW = roomRect.width / gridCols;
+    final cellH = roomRect.height / gridRows;
+    final paint = Paint()
+      ..color = AppColors.cyan.withValues(alpha: 0.85)
+      ..strokeWidth = 1.5
+      ..style = PaintingStyle.stroke;
+    for (final g in guides) {
+      if (g.axis == SnapGuideAxis.vertical) {
+        final x = roomRect.left + g.position * cellW;
+        _dashLine(canvas, Offset(x, roomRect.top), Offset(x, roomRect.bottom), paint);
+      } else {
+        final y = roomRect.top + g.position * cellH;
+        _dashLine(canvas, Offset(roomRect.left, y), Offset(roomRect.right, y), paint);
+      }
+    }
+  }
+
+  void _dashLine(Canvas canvas, Offset a, Offset b, Paint paint) {
+    const dash = 6.0;
+    const gap = 4.0;
+    final total = (b - a).distance;
+    if (total <= 0) return;
+    final dir = (b - a) / total;
+    var drawn = 0.0;
+    while (drawn < total) {
+      final start = a + dir * drawn;
+      final end = a + dir * (drawn + dash).clamp(0, total);
+      canvas.drawLine(start, end, paint);
+      drawn += dash + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SnapGuidesPainter oldDelegate) {
+    return oldDelegate.roomRect != roomRect ||
+        oldDelegate.gridCols != gridCols ||
+        oldDelegate.gridRows != gridRows ||
+        !listEquals(oldDelegate.guides, guides);
   }
 }
 
