@@ -1,11 +1,12 @@
 // lib/services/airflow_optimizer.dart
-// Auto-Rig airflow arrange: HVAC throw + cooled work zone, then voxel score.
+// Auto-Rig airflow arrange: HVAC clearance + cooled work zone, then voxel score.
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
 import 'airflow_simulator.dart';
 import 'layout_collision.dart';
 import 'layout_optimizer_common.dart';
 import 'layout_orientation.dart';
+import 'layout_score_explain.dart';
 
 class AirflowOptimizeResult {
   final List<FurnitureItem> furniture;
@@ -44,9 +45,21 @@ class AirflowOptimizer {
 
     final ac = LayoutOptimizerCommon.firstWhere(furniture, SurfaceMounts.isVent);
     if (ac != null) {
-      // Mid-depth on the longer wall → widest throw coverage (ASHRAE).
+      // Mid-depth on the longer wall → widest throw coverage (HVAC practice).
       targets[ac.id] = (x: cols - 1, y: (rows * 0.4).clamp(1.0, rows - 2));
-      reasons.add('Moved AC to mid long-wall for maximum throw coverage');
+      reasons.add('Moved AC to mid long-wall for wider throw coverage');
+    }
+
+    final portableAc = LayoutOptimizerCommon.firstWhere(furniture, (f) {
+      final hay = '${f.id} ${f.name}'.toLowerCase();
+      return hay.contains('portable') && (hay.contains('ac') || f.iconName == 'ac');
+    });
+    if (portableAc != null && !targets.containsKey(portableAc.id)) {
+      targets[portableAc.id] = (
+        x: (cols * 0.35).clamp(0.0, cols - portableAc.width),
+        y: (rows * 0.45).clamp(1.0, rows - portableAc.height),
+      );
+      reasons.add('Portable AC in open floor volume so the jet can mix');
     }
 
     final window = LayoutOptimizerCommon.findWindow(furniture);
@@ -152,7 +165,15 @@ class AirflowOptimizer {
 
     final beforeMetrics = evaluate(before);
     final metrics = evaluate(next);
-    if (metrics.circulationScore + 0.5 < beforeMetrics.circulationScore) {
+    final humanBetter = metrics.deadZoneRatio + 0.004 < beforeMetrics.deadZoneRatio ||
+        metrics.exitChannelScore > beforeMetrics.exitChannelScore + 1.5 ||
+        metrics.workZoneCooling > beforeMetrics.workZoneCooling + 1.5 ||
+        metrics.heatPocketRatio + 0.004 < beforeMetrics.heatPocketRatio ||
+        metrics.hvacClearance > beforeMetrics.hvacClearance + 2.0;
+    final circDrop = beforeMetrics.circulationScore - metrics.circulationScore;
+    // Never accept a layout that tanks circulation — Bench Improved must not
+    // score worse than My Room. Small human-metric wins may offset a tiny dip.
+    if (circDrop > 0.5 && !(humanBetter && circDrop <= 1.25)) {
       return AirflowOptimizeResult(
         furniture: before,
         metrics: beforeMetrics,
@@ -162,6 +183,8 @@ class AirflowOptimizer {
         ],
       );
     }
+
+    reasons.addAll(LayoutScoreExplain.airflow(beforeMetrics, metrics));
 
     if (reasons.isEmpty) {
       reasons.add('No airflow-critical items found to rearrange');
