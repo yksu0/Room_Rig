@@ -1,11 +1,12 @@
 // lib/services/ergonomics_optimizer.dart
-// Auto-Rig ergonomics: ISO 9241-5 / BIFMA reach + pull-back + clear paths.
+// Auto-Rig ergonomics: pull-back, reach, clear paths, door view, bed privacy.
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
 import 'ergonomics_simulator.dart';
 import 'layout_collision.dart';
 import 'layout_optimizer_common.dart';
 import 'layout_orientation.dart';
+import 'layout_score_explain.dart';
 
 class ErgonomicsOptimizeResult {
   final List<FurnitureItem> furniture;
@@ -104,7 +105,20 @@ class ErgonomicsOptimizer {
       gridRows: gridRows,
     );
     LayoutOptimizerCommon.noteOrientation(reasons, before, next);
+    final beforeMetrics = evaluate(before);
     final metrics = evaluate(next);
+    if (metrics.comfortScore + 0.5 < beforeMetrics.comfortScore) {
+      return ErgonomicsOptimizeResult(
+        furniture: before,
+        metrics: beforeMetrics,
+        reasons: [
+          ...reasons,
+          'Kept your layout — auto-arrange would not improve ergonomics',
+        ],
+      );
+    }
+
+    reasons.addAll(LayoutScoreExplain.ergonomics(beforeMetrics, metrics));
 
     if (reasons.isEmpty) {
       reasons.add('No ergonomics-critical items found to rearrange');
