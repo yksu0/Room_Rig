@@ -38,6 +38,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
   bool _scanTabActive = false;
 
   bool _isScanning = false;
+  int _boundScanGeneration = 0;
   RoomLayoutModel? _layoutBeforeScan;
   bool _scanCompleteBeforeScan = false;
   bool _processing = false;
@@ -74,7 +75,31 @@ class _ScannerScreenState extends State<ScannerScreen> {
     _syncScanTabVisibility();
   }
 
-  void _onAppStateChanged() => _syncScanTabVisibility();
+  void _onAppStateChanged() {
+    _syncScanTabVisibility();
+    _syncScanSessionInvalidation();
+  }
+
+  void _syncScanSessionInvalidation() {
+    final app = _appState;
+    if (app == null || !_isScanning) return;
+    if (app.scanSessionGeneration == _boundScanGeneration) return;
+    unawaited(_teardownScanUiAfterInvalidation());
+  }
+
+  Future<void> _teardownScanUiAfterInvalidation() async {
+    if (!_isScanning) return;
+    await _input?.stop();
+    await _pipeline?.dispose();
+    _pipeline = null;
+    _input = null;
+    _layoutBeforeScan = null;
+    if (!mounted) return;
+    setState(() {
+      _isScanning = false;
+      _liveLayout = null;
+    });
+  }
 
   void _syncScanTabVisibility() {
     final active = (_appState?.currentTab ?? 0) == _scanTabIndex;
@@ -122,6 +147,12 @@ class _ScannerScreenState extends State<ScannerScreen> {
     }
     _layoutBeforeScan = state.activeRoomLayout;
     _scanCompleteBeforeScan = state.scanComplete;
+    state.beginScanSession(
+      priorLayout: _layoutBeforeScan,
+      priorScanComplete: _scanCompleteBeforeScan,
+      priorScanProgress: state.scanProgress,
+    );
+    _boundScanGeneration = state.scanSessionGeneration;
     state.resetScan();
 
     await _input?.dispose();
@@ -144,7 +175,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
 
     await pipeline.initialize(seed);
     await input.initialize();
-    state.applyScannedRoomLayout(seed);
+    state.applyScannedRoomLayout(seed, persist: false);
 
     _pipeline = pipeline;
     _input = input;
@@ -168,13 +199,18 @@ class _ScannerScreenState extends State<ScannerScreen> {
     _input = null;
     if (!mounted) return;
     final state = context.read<AppState>();
-    final prior = _layoutBeforeScan;
-    if (prior != null) {
-      state.applyScannedRoomLayout(prior);
+    final stillOwner = state.scanSessionMatchesActiveRoom &&
+        state.scanSessionGeneration == _boundScanGeneration;
+    if (stillOwner) {
+      if (_layoutBeforeScan != null) {
+        state.applyScannedRoomLayout(_layoutBeforeScan!, persist: true);
+      }
+      if (_scanCompleteBeforeScan) {
+        state.restoreScanComplete(true);
+      }
+      state.restoreScanProgress(_scanCompleteBeforeScan ? 1.0 : 0.0);
     }
-    if (_scanCompleteBeforeScan) {
-      state.restoreScanComplete(true);
-    }
+    state.endScanSession();
     _layoutBeforeScan = null;
     setState(() {
       _isScanning = false;
@@ -189,7 +225,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
       final tick = await _pipeline!.processFrame(frame);
       if (!mounted) return;
       final state = context.read<AppState>();
-      state.applyScannedRoomLayout(tick.layout);
+      if (!state.scanSessionMatchesActiveRoom ||
+          state.scanSessionGeneration != _boundScanGeneration) {
+        return;
+      }
+      state.applyScannedRoomLayout(tick.layout, persist: false);
       final coverage = tick.layout.coverageGrid.ratio();
       state.setScanProgress(max(state.scanProgress, coverage.clamp(0.0, 0.98)));
       final snap = _readiness.update(
@@ -215,6 +255,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
   Future<void> _finish() async {
     if (!_isScanning || !_canFinish || _pipeline == null) return;
     final state = context.read<AppState>();
+    if (!state.scanSessionMatchesActiveRoom ||
+        state.scanSessionGeneration != _boundScanGeneration) {
+      await _teardownScanUiAfterInvalidation();
+      return;
+    }
     await _input?.stop();
     final layout = _pipeline!.finalize();
     state.commitScannedRoomLayout(
