@@ -5,14 +5,11 @@
 // into the Rig, so every field and particle you saw described the sample room
 // rather than yours. These layouts are derived from the live Rig furniture
 // instead, and nothing here mutates app state.
-import '../models/airflow_prototype.dart';
-import '../models/ergonomics_prototype.dart';
-import '../models/lighting_prototype.dart';
+//
+// Improved arrangement is the SAME across airflow / lighting / ergonomics /
+// spatial — one balanced Auto-Rig. Only the scored field (sim) changes per mode.
 import '../models/room_model.dart';
-import 'airflow_optimizer.dart';
-import 'ergonomics_optimizer.dart';
-import 'lighting_optimizer.dart';
-import 'spatial_analyzer.dart';
+import 'multi_objective_optimizer.dart';
 
 enum BenchMode { airflow, lighting, ergonomics, spatial }
 
@@ -27,7 +24,7 @@ enum BenchLayoutKind {
   /// The furniture currently in the Rig.
   myRoom,
 
-  /// [myRoom] after the mode's optimizer rearranges it.
+  /// [myRoom] after balanced Auto-Rig rearranges it (same pose for every mode).
   improved,
 
   /// The hand-authored reference room, kept for comparison.
@@ -75,6 +72,13 @@ class BenchLayouts {
 class BenchLayoutBuilder {
   BenchLayoutBuilder._();
 
+  /// Shared balanced weights so every Bench mode's Improved is identical.
+  static const improvedWeights = MultiObjectiveWeights(
+    airflow: 0.7,
+    lighting: 0.7,
+    ergonomics: 0.7,
+  );
+
   /// Identifies a layout by the things the simulators care about: which items
   /// exist and where they sit.
   static String fingerprintOf(List<FurnitureItem> items) {
@@ -88,38 +92,24 @@ class BenchLayoutBuilder {
     return parts.join('|');
   }
 
+  /// One shared reference room for every Bench mode (not mode-specific demos).
   static List<FurnitureItem> sampleFor(BenchMode mode) {
-    final source = RoomPresets.getPreset(RoomPreset.gamingSetup).furniture;
-    switch (mode) {
-      case BenchMode.airflow:
-        return AirflowPrototypeLayouts.baseline(source);
-      case BenchMode.lighting:
-        return LightingPrototypeLayouts.baseline(source);
-      case BenchMode.ergonomics:
-        return ErgonomicsPrototypeLayouts.baseline(source);
-      case BenchMode.spatial:
-        return source.map((f) => f.copyWith()).toList(growable: false);
-    }
+    return RoomPresets.getPreset(RoomPreset.gamingSetup)
+        .furniture
+        .map((f) => f.copyWith())
+        .toList(growable: false);
   }
 
   /// The reference room's improved counterpart, used only when there is no Rig
-  /// furniture to optimize.
+  /// furniture to optimize — same balanced Auto-Rig as live Improved.
   static List<FurnitureItem> sampleImprovedFor(BenchMode mode) {
-    final source = RoomPresets.getPreset(RoomPreset.gamingSetup).furniture;
-    switch (mode) {
-      case BenchMode.airflow:
-        return AirflowPrototypeLayouts.optimized(source);
-      case BenchMode.lighting:
-        return LightingPrototypeLayouts.optimized(source);
-      case BenchMode.ergonomics:
-        return ErgonomicsPrototypeLayouts.optimized(source);
-      case BenchMode.spatial:
-        return SpatialOptimizer.optimize(
-          furniture: source,
-          gridCols: 6,
-          gridRows: 8,
-        ).furniture;
-    }
+    final room = RoomPresets.getPreset(RoomPreset.gamingSetup);
+    return MultiObjectiveOptimizer.optimize(
+      furniture: room.furniture,
+      gridCols: room.gridCols,
+      gridRows: room.gridRows,
+      weights: improvedWeights,
+    ).furniture;
   }
 
   static BenchLayouts build({
@@ -137,8 +127,11 @@ class BenchLayoutBuilder {
     final myRoom = fellBack ? sample : live;
 
     final (improved, reasons) = fellBack
-        ? (sampleImprovedFor(mode), const <String>[])
-        : _optimize(mode, myRoom, gridCols, gridRows);
+        ? (
+            sampleImprovedFor(mode),
+            const <String>['Balanced Auto-Rig on the reference room'],
+          )
+        : _optimizeShared(myRoom, gridCols, gridRows);
 
     return BenchLayouts(
       mode: mode,
@@ -151,41 +144,19 @@ class BenchLayoutBuilder {
     );
   }
 
-  static (List<FurnitureItem>, List<String>) _optimize(
-    BenchMode mode,
+  /// One arrangement for every Bench mode — balanced MultiObjective Auto-Rig.
+  /// Mode only changes which simulator scores the layout.
+  static (List<FurnitureItem>, List<String>) _optimizeShared(
     List<FurnitureItem> furniture,
     int gridCols,
     int gridRows,
   ) {
-    switch (mode) {
-      case BenchMode.airflow:
-        final r = AirflowOptimizer.optimize(
-          furniture: furniture,
-          gridCols: gridCols,
-          gridRows: gridRows,
-        );
-        return (r.furniture, r.reasons);
-      case BenchMode.lighting:
-        final r = LightingOptimizer.optimize(
-          furniture: furniture,
-          gridCols: gridCols,
-          gridRows: gridRows,
-        );
-        return (r.furniture, r.reasons);
-      case BenchMode.ergonomics:
-        final r = ErgonomicsOptimizer.optimize(
-          furniture: furniture,
-          gridCols: gridCols,
-          gridRows: gridRows,
-        );
-        return (r.furniture, r.reasons);
-      case BenchMode.spatial:
-        final r = SpatialOptimizer.optimize(
-          furniture: furniture,
-          gridCols: gridCols,
-          gridRows: gridRows,
-        );
-        return (r.furniture, r.reasons);
-    }
+    final r = MultiObjectiveOptimizer.optimize(
+      furniture: furniture,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      weights: improvedWeights,
+    );
+    return (r.furniture, r.reasons);
   }
 }
