@@ -2,6 +2,9 @@
 // Comfort metrics + frequent walk paths for Bench / Auto-Rig.
 import 'dart:math';
 import '../models/room_model.dart';
+import '../models/surface_mount.dart';
+import 'comfort_heuristics.dart';
+import 'layout_collision.dart';
 
 class ErgonomicsMetrics {
   final double comfortScore; // 0-100 overall
@@ -9,7 +12,11 @@ class ErgonomicsMetrics {
   final double deskAlign; // 0-1 chair centered on desk
   final double reachScore; // 0-1 gear within seated reach
   final double aisleScore; // 0-1 work-zone aisle not blocked
-  final double pathScore; // 0-1 frequent routes stay clear / short
+  final double pathScore; // 0-1 frequent routes stay clear / short / few turns
+  /// 0-1: seated user can see the door (prospect–refuge preference).
+  final double doorProspect;
+  /// 0-1: bed not in the door's straight inbound view (sleep privacy).
+  final double bedPrivacy;
   final double conflictRatio; // 0-1 overlaps / jammed clearances
 
   const ErgonomicsMetrics({
@@ -19,6 +26,8 @@ class ErgonomicsMetrics {
     required this.reachScore,
     required this.aisleScore,
     required this.pathScore,
+    this.doorProspect = 0.55,
+    this.bedPrivacy = 0.6,
     required this.conflictRatio,
   });
 }
@@ -75,6 +84,8 @@ class ErgonomicsPath {
   final List<({double x, double z})> points;
   final bool clear;
   final double detourRatio; // path / straight; 1 = ideal
+  /// Corner count on the walked route — fewer turns = less twist for frequent trips.
+  final int turnCount;
 
   const ErgonomicsPath({
     required this.fromId,
@@ -84,6 +95,7 @@ class ErgonomicsPath {
     required this.points,
     required this.clear,
     required this.detourRatio,
+    this.turnCount = 0,
   });
 }
 
@@ -116,7 +128,8 @@ class ErgonomicsSimulator {
   static const roomDepth = 8.0;
 
   /// Ideal chair offset behind desk front edge (grid cells ≈ meters).
-  static const idealChairGap = 0.95;
+  /// Matches [ComfortHeuristics.chairPullbackMeters] (practice clearance).
+  static const idealChairGap = ComfortHeuristics.chairPullbackMeters;
   static const minPullback = 0.85;
   static const reachRadius = 1.35;
 
@@ -129,8 +142,8 @@ class ErgonomicsSimulator {
     required List<FurnitureItem> furniture,
     required bool optimized,
   }) {
-    final desk = _find(furniture, 'desk');
-    final chair = _find(furniture, 'chair');
+    final desk = _findKind(furniture, _ErgoKind.desk);
+    final chair = _findKind(furniture, _ErgoKind.chair);
     final zones = <ErgonomicsZone>[];
     final links = <ErgonomicsLink>[];
     ErgonomicsReachCircle? reachCircle;
@@ -143,20 +156,26 @@ class ErgonomicsSimulator {
 
     if (desk != null && chair != null) {
       final deskCx = desk.gridX + desk.width * 0.5;
-      final deskFront = desk.gridY + desk.height;
+      final deskCz = desk.gridY + desk.height * 0.5;
       final chairCx = chair.gridX + chair.width * 0.5;
       final chairCz = chair.gridY + chair.height * 0.5;
 
-      final lateral = (chairCx - deskCx).abs();
+      // Lateral align + pull-back gap work for any chair side of the desk.
+      final dx = chairCx - deskCx;
+      final dz = chairCz - deskCz;
+      final alongX = dx.abs() >= dz.abs();
+      final lateral = alongX ? dz.abs() : dx.abs();
+      final gap = alongX
+          ? dx.abs() - desk.width * 0.5 - chair.width * 0.5
+          : dz.abs() - desk.height * 0.5 - chair.height * 0.5;
       deskAlign = (1.0 - (lateral / 1.1).clamp(0.0, 1.0));
-      final gap = chair.gridY - deskFront;
       final gapScore = 1.0 - ((gap - idealChairGap).abs() / 1.1).clamp(0.0, 1.0);
       deskAlign = (deskAlign * 0.55 + gapScore * 0.45).clamp(0.0, 1.0);
 
       links.add(
         ErgonomicsLink(
           x0: deskCx,
-          z0: desk.gridY + desk.height * 0.5,
+          z0: deskCz,
           x1: chairCx,
           z1: chairCz,
           kind: 'align',
@@ -164,14 +183,26 @@ class ErgonomicsSimulator {
         ),
       );
 
-      final pullMinZ = chair.gridY + chair.height;
-      final pullMaxZ = (pullMinZ + minPullback).clamp(0.0, roomDepth);
-      final pullMinX = chair.gridX - 0.15;
-      final pullMaxX = chair.gridX + chair.width + 0.15;
+      // Pull-back zone: behind the chair, opposite the desk.
+      final awayX = alongX ? (dx >= 0 ? 1.0 : -1.0) : 0.0;
+      final awayZ = alongX ? 0.0 : (dz >= 0 ? 1.0 : -1.0);
+      final pullMinX = alongX
+          ? (awayX > 0 ? chair.gridX + chair.width : chair.gridX - minPullback)
+          : chair.gridX - 0.15;
+      final pullMaxX = alongX
+          ? (awayX > 0 ? chair.gridX + chair.width + minPullback : chair.gridX)
+          : chair.gridX + chair.width + 0.15;
+      final pullMinZ = alongX
+          ? chair.gridY - 0.15
+          : (awayZ > 0 ? chair.gridY + chair.height : chair.gridY - minPullback);
+      final pullMaxZ = alongX
+          ? chair.gridY + chair.height + 0.15
+          : (awayZ > 0 ? chair.gridY + chair.height + minPullback : chair.gridY);
+
       final blockers = furniture.where((f) {
-        if (f.id == 'chair' || f.id == 'desk' || f.id == 'window' || f.id == 'lamp') {
-          return false;
-        }
+        if (f.id == chair.id || f.id == desk.id) return false;
+        if (LayoutCollision.skipsFloorOccupancy(f)) return false;
+        if (SurfaceMounts.isDeskTopItem(f)) return false;
         return _rectsOverlap(
           pullMinX,
           pullMinZ,
@@ -186,16 +217,24 @@ class ErgonomicsSimulator {
 
       final freeDepth = blockers.isEmpty
           ? minPullback
-          : blockers
-              .map((f) => max(0.0, f.gridY - pullMinZ))
-              .fold<double>(minPullback, min);
+          : (alongX
+              ? blockers
+                  .map((f) => awayX > 0
+                      ? max(0.0, f.gridX - (chair.gridX + chair.width))
+                      : max(0.0, chair.gridX - (f.gridX + f.width)))
+                  .fold<double>(minPullback, min)
+              : blockers
+                  .map((f) => awayZ > 0
+                      ? max(0.0, f.gridY - (chair.gridY + chair.height))
+                      : max(0.0, chair.gridY - (f.gridY + f.height)))
+                  .fold<double>(minPullback, min));
       chairClearance = (freeDepth / minPullback).clamp(0.0, 1.0);
       zones.add(
         ErgonomicsZone(
           minX: pullMinX.clamp(0.0, roomWidth),
           minZ: pullMinZ.clamp(0.0, roomDepth),
           maxX: pullMaxX.clamp(0.0, roomWidth),
-          maxZ: pullMaxZ,
+          maxZ: pullMaxZ.clamp(0.0, roomDepth),
           kind: 'pullback',
           severity: 1.0 - chairClearance,
         ),
@@ -203,10 +242,7 @@ class ErgonomicsSimulator {
 
       reachCircle = ErgonomicsReachCircle(x: chairCx, z: chairCz, radius: reachRadius);
 
-      final gear = furniture.where((f) {
-        final id = f.id.toLowerCase();
-        return id == 'pc' || id == 'monitor' || id == 'lamp';
-      });
+      final gear = furniture.where(_isReachGear);
       if (gear.isEmpty) {
         reachScore = 0.5;
       } else {
@@ -231,15 +267,23 @@ class ErgonomicsSimulator {
         reachScore = (sum / gear.length).clamp(0.0, 1.0);
       }
 
-      final aisleMinX = desk.gridX + desk.width + 0.05;
-      final aisleMaxX = (aisleMinX + 0.9).clamp(0.0, roomWidth);
-      final aisleMinZ = desk.gridY;
-      final aisleMaxZ = (deskFront + 1.4).clamp(0.0, roomDepth);
+      // Side aisle next to the desk, perpendicular to the chair approach.
+      final aisleMinX = alongX
+          ? desk.gridX
+          : desk.gridX + desk.width + 0.05;
+      final aisleMaxX = alongX
+          ? desk.gridX + desk.width
+          : (desk.gridX + desk.width + 0.9).clamp(0.0, roomWidth);
+      final aisleMinZ = alongX
+          ? desk.gridY + desk.height + 0.05
+          : desk.gridY;
+      final aisleMaxZ = alongX
+          ? (desk.gridY + desk.height + 1.4).clamp(0.0, roomDepth)
+          : (desk.gridY + desk.height);
       final aisleBlockers = furniture.where((f) {
-        if (f.id == 'desk' || f.id == 'chair' || f.id == 'window' || f.id == 'lamp' || f.id == 'monitor') {
-          return false;
-        }
-        if (f.id == 'pc' && f.gridX + f.width <= desk.gridX + 0.05) return false;
+        if (f.id == desk.id || f.id == chair.id) return false;
+        if (LayoutCollision.skipsFloorOccupancy(f)) return false;
+        if (SurfaceMounts.isDeskTopItem(f)) return false;
         return _rectsOverlap(
           aisleMinX,
           aisleMinZ,
@@ -270,9 +314,14 @@ class ErgonomicsSimulator {
       for (int j = i + 1; j < furniture.length; j++) {
         final a = furniture[i];
         final b = furniture[j];
-        if (a.id == 'window' || b.id == 'window' || a.id == 'door' || b.id == 'door') continue;
+        if (LayoutCollision.skipsFloorOccupancy(a) && !SurfaceMounts.isDeskTopItem(a)) {
+          continue;
+        }
+        if (LayoutCollision.skipsFloorOccupancy(b) && !SurfaceMounts.isDeskTopItem(b)) {
+          continue;
+        }
         pairs++;
-        if (_overlaps(a, b)) {
+        if (LayoutCollision.blocks(a, b, furniture)) {
           conflictCount++;
           zones.add(
             ErgonomicsZone(
@@ -295,22 +344,41 @@ class ErgonomicsSimulator {
       var weighted = 0.0;
       var weightSum = 0.0;
       for (final p in paths) {
-        final quality = p.clear
-            ? (1.0 - ((p.detourRatio - 1.0) / 1.8).clamp(0.0, 1.0))
-            : 0.12;
+        // Detour + turn count: frequent routes should be short and not zigzag.
+        final detourQ = 1.0 - ((p.detourRatio - 1.0) / 1.8).clamp(0.0, 1.0);
+        final turnQ = 1.0 - (p.turnCount / 5.0).clamp(0.0, 1.0);
+        final quality = p.clear ? (detourQ * 0.65 + turnQ * 0.35) : 0.12;
         weighted += quality * p.frequency;
         weightSum += p.frequency;
       }
       pathScore = weightSum == 0 ? 0.55 : (weighted / weightSum).clamp(0.0, 1.0);
     }
 
+    final door = _findKind(furniture, _ErgoKind.door);
+    final bed = _findKind(furniture, _ErgoKind.bed);
+    final doorProspect = ComfortHeuristics.doorProspectScore(
+      chair: chair,
+      desk: desk,
+      door: door,
+    );
+    final bedPrivacy = ComfortHeuristics.bedPrivacyFromDoor(
+      bed: bed,
+      door: door,
+      gridCols: roomWidth.round(),
+      gridRows: roomDepth.round(),
+    );
+
+    // Weights track what a person notices: clear pull-back, short walks with
+    // fewer twists, gear in reach, entry visibility, and sleep-zone privacy.
     final comfort = (
-            chairClearance * 22 +
-            deskAlign * 20 +
-            reachScore * 16 +
-            aisleScore * 12 +
-            pathScore * 22 +
-            (1 - conflictRatio) * 8)
+            chairClearance * 16 +
+            deskAlign * 14 +
+            reachScore * 12 +
+            aisleScore * 9 +
+            pathScore * 16 +
+            doorProspect * 12 +
+            bedPrivacy * 11 +
+            (1 - conflictRatio) * 10)
         .clamp(0.0, 100.0);
 
     return ErgonomicsSimSnapshot(
@@ -328,11 +396,21 @@ class ErgonomicsSimulator {
         reachScore: reachScore,
         aisleScore: aisleScore,
         pathScore: pathScore,
+        doorProspect: doorProspect,
+        bedPrivacy: bedPrivacy,
         conflictRatio: conflictRatio,
       ),
       optimized: optimized,
     );
   }
+
+  /// Delegates to [ComfortHeuristics.doorProspectScore] (kept for call sites).
+  static double doorVisibilityScore({
+    required FurnitureItem? chair,
+    required FurnitureItem? desk,
+    required FurnitureItem? door,
+  }) =>
+      ComfortHeuristics.doorProspectScore(chair: chair, desk: desk, door: door);
 
   static List<ErgonomicsPath> _buildFrequentPaths(List<FurnitureItem> furniture) {
     final routes = <({String from, String to, String label, double freq})>[
@@ -347,8 +425,8 @@ class ErgonomicsSimulator {
     final out = <ErgonomicsPath>[];
 
     for (final route in routes) {
-      final a = _find(furniture, route.from);
-      final b = _find(furniture, route.to);
+      final a = _findKind(furniture, _kindFromRouteKey(route.from));
+      final b = _findKind(furniture, _kindFromRouteKey(route.to));
       if (a == null || b == null) continue;
 
       final start = _edgePoint(a, toward: b);
@@ -366,6 +444,7 @@ class ErgonomicsSimulator {
             points: [start, end],
             clear: false,
             detourRatio: 3.0,
+            turnCount: 4,
           ),
         );
         continue;
@@ -381,6 +460,7 @@ class ErgonomicsSimulator {
           points: found,
           clear: true,
           detourRatio: straight < 0.15 ? 1.0 : (len / straight).clamp(1.0, 4.0),
+          turnCount: _countTurns(found),
         ),
       );
     }
@@ -411,8 +491,8 @@ class ErgonomicsSimulator {
     final cellW = roomWidth / _pathGridCols;
     final cellH = roomDepth / _pathGridRows;
     for (final f in furniture) {
-      final id = f.id.toLowerCase();
-      if (id.contains('window') || id.contains('door') || id == 'lamp') continue;
+      if (LayoutCollision.skipsFloorOccupancy(f)) continue;
+      if (SurfaceMounts.isDeskTopItem(f)) continue;
       final x0 = (f.gridX / cellW).floor().clamp(0, _pathGridCols - 1);
       final z0 = (f.gridY / cellH).floor().clamp(0, _pathGridRows - 1);
       final x1 = ((f.gridX + f.width) / cellW).ceil().clamp(0, _pathGridCols);
@@ -535,19 +615,76 @@ class ErgonomicsSimulator {
     return len;
   }
 
-  static FurnitureItem? _find(List<FurnitureItem> items, String id) {
-    try {
-      return items.firstWhere((f) => f.id == id);
-    } catch (_) {
-      return null;
+  /// Count direction changes — each corner is a twist people feel on frequent walks.
+  static int _countTurns(List<({double x, double z})> pts) {
+    if (pts.length < 3) return 0;
+    var turns = 0;
+    for (int i = 1; i < pts.length - 1; i++) {
+      final abx = pts[i].x - pts[i - 1].x;
+      final abz = pts[i].z - pts[i - 1].z;
+      final bcx = pts[i + 1].x - pts[i].x;
+      final bcz = pts[i + 1].z - pts[i].z;
+      if ((abx * bcz - abz * bcx).abs() > 1e-4) turns++;
+    }
+    return turns;
+  }
+
+  static FurnitureItem? _findKind(List<FurnitureItem> items, _ErgoKind kind) {
+    for (final f in items) {
+      if (_matchesKind(f, kind)) return f;
+    }
+    return null;
+  }
+
+  static _ErgoKind _kindFromRouteKey(String key) {
+    switch (key) {
+      case 'bed':
+        return _ErgoKind.bed;
+      case 'pc':
+        return _ErgoKind.pc;
+      case 'desk':
+        return _ErgoKind.desk;
+      case 'door':
+        return _ErgoKind.door;
+      case 'chair':
+        return _ErgoKind.chair;
+      case 'shelf':
+        return _ErgoKind.shelf;
+      default:
+        return _ErgoKind.desk;
     }
   }
 
-  static bool _overlaps(FurnitureItem a, FurnitureItem b) {
-    return a.gridX < b.gridX + b.width &&
-        a.gridX + a.width > b.gridX &&
-        a.gridY < b.gridY + b.height &&
-        a.gridY + a.height > b.gridY;
+  static bool _matchesKind(FurnitureItem f, _ErgoKind kind) {
+    final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
+    switch (kind) {
+      case _ErgoKind.desk:
+        return SurfaceMounts.isDeskHost(f);
+      case _ErgoKind.chair:
+        return f.iconName == 'chair' || hay.contains('chair') || hay.contains('seat');
+      case _ErgoKind.bed:
+        return f.iconName == 'bed' || hay.contains('bed');
+      case _ErgoKind.pc:
+        return f.iconName == 'pc' ||
+            hay.contains('pc') ||
+            hay.contains('computer') ||
+            hay.contains('tower');
+      case _ErgoKind.door:
+        return f.iconName == 'door' || hay.contains('door');
+      case _ErgoKind.shelf:
+        return f.iconName == 'shelf' ||
+            hay.contains('shelf') ||
+            hay.contains('bookcase') ||
+            hay.contains('wardrobe');
+    }
+  }
+
+  static bool _isReachGear(FurnitureItem f) {
+    if (SurfaceMounts.isDeskTopItem(f)) return true;
+    final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
+    return hay.contains('monitor') ||
+        hay.contains('pc') ||
+        (hay.contains('lamp') && !hay.contains('floor'));
   }
 
   static bool _rectsOverlap(
@@ -563,3 +700,5 @@ class ErgonomicsSimulator {
     return ax0 < bx1 && ax1 > bx0 && az0 < bz1 && az1 > bz0;
   }
 }
+
+enum _ErgoKind { desk, chair, bed, pc, door, shelf }
