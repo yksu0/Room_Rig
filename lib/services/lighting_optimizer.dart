@@ -1,10 +1,11 @@
 // lib/services/lighting_optimizer.dart
-// Auto-Rig lighting arrange: daylight band + glare offset + task lamp (IES).
+// Auto-Rig lighting arrange: side daylight + glare control + task lamp (OSHA).
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
 import 'layout_collision.dart';
 import 'layout_optimizer_common.dart';
 import 'layout_orientation.dart';
+import 'layout_score_explain.dart';
 import 'lighting_simulator.dart';
 
 class LightingOptimizeResult {
@@ -105,7 +106,20 @@ class LightingOptimizer {
       gridRows: gridRows,
     );
     LayoutOptimizerCommon.noteOrientation(reasons, before, next);
+    final beforeMetrics = evaluate(before);
     final metrics = evaluate(next);
+    if (metrics.exposureScore + 0.5 < beforeMetrics.exposureScore) {
+      return LightingOptimizeResult(
+        furniture: before,
+        metrics: beforeMetrics,
+        reasons: [
+          ...reasons,
+          'Kept your layout — auto-arrange would not improve lighting',
+        ],
+      );
+    }
+
+    reasons.addAll(LayoutScoreExplain.lighting(beforeMetrics, metrics));
 
     if (reasons.isEmpty) {
       reasons.add('No lighting-critical items found to rearrange');
