@@ -188,6 +188,7 @@ class ScanGuidance {
 
   /// Bearing of a world target relative to camera yaw (degrees, -180..180).
   /// Yaw uses the same convention as ARCore bridge: atan2(forwardX, forwardZ).
+  /// 0° faces +Z (toward the bottom of the Scan minimap); +90° faces +X (right).
   static double relativeBearingDegrees({
     required double cameraX,
     required double cameraZ,
@@ -200,6 +201,25 @@ class ScanGuidance {
     if (dx.abs() < 1e-4 && dz.abs() < 1e-4) return 0;
     final targetBearing = math.atan2(dx, dz) * 180 / math.pi;
     return normalizeSignedDegrees(targetBearing - yawDegrees);
+  }
+
+  /// Prefer look-at ray for heading when we have a floor hit; else use euler yaw.
+  static double headingDegrees({
+    required double cameraX,
+    required double cameraZ,
+    required double yawDegrees,
+    double? lookAtX,
+    double? lookAtZ,
+    bool hasFloorHit = false,
+  }) {
+    if (hasFloorHit && lookAtX != null && lookAtZ != null) {
+      final dx = lookAtX - cameraX;
+      final dz = lookAtZ - cameraZ;
+      if (dx * dx + dz * dz > 1e-6) {
+        return math.atan2(dx, dz) * 180 / math.pi;
+      }
+    }
+    return yawDegrees;
   }
 
   static double normalizeSignedDegrees(double degrees) {
