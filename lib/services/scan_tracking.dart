@@ -73,17 +73,17 @@ class VisualOdometryEstimator {
     final dxPx = (flowX * scale).clamp(-2.5, 2.5);
     final dzPx = (flowZ * scale).clamp(-2.5, 2.5);
 
-    // Convert pixel-ish flow into meters (tuned for handheld walk speed).
-    const metersPerUnit = 0.045;
-    final dx = -dxPx * metersPerUnit;
-    final dz = dzPx * metersPerUnit;
-    _lastMotion = sqrt(dx * dx + dz * dz);
-
-    final yawDelta = (-dxPx * 2.8).clamp(-8.0, 8.0);
+    final yawDelta = (-dxPx * 5.5).clamp(-14.0, 14.0);
     _yawDegrees = (_yawDegrees + yawDelta) % 360;
     if (_yawDegrees < 0) _yawDegrees += 360;
 
     final yawRad = _yawDegrees * pi / 180;
+    // Convert pixel-ish flow into meters (tuned for handheld walk speed).
+    const metersPerUnit = 0.07;
+    final dx = -dxPx * metersPerUnit;
+    final dz = dzPx * metersPerUnit;
+    _lastMotion = sqrt(dx * dx + dz * dz);
+
     final worldDx = dx * cos(yawRad) - dz * sin(yawRad);
     final worldDz = dx * sin(yawRad) + dz * cos(yawRad);
 
@@ -182,6 +182,25 @@ class CompositeTrackingProvider implements TrackingProvider {
   String get nativeBackend => _nativeBackend;
   String? get nativeInitReason => _nativeInitReason;
 
+  /// Drop exclusive AR camera ownership so Flutter can show a live preview.
+  Future<void> releaseNativeSession({String reason = 'released'}) async {
+    if (!_nativeReady) {
+      _nativeInitReason = reason;
+      return;
+    }
+    try {
+      await channel.invokeMethod<void>('disposeTracking');
+    } catch (_) {}
+    _nativeReady = false;
+    _nativeBackend = 'none';
+    _nativeInitReason = reason;
+  }
+
+  /// Re-seed visual tracking to a room position (e.g. center at capture start).
+  void resetVisualPose({Vec3? seedPosition}) {
+    visual.reset(seedPosition: seedPosition);
+  }
+
   String get backendLabel {
     if (_nativeReady) return _nativeBackend;
     if (_last?.source == 'visual') return 'visual-odometry';
@@ -207,6 +226,15 @@ class CompositeTrackingProvider implements TrackingProvider {
     final platform = defaultTargetPlatform;
     final isMobile = platform == TargetPlatform.android || platform == TargetPlatform.iOS;
     if (!isMobile) return;
+
+    // Android: skip exclusive ARCore session so Flutter keeps a real color preview.
+    // Visual odometry drives the minimap you-marker instead.
+    if (platform == TargetPlatform.android) {
+      _nativeReady = false;
+      _nativeBackend = 'none';
+      _nativeInitReason = 'prefer_live_camera_preview';
+      return;
+    }
 
     try {
       final result = await channel.invokeMethod<Map<Object?, Object?>>('initializeTracking');
