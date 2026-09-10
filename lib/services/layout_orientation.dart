@@ -1,13 +1,11 @@
 // lib/services/layout_orientation.dart
 // Shared facing rules for Auto-Rig / Bench optimizers.
 //
-// Research-backed defaults encoded here:
-// - Seating faces focal points (desk, TV) or into the room, never into a wall
-//   (interior circulation / sofa placement guidance).
-// - Desk work: chair faces the desk; monitor faces the user (ISO/BIFMA-style
-//   reach zones assume the user faces the task surface).
-// - Fans / portable units aim into open floor volume, not plaster (HVAC throw
-//   should mix with room air, not stall on a boundary).
+// Practice defaults (not certification claims):
+// - Seating faces a focal point (desk, TV) or into the room (Merrell-style
+//   conversation / circulation guidance).
+// - Chair faces the desk; monitor faces the user (OSHA workstation posture).
+// - Fans / portable units aim into open floor volume so throw can mix.
 //
 // Yaw convention matches [FurnitureShapes]: 0° = +Z (increasing gridY).
 import 'dart:math';
@@ -15,6 +13,7 @@ import 'dart:math';
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
 import '../widgets/furniture_shapes.dart';
+import 'item_placement_rules.dart';
 
 class LayoutOrientation {
   LayoutOrientation._();
@@ -72,19 +71,61 @@ class LayoutOrientation {
     return null;
   }
 
+  /// Apply a facing yaw and keep the floor AABB aligned with the mesh.
+  ///
+  /// Canonical meshes are long along X and face +Z (yaw 0). Odd 90° turns need
+  /// the footprint swapped or the sofa/TV looks stretched into the wrong box.
+  static FurnitureItem withFacingYaw(
+    FurnitureItem item,
+    double yawDegrees, {
+    int? gridCols,
+    int? gridRows,
+  }) {
+    final yaw = normalizeYaw(yawDegrees);
+    final odd = ((yaw / 90).round().abs() % 2) == 1;
+    final longAlongX = item.width + 0.05 >= item.height;
+    final wantLongAlongX = !odd;
+    if (longAlongX == wantLongAlongX) {
+      return item.copyWith(yawDegrees: yaw);
+    }
+    final cx = item.gridX + item.width * 0.5;
+    final cy = item.gridY + item.height * 0.5;
+    final newW = item.height;
+    final newH = item.width;
+    var x = cx - newW * 0.5;
+    var y = cy - newH * 0.5;
+    if (gridCols != null) {
+      final maxX = (gridCols - newW).clamp(0.0, gridCols.toDouble());
+      x = x.clamp(0.0, maxX);
+    }
+    if (gridRows != null) {
+      final maxY = (gridRows - newH).clamp(0.0, gridRows.toDouble());
+      y = y.clamp(0.0, maxY);
+    }
+    return item.copyWith(
+      gridX: x,
+      gridY: y,
+      width: newW,
+      height: newH,
+      yawDegrees: yaw,
+    );
+  }
+
   /// Apply post-placement yaw for every item that has a meaningful front.
   static List<FurnitureItem> apply({
     required List<FurnitureItem> furniture,
     required int gridCols,
     required int gridRows,
   }) {
-    final desks = furniture.where(SurfaceMounts.isDeskHost).toList()
+    final workDesks = furniture
+        .where((f) => SurfaceMounts.isDeskHost(f) && !SurfaceMounts.isTableHost(f))
+        .toList()
       ..sort((a, b) => (b.width * b.height).compareTo(a.width * a.height));
+    final desks = workDesks.isNotEmpty
+        ? workDesks
+        : (furniture.where(SurfaceMounts.isDeskHost).toList()
+          ..sort((a, b) => (b.width * b.height).compareTo(a.width * a.height)));
     final desk = desks.isEmpty ? null : desks.first;
-    final chair = _first(furniture, (f) {
-      final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
-      return f.iconName == 'chair' || hay.contains('chair') || hay.contains('seat');
-    });
     final sofa = _first(
       furniture,
       (f) => f.iconName == 'sofa' || '${f.id} ${f.name}'.toLowerCase().contains('sofa'),
@@ -95,6 +136,11 @@ class LayoutOrientation {
     );
     final roomCx = gridCols * 0.5;
     final roomCz = gridRows * 0.5;
+    final workFace = desk == null
+        ? null
+        : ItemPlacementRules.deskWorkFace(desk, gridCols, gridRows);
+    final workYaw =
+        workFace == null ? null : ItemPlacementRules.yawFacingWorkFace(workFace);
 
     return furniture.map((item) {
       if (item.locked) return item.copyWith();
@@ -103,6 +149,9 @@ class LayoutOrientation {
 
       switch (kind) {
         case FurnitureKind.chair:
+          if (desk != null && workYaw != null) {
+            return item.copyWith(yawDegrees: (workYaw + 180) % 360);
+          }
           if (desk != null) {
             final d = _center(desk);
             return item.copyWith(
@@ -120,60 +169,69 @@ class LayoutOrientation {
         case FurnitureKind.bed:
           if (kind == FurnitureKind.sofa && tv != null) {
             final t = _center(tv);
-            return item.copyWith(
-              yawDegrees: yawToward(
-                fromX: c.x,
-                fromZ: c.z,
-                toX: t.x,
-                toZ: t.z,
-              ),
+            return withFacingYaw(
+              item,
+              yawToward(fromX: c.x, fromZ: c.z, toX: t.x, toZ: t.z),
+              gridCols: gridCols,
+              gridRows: gridRows,
             );
+          }
+          return withFacingYaw(
+            item,
+            inwardFromNearestWall(
+              gridX: item.gridX,
+              gridY: item.gridY,
+              width: item.width,
+              height: item.height,
+              gridCols: gridCols,
+              gridRows: gridRows,
+            ),
+            gridCols: gridCols,
+            gridRows: gridRows,
+          );
+
+        case FurnitureKind.monitor:
+        case FurnitureKind.monitorArm:
+        case FurnitureKind.lightBar:
+          if (workYaw != null) {
+            return item.copyWith(yawDegrees: workYaw);
           }
           return _faceIntoRoom(item, gridCols, gridRows);
 
-        case FurnitureKind.monitor:
-          // Screen faces the seated user (ISO visual display terminal posture).
-          if (chair != null) {
-            final u = _center(chair);
-            return item.copyWith(
-              yawDegrees: yawToward(
-                fromX: c.x,
-                fromZ: c.z,
-                toX: u.x,
-                toZ: u.z,
-              ),
-            );
-          }
+        case FurnitureKind.pc:
           if (desk != null) {
-            final d = _center(desk);
-            return item.copyWith(
-              yawDegrees: yawToward(
-                fromX: c.x,
-                fromZ: c.z,
-                toX: d.x,
-                toZ: d.z + desk.height,
-              ),
-            );
+            return item.copyWith(yawDegrees: desk.yawDegrees);
           }
           return item;
 
         case FurnitureKind.tv:
           if (sofa != null) {
             final s = _center(sofa);
-            return item.copyWith(
-              yawDegrees: yawToward(
-                fromX: c.x,
-                fromZ: c.z,
-                toX: s.x,
-                toZ: s.z,
-              ),
+            return withFacingYaw(
+              item,
+              yawToward(fromX: c.x, fromZ: c.z, toX: s.x, toZ: s.z),
+              gridCols: gridCols,
+              gridRows: gridRows,
             );
           }
-          return _faceIntoRoom(item, gridCols, gridRows);
+          return withFacingYaw(
+            item,
+            inwardFromNearestWall(
+              gridX: item.gridX,
+              gridY: item.gridY,
+              width: item.width,
+              height: item.height,
+              gridCols: gridCols,
+              gridRows: gridRows,
+            ),
+            gridCols: gridCols,
+            gridRows: gridRows,
+          );
 
         case FurnitureKind.fan:
         case FurnitureKind.heater:
         case FurnitureKind.portableAc:
+        case FurnitureKind.purifier:
           return item.copyWith(
             yawDegrees: yawToward(
               fromX: c.x,
