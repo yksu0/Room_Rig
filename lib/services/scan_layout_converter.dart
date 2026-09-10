@@ -10,7 +10,7 @@ class ScanLayoutConverter {
   static const double minKeepConfidence = 0.28;
 
   /// Finalize a fused layout: prune weak objects, ensure door/window openings,
-  /// attach confidence metrics.
+  /// optionally nudge room meters from known-object priors, attach confidence.
   static RoomLayoutModel finalizeLayout(
     RoomLayoutModel layout, {
     required int gridCols,
@@ -33,9 +33,14 @@ class ScanLayoutConverter {
       cellMeters: cellMeters,
     );
 
+    final refined = refineDimensionsFromObjects(
+      layout.dimensions,
+      objects,
+    );
+
     final drafted = RoomLayoutModel(
       roomName: layout.roomName.isEmpty ? 'Scanned Room' : layout.roomName,
-      dimensions: layout.dimensions,
+      dimensions: refined.dimensions,
       coverageGrid: layout.coverageGrid,
       objects: objects,
       detections: layout.detections,
@@ -48,8 +53,71 @@ class ScanLayoutConverter {
         drafted,
         inputProviderId: inputProviderId,
         usedFallback: fallback,
+        extraNotes: [
+          if (refined.usedObjectScale)
+            'Room size nudged from known-object priors (bed/sofa/chair) — still approximate.',
+        ],
       ),
       nextScanSource: inputProviderId,
+    );
+  }
+
+  /// Known real-world widths used to sanity-check scan room meters (no SLAM).
+  static const Map<String, double> knownObjectWidthMeters = {
+    'bed': 1.9,
+    'sofa': 2.0,
+    'couch': 2.0,
+    'chair': 0.55,
+    'desk': 1.4,
+    'dining table': 1.5,
+  };
+
+  /// Nudge length/width when a confident detection spans an implausible fraction
+  /// of the preset room (object-scale heuristic — not measured architecture).
+  static ({RoomDimensions dimensions, bool usedObjectScale}) refineDimensionsFromObjects(
+    RoomDimensions current,
+    List<ScanObject> objects, {
+    double minMeters = 2.6,
+    double maxMeters = 8.5,
+  }) {
+    var length = current.lengthMeters;
+    var width = current.widthMeters;
+    var used = false;
+
+    for (final obj in objects) {
+      if (obj.confidence < 0.55) continue;
+      final label = obj.label.toLowerCase();
+      double? prior;
+      for (final e in knownObjectWidthMeters.entries) {
+        if (label.contains(e.key)) {
+          prior = e.value;
+          break;
+        }
+      }
+      if (prior == null) continue;
+      final observed = max(obj.sizeMeters.x, obj.sizeMeters.z);
+      if (observed < 0.15 || observed > 6.0) continue;
+      // If a known piece claims most of a room axis, expand that axis so the
+      // prior physical size fits with ~40% occupancy (still a coarse hint).
+      final fracL = observed / length.clamp(0.5, 20.0);
+      final fracW = observed / width.clamp(0.5, 20.0);
+      if (fracL > 0.55) {
+        length = max(length, (prior / 0.42).clamp(minMeters, maxMeters));
+        used = true;
+      }
+      if (fracW > 0.55) {
+        width = max(width, (prior / 0.42).clamp(minMeters, maxMeters));
+        used = true;
+      }
+    }
+
+    return (
+      dimensions: RoomDimensions(
+        lengthMeters: length,
+        widthMeters: width,
+        heightMeters: current.heightMeters,
+      ),
+      usedObjectScale: used,
     );
   }
 
@@ -240,33 +308,35 @@ class ScanLayoutConverter {
 
   static String _iconFor(String label, String id) {
     final hay = '${label}_$id'.toLowerCase();
-    const keys = [
-      'door',
-      'window',
-      'desk',
-      'chair',
-      'bed',
-      'sofa',
-      'lamp',
-      'fan',
-      'ac',
-      'monitor',
-      'pc',
-      'shelf',
-      'bookshelf',
-      'wardrobe',
-      'plant',
-      'cabinet',
-      'table',
-    ];
-    for (final k in keys) {
-      if (hay.contains(k)) {
-        if (k == 'table') return 'desk';
-        if (k == 'bookshelf' || k == 'cabinet') return 'shelf';
-        return k;
-      }
+    // COCO smoke → Rig catalog icons (honest remap, not a custom detector).
+    if (hay.contains('potted plant') || hay.contains('plant')) return 'plant';
+    if (hay.contains('couch')) return 'sofa';
+    if (hay.contains('dining table') || hay.contains('desk')) return 'desk';
+    if (hay.contains('tv') || hay.contains('television')) return 'tv';
+    if (hay.contains('laptop') || hay.contains('keyboard') || hay.contains('mouse')) {
+      return 'pc';
     }
-    return hay.contains('furniture') ? 'shelf' : 'desk';
+    if (hay.contains('monitor') || hay.contains('display')) return 'monitor';
+    if (hay.contains('book') || hay.contains('bookshelf') || hay.contains('cabinet')) {
+      return 'shelf';
+    }
+    if (hay.contains('refrigerator') || hay.contains('oven') || hay.contains('microwave')) {
+      return 'shelf';
+    }
+    if (hay.contains('bed')) return 'bed';
+    if (hay.contains('chair')) return 'chair';
+    if (hay.contains('sofa')) return 'sofa';
+    if (hay.contains('lamp') || hay.contains('light_bar') || hay.contains('light bar')) {
+      return 'lamp';
+    }
+    if (hay.contains('fan')) return 'fan';
+    if (hay.contains('door')) return 'door';
+    if (hay.contains('window')) return 'window';
+    if (hay.contains('wardrobe') || hay.contains('closet')) return 'wardrobe';
+    if (hay.contains('ac') || hay.contains('air conditioner')) return 'ac';
+    if (hay.contains('table')) return 'desk';
+    if (hay.contains('furniture')) return 'shelf';
+    return 'desk';
   }
 
   static String _slug(String raw) {
@@ -292,6 +362,8 @@ class ScanLayoutConverter {
       case 'chair':
       case 'bed':
       case 'monitor':
+      case 'tv':
+      case 'sofa':
         return 'ergonomics';
       default:
         return 'neutral';
