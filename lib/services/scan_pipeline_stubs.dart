@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import '../models/item_detection.dart';
 import '../models/scan_layout_model.dart';
@@ -279,40 +280,45 @@ class YoloLikePostProcessor {
     required double iouThreshold,
     required int maxDetections,
   }) {
-    final candidates = _toCandidates(rawOutput, outputShape);
-    if (candidates.isEmpty) {
+    if (outputShape.length != 3 || outputShape.first != 1) {
       return const [];
     }
 
+    final flat = _asFlatFloats(rawOutput);
+    if (flat.isEmpty) return const [];
+
+    final a = outputShape[1];
+    final b = outputShape[2];
+    final featuresFirst = (a >= 6 && b < 6) || (a >= 6 && b >= 6 && b >= a);
+    final featureCount = featuresFirst ? a : b;
+    final boxCount = featuresFirst ? b : a;
+    if (featureCount < 6 || boxCount <= 0) return const [];
+    if (flat.length < featureCount * boxCount) return const [];
+
+    final hasObj = _rowHasObjectness(featureCount, labels.length);
+    final classOffset = hasObj ? 5 : 4;
+    if (classOffset >= featureCount) return const [];
+
     final detections = <_DecodedCandidate>[];
-    for (final row in candidates) {
-      if (row.length < 6) continue;
+    for (int c = 0; c < boxCount; c++) {
+      double at(int f) => featuresFirst ? flat[f * boxCount + c] : flat[c * featureCount + f];
 
-      final cx = row[0];
-      final cy = row[1];
-      final w = row[2].abs();
-      final h = row[3].abs();
-
-      bool hasObj = false;
-      if (row.length >= 6) {
-        final obj = row[4];
-        hasObj = obj >= 0 && obj <= 1;
-      }
-
-      final classOffset = hasObj ? 5 : 4;
-      if (classOffset >= row.length) continue;
+      final cx = at(0);
+      final cy = at(1);
+      final w = at(2).abs();
+      final h = at(3).abs();
 
       var bestClass = 0;
       var bestClassScore = 0.0;
-      for (int i = classOffset; i < row.length; i++) {
-        final s = row[i];
+      for (int i = classOffset; i < featureCount; i++) {
+        final s = at(i);
         if (s > bestClassScore) {
           bestClassScore = s;
           bestClass = i - classOffset;
         }
       }
 
-      final conf = hasObj ? (row[4] * bestClassScore) : bestClassScore;
+      final conf = hasObj ? (at(4) * bestClassScore) : bestClassScore;
       if (conf < scoreThreshold) continue;
 
       final normCx = cx > 1.5 ? cx / inputWidth : cx;
@@ -320,19 +326,14 @@ class YoloLikePostProcessor {
       final normW = w > 1.5 ? w / inputWidth : w;
       final normH = h > 1.5 ? h / inputHeight : h;
 
-      final left = (normCx - normW / 2).clamp(0.0, 1.0);
-      final top = (normCy - normH / 2).clamp(0.0, 1.0);
-      final width = normW.clamp(0.0, 1.0);
-      final height = normH.clamp(0.0, 1.0);
-
       detections.add(
         _DecodedCandidate(
           classIndex: bestClass,
           score: conf,
-          left: left,
-          top: top,
-          width: width,
-          height: height,
+          left: (normCx - normW / 2).clamp(0.0, 1.0),
+          top: (normCy - normH / 2).clamp(0.0, 1.0),
+          width: normW.clamp(0.0, 1.0),
+          height: normH.clamp(0.0, 1.0),
         ),
       );
     }
@@ -356,50 +357,25 @@ class YoloLikePostProcessor {
         .toList(growable: false);
   }
 
-  static List<List<double>> _toCandidates(dynamic output, List<int> shape) {
-    if (shape.length != 3 || shape.first != 1) {
-      return const [];
+  static Float32List _asFlatFloats(dynamic output) {
+    if (output is Float32List) return output;
+    if (output is TypedData) {
+      return Float32List.view(
+        output.buffer,
+        output.offsetInBytes,
+        output.lengthInBytes ~/ 4,
+      );
     }
-
     final flat = <double>[];
     _flatten(output, flat);
-    if (flat.isEmpty) return const [];
-
-    final a = shape[1];
-    final b = shape[2];
-
-    final rows = <List<double>>[];
-    final featuresFirst = (a >= 6 && b < 6) ||
-        (a >= 6 && b >= 6 && b >= a);
-
-    if (featuresFirst) {
-      // [1, features, count]
-      for (int c = 0; c < b; c++) {
-        final row = List<double>.filled(a, 0.0);
-        for (int f = 0; f < a; f++) {
-          row[f] = flat[f * b + c];
-        }
-        rows.add(row);
-      }
-      return rows;
-    }
-
-    if (b >= 6) {
-      // [1, count, features]
-      for (int c = 0; c < a; c++) {
-        final row = List<double>.filled(b, 0.0);
-        for (int f = 0; f < b; f++) {
-          row[f] = flat[c * b + f];
-        }
-        rows.add(row);
-      }
-      return rows;
-    }
-
-    return const [];
+    return Float32List.fromList(flat);
   }
 
   static void _flatten(dynamic value, List<double> out) {
+    if (value is Float32List) {
+      out.addAll(value);
+      return;
+    }
     if (value is List) {
       for (final v in value) {
         _flatten(v, out);
@@ -464,12 +440,33 @@ class YoloLikePostProcessor {
     return clean[0].toUpperCase() + clean.substring(1);
   }
 
+  static bool _rowHasObjectness(int rowLength, int labelCount) {
+    if (labelCount > 0) {
+      if (rowLength == labelCount + 5) return true;
+      if (rowLength == labelCount + 4) return false;
+    }
+    // COCO-80 smoke models: 84 = no obj, 85 = with obj.
+    if (rowLength == 84) return false;
+    if (rowLength == 85) return true;
+    return false;
+  }
+
   static String _mapCategory(String label) {
     final v = label.toLowerCase();
-    if (v.contains('chair') || v.contains('desk') || v.contains('table') || v.contains('sofa') || v.contains('bed')) {
+    if (v.contains('chair') ||
+        v.contains('desk') ||
+        v.contains('table') ||
+        v.contains('sofa') ||
+        v.contains('couch') ||
+        v.contains('bed')) {
       return 'ergonomics';
     }
-    if (v.contains('window') || v.contains('lamp') || v.contains('light') || v.contains('monitor') || v.contains('tv')) {
+    if (v.contains('window') ||
+        v.contains('lamp') ||
+        v.contains('light') ||
+        v.contains('monitor') ||
+        v.contains('tv') ||
+        v.contains('laptop')) {
       return 'lighting';
     }
     if (v.contains('fan') || v.contains('ac') || v.contains('vent') || v.contains('air')) {
