@@ -2,6 +2,7 @@
 // Coarse illuminance grid for lighting Bench / Auto-Rig scoring.
 import 'dart:math';
 import '../models/room_model.dart';
+import 'comfort_heuristics.dart';
 
 class LightingMetrics {
   final double exposureScore; // 0-100 overall
@@ -9,6 +10,8 @@ class LightingMetrics {
   final double shadowRatio; // 0-1 of free cells under-lit
   final double daylightReach; // 0-1 how far window light travels
   final double glareRisk; // 0-1 higher = worse (desk too square-on to window)
+  /// 0-1: desk/window nearly at right angles (OSHA side-light preference).
+  final double sideLightScore;
 
   const LightingMetrics({
     required this.exposureScore,
@@ -16,6 +19,7 @@ class LightingMetrics {
     required this.shadowRatio,
     required this.daylightReach,
     required this.glareRisk,
+    this.sideLightScore = 0.55,
   });
 }
 
@@ -191,7 +195,7 @@ class LightingSimulator {
             label: 'Window',
           ),
         );
-      } else if (hay.contains('lamp') || hay.contains('light') || hay.contains('bulb')) {
+      } else if (_isTaskLamp(f, hay)) {
         lights.add(
           LightingLight(
             x: cx,
@@ -205,20 +209,20 @@ class LightingSimulator {
       }
     }
 
-    // Guarantee a window light so scoring stays stable on odd presets.
-    if (!lights.any((l) => l.kind == 'window')) {
-      lights.add(
-        const LightingLight(
-          x: 3.0,
-          z: 0.08,
-          y: 1.6,
-          intensity: 0.9,
-          kind: 'window',
-          label: 'Window',
-        ),
-      );
-    }
+    // Never invent a window — windowless rooms score on ceiling + lamps only.
     return lights;
+  }
+
+  static bool _isTaskLamp(FurnitureItem f, String hay) {
+    if (f.iconName == 'lamp' || f.iconName == 'floorLamp' || f.iconName == 'lightBar') {
+      return true;
+    }
+    if (hay.contains('lamp') || hay.contains('bulb') || hay.contains('light bar')) {
+      return true;
+    }
+    // Avoid matching every item with "light" in the name (e.g. ceiling fixture
+    // already injected separately; "skylight" should be a window).
+    return false;
   }
 
   static List<LightingOccluder> _buildOccluders(List<FurnitureItem> furniture) {
@@ -344,19 +348,23 @@ class LightingSimulator {
     }
     final taskIllum = taskN == 0 ? mean : (task / taskN).clamp(0.0, 1.2) / 1.2;
 
-    // Daylight reach: average lux in the front third of the room.
-    var daySum = 0.0;
-    var dayN = 0;
-    final zCut = (nz * 0.34).floor();
-    for (int z = 0; z < zCut; z++) {
-      for (int x = 0; x < nx; x++) {
-        final v = lux[x + nx * z];
-        if (v <= 0.001) continue;
-        daySum += v;
-        dayN++;
+    // Daylight reach: front-third lux only when a real window light exists.
+    final hasWindow = lights.any((l) => l.kind == 'window');
+    var daylightReach = 0.0;
+    if (hasWindow) {
+      var daySum = 0.0;
+      var dayN = 0;
+      final zCut = (nz * 0.34).floor();
+      for (int z = 0; z < zCut; z++) {
+        for (int x = 0; x < nx; x++) {
+          final v = lux[x + nx * z];
+          if (v <= 0.001) continue;
+          daySum += v;
+          dayN++;
+        }
       }
+      daylightReach = dayN == 0 ? 0.0 : (daySum / dayN).clamp(0.0, 1.0);
     }
-    final daylightReach = dayN == 0 ? 0.0 : (daySum / dayN).clamp(0.0, 1.0);
 
     // Glare: desk very close and centered on window axis.
     var glare = 0.0;
@@ -369,7 +377,8 @@ class LightingSimulator {
     }
     FurnitureItem? desk;
     for (final f in furniture) {
-      if (f.id == 'desk') {
+      final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
+      if (hay.contains('desk') || f.iconName == 'desk') {
         desk = f;
         break;
       }
@@ -384,11 +393,41 @@ class LightingSimulator {
       glare = (aligned * 0.45 + tooClose * 0.55 - offsetRelief).clamp(0.0, 1.0);
     }
 
+    FurnitureItem? chair;
+    for (final f in furniture) {
+      final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
+      if (hay.contains('chair') || f.iconName == 'chair') {
+        chair = f;
+        break;
+      }
+    }
+    FurnitureItem? windowItem;
+    for (final f in furniture) {
+      final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
+      if (hay.contains('window') || f.iconName == 'window') {
+        windowItem = f;
+        break;
+      }
+    }
+    // No window → no side-light / glare story (do not invent window geometry).
+    final sideLight = windowItem == null
+        ? 0.55
+        : ComfortHeuristics.windowSideLightScore(
+            desk: desk,
+            chair: chair,
+            window: windowItem,
+          );
+    if (windowItem != null) {
+      // OSHA: displays at right angles to windows — fold into glare + exposure.
+      glare = (glare * 0.7 + (1.0 - sideLight) * 0.3).clamp(0.0, 1.0);
+    }
+
     final exposure = (
-            taskIllum * 50 +
-            (1 - shadowRatio) * 22 +
-            daylightReach * 18 +
-            mean * 18 -
+            taskIllum * 48 +
+            (1 - shadowRatio) * 20 +
+            daylightReach * 16 +
+            mean * 14 +
+            (windowItem == null ? 0.55 * 12 : sideLight * 12) -
             glare * 12)
         .clamp(0.0, 100.0);
 
@@ -398,6 +437,7 @@ class LightingSimulator {
       shadowRatio: shadowRatio,
       daylightReach: daylightReach,
       glareRisk: glare,
+      sideLightScore: sideLight,
     );
   }
 }
