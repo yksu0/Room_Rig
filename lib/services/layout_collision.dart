@@ -241,14 +241,19 @@ class LayoutCollision {
   }
 
   /// First free snapped cell, preferring walls (good for fans / lamps).
+  /// Empty-cell search bias for Auto-Rig packing.
+  /// - [preferInterior]: open-floor gear (fans, portable AC).
+  /// - [preferWall]: shelves, wardrobes, beds, sofas — never float mid-room.
   static ({double gridX, double gridY})? findEmptyCell({
     required List<FurnitureItem> furniture,
     required int gridCols,
     required int gridRows,
     double width = 1,
     double height = 1,
+    bool preferInterior = false,
+    bool preferWall = false,
   }) {
-    ({double gridX, double gridY, double wall})? best;
+    ({double gridX, double gridY, double score})? best;
     for (double y = 0; y <= gridRows - height + 0.001; y += snapStep) {
       for (double x = 0; x <= gridCols - width + 0.001; x += snapStep) {
         final probe = FurnitureItem(
@@ -262,14 +267,34 @@ class LayoutCollision {
           height: height,
         );
         if (_collidesWithOthers(probe, furniture)) continue;
+        // Also reject cells that sit on door/window openings.
+        var blocksOpening = false;
+        for (final opening in furniture.where(_isOpening)) {
+          if (overlaps(probe, opening)) {
+            blocksOpening = true;
+            break;
+          }
+        }
+        if (blocksOpening) continue;
+
         final wall = [
           x,
           y,
           gridCols - width - x,
           gridRows - height - y,
         ].reduce((a, b) => a < b ? a : b);
-        if (best == null || wall < best.wall) {
-          best = (gridX: x, gridY: y, wall: wall);
+        // Lower score wins. Wall pieces want small wall distance; interior
+        // pieces want large wall distance (score = -wall).
+        final double score;
+        if (preferWall) {
+          score = wall;
+        } else if (preferInterior) {
+          score = -wall;
+        } else {
+          score = wall * 0.15;
+        }
+        if (best == null || score < best.score) {
+          best = (gridX: x, gridY: y, score: score);
         }
       }
     }
@@ -301,12 +326,16 @@ class LayoutCollision {
     final hostB = SurfaceMounts.hostUnder(b, furniture);
     if (hostA != null) {
       if (b.id == hostA.id) return false;
-      if (SurfaceMounts.isDeskTopItem(b) && hostB?.id == hostA.id) return true;
+      if (SurfaceMounts.isDeskTopItem(b) && hostB?.id == hostA.id) {
+        return SurfaceMounts.deskTopFootprintsConflict(a, b);
+      }
       return false;
     }
     if (hostB != null) {
       if (a.id == hostB.id) return false;
-      if (SurfaceMounts.isDeskTopItem(a) && hostA?.id == hostB.id) return true;
+      if (SurfaceMounts.isDeskTopItem(a) && hostA?.id == hostB.id) {
+        return SurfaceMounts.deskTopFootprintsConflict(a, b);
+      }
       return false;
     }
     return true;
