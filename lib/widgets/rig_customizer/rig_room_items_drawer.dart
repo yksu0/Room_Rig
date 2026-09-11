@@ -101,29 +101,9 @@ class RigRoomItemsDrawer extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-              child: TextField(
+              child: _DrawerSearchField(
+                initialQuery: sidebarQuery,
                 onChanged: onQueryChanged,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: 'Search name or category',
-                  hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 12),
-                  prefixIcon: Icon(Icons.search_rounded, color: AppColors.textMuted, size: 18),
-                  isDense: true,
-                  filled: true,
-                  fillColor: AppColors.card,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: AppColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: AppColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.7)),
-                  ),
-                ),
               ),
             ),
             Padding(
@@ -275,7 +255,21 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                     label: 'Dup',
                                     color: AppColors.cyan,
                                     onTap: () {
-                                      state.duplicateFurniture(item.id);
+                                      if (SurfaceMounts.isStructuralMount(item) &&
+                                          !state.invasiveEdit) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Turn on Invasive to duplicate wall fittings'),
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      if (!state.duplicateFurniture(item.id)) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Could not duplicate here')),
+                                        );
+                                        return;
+                                      }
                                       Navigator.of(context).pop();
                                     },
                                   ),
@@ -294,7 +288,23 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                           danger: true,
                                         );
                                         if (!ok || !context.mounted) return;
+                                        final name = item.name;
                                         state.deleteFurniture(item.id);
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context)
+                                          ..hideCurrentSnackBar()
+                                          ..showSnackBar(
+                                            SnackBar(
+                                              content: Text('Deleted "$name"'),
+                                              behavior: SnackBarBehavior.floating,
+                                              action: SnackBarAction(
+                                                label: 'Undo',
+                                                onPressed: () {
+                                                  if (state.canUndoLayout) state.undoLayout();
+                                                },
+                                              ),
+                                            ),
+                                          );
                                       },
                                     ),
                                   ],
@@ -420,7 +430,18 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                     label: 'Dup',
                                     color: AppColors.cyan,
                                     onTap: () {
-                                      state.duplicateDetectedScanObject(obj.id);
+                                      if (obj.locked) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Unlock to duplicate')),
+                                        );
+                                        return;
+                                      }
+                                      if (!state.duplicateDetectedScanObject(obj.id)) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Could not duplicate')),
+                                        );
+                                        return;
+                                      }
                                       Navigator.of(context).pop();
                                     },
                                   ),
@@ -433,7 +454,15 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                     icon: Icons.swap_horiz_rounded,
                                     label: 'Replace',
                                     color: AppColors.cyan,
-                                    onTap: () => onReplaceScanObject(obj),
+                                    onTap: () {
+                                      if (obj.locked) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Unlock to replace')),
+                                        );
+                                        return;
+                                      }
+                                      onReplaceScanObject(obj);
+                                    },
                                   ),
                                   const SizedBox(width: 6),
                                   RigScanActionButton(
@@ -441,6 +470,12 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                     label: 'Del',
                                     color: AppColors.red,
                                     onTap: () async {
+                                      if (obj.locked) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Unlock to delete')),
+                                        );
+                                        return;
+                                      }
                                       final ok = await confirmAction(
                                         context,
                                         title: 'Delete ${obj.label}?',
@@ -500,6 +535,76 @@ class _SidebarFilterChip extends StatelessWidget {
             fontSize: 10,
             fontWeight: FontWeight.w700,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Keeps the typed search text in sync when the drawer is reopened.
+class _DrawerSearchField extends StatefulWidget {
+  final String initialQuery;
+  final ValueChanged<String> onChanged;
+
+  const _DrawerSearchField({
+    required this.initialQuery,
+    required this.onChanged,
+  });
+
+  @override
+  State<_DrawerSearchField> createState() => _DrawerSearchFieldState();
+}
+
+class _DrawerSearchFieldState extends State<_DrawerSearchField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialQuery);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DrawerSearchField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialQuery != _controller.text &&
+        widget.initialQuery != oldWidget.initialQuery) {
+      _controller.text = widget.initialQuery;
+      _controller.selection =
+          TextSelection.collapsed(offset: _controller.text.length);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      onChanged: widget.onChanged,
+      style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+      decoration: InputDecoration(
+        hintText: 'Search name or category',
+        hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 12),
+        prefixIcon: Icon(Icons.search_rounded, color: AppColors.textMuted, size: 18),
+        isDense: true,
+        filled: true,
+        fillColor: AppColors.card,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: AppColors.cyan.withValues(alpha: 0.7)),
         ),
       ),
     );
