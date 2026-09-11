@@ -6,6 +6,7 @@ import '../models/app_state.dart';
 import '../models/room_model.dart';
 import '../services/bench_layouts.dart';
 import '../services/ergonomics_simulator.dart';
+import '../services/layout_share_image.dart';
 import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
@@ -150,7 +151,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
 
   String get _layoutHint => _layouts?.fellBackToSample ?? false
       ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-      : 'Walks the routes through the furniture in your Rig right now, then compares an optimized rearrange of the same room.';
+      : 'Clearance + walk-path heuristic (not motion capture) on your Rig, then compares a rule-based rearrange.';
 
   ErgonomicsSimSnapshot? get _activeSim {
     switch (_simVariant) {
@@ -266,24 +267,46 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
               message:
                   'Improved layout matches your room — paths are already as good as the optimizer found.',
             )
-          : null,
+          : benchWhyWinsCard(
+              reasons: _layouts?.improvedReasons ?? const [],
+              accentColor: AppColors.ergonomicsColor,
+            ),
       resultsBody: _results(state),
       applyEnabled: !applyBlocked,
       applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
           : (noOp ? 'Improved layout matches your room — nothing to apply.' : null),
       onApply: () async {
-        if (!await confirmBenchApply(context, validation: applyValidation)) return;
+        if (!await confirmBenchApply(
+          context,
+          validation: applyValidation,
+          fellBackToSample: _layouts?.fellBackToSample ?? false,
+        )) {
+          return;
+        }
         if (!context.mounted) return;
+        final before = List<FurnitureItem>.from(state.committedFurniture);
         state.applyFurnitureLayout(
           _furnitureFor(BenchLayoutKind.improved),
           markOptimized: true,
+          lockMode: 'ergonomics',
         );
+        final diff = summarizeLayoutDiff(before, state.furniture);
+        final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+        final room = state.currentRoomData;
+        final after = List<FurnitureItem>.from(state.furniture);
         showBenchApplySnackBar(
           context,
-          message: 'Improved ergonomics layout applied to Rig',
+          message: why.isEmpty ? 'Ergonomics applied · $diff' : 'Ergonomics applied · $diff · $why',
           accentColor: AppColors.ergonomicsColor,
           onOpenRig: () => state.setTab(2),
+          onShareImage: () => LayoutShareImage.shareBeforeAfter(
+            gridCols: room.gridCols,
+            gridRows: room.gridRows,
+            before: before,
+            after: after,
+            footer: why.isEmpty ? diff : '$diff · $why',
+          ),
         );
       },
       onRefresh: _rebuild,
@@ -331,7 +354,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
                   BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
                       ? 'Reference room — your Rig is empty'
                       : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                  BenchLayoutKind.improved => 'Improved — your room, rearranged for comfort',
+                  BenchLayoutKind.improved => 'Improved — your room, Auto-Rig layout',
                   BenchLayoutKind.sample => 'Sample room — chair blocked, gear out of reach',
                 },
                 style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 14),
@@ -595,9 +618,9 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
           children: [
             Expanded(child: BenchMetricTile(label: 'Comfort', value: m.comfortScore, color: AppColors.ergonomicsColor)),
             const SizedBox(width: 8),
-            Expanded(child: BenchMetricTile(label: 'Paths', value: m.pathScore * 100, color: AppColors.cyan)),
+            Expanded(child: BenchMetricTile(label: 'Walks', value: m.pathScore * 100, color: AppColors.cyan)),
             const SizedBox(width: 8),
-            Expanded(child: BenchMetricTile(label: 'Reach', value: m.reachScore * 100, color: AppColors.amber)),
+            Expanded(child: BenchMetricTile(label: 'Bed privacy', value: m.bedPrivacy * 100, color: AppColors.amber)),
           ],
         ),
       ],
@@ -634,9 +657,9 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
           BenchScoreRingSpec(score: state.ergonomicsScore, color: AppColors.green, label: 'Score'),
       ],
       summaryText:
-          'Paths +${((opt.pathScore - base.pathScore) * 100).toStringAsFixed(0)} · '
-          'Clearance +${((opt.chairClearance - base.chairClearance) * 100).toStringAsFixed(0)} · '
-          'Reach +${((opt.reachScore - base.reachScore) * 100).toStringAsFixed(0)}',
+          'Walks +${((opt.pathScore - base.pathScore) * 100).toStringAsFixed(0)} · '
+          'Door view +${((opt.doorProspect - base.doorProspect) * 100).toStringAsFixed(0)} · '
+          'Bed privacy +${((opt.bedPrivacy - base.bedPrivacy) * 100).toStringAsFixed(0)}',
     );
   }
 
@@ -670,9 +693,5 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       builder: builder,
     );
   }
-
-  // Exposed so parent scroll views can gate physics if needed.
-  // ignore: unused_element
-  bool get isOrbitDragging => _orbitDragging;
 
 }
