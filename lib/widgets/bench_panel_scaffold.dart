@@ -1,5 +1,6 @@
 // lib/widgets/bench_panel_scaffold.dart
 import 'package:flutter/material.dart';
+import '../models/room_model.dart';
 import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
@@ -37,26 +38,29 @@ class BenchStepTabs extends StatelessWidget {
         final selected = step == i;
         final isLast = i == labels.length - 1;
         return Expanded(
-          child: GestureDetector(
-            onTap: () {
-              if (i == benchStepResults && !resultsEnabled) return;
-              onStepChanged(i);
-            },
-            child: Container(
-              margin: EdgeInsets.only(right: isLast ? 0 : 8),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: selected ? accentColor.withValues(alpha: 0.12) : AppColors.card,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: selected ? accentColor : AppColors.border),
-              ),
-              child: Text(
-                labels[i],
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: selected ? accentColor : AppColors.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+          child: Opacity(
+            opacity: (i == benchStepResults && !resultsEnabled) ? 0.45 : 1,
+            child: GestureDetector(
+              onTap: () {
+                if (i == benchStepResults && !resultsEnabled) return;
+                onStepChanged(i);
+              },
+              child: Container(
+                margin: EdgeInsets.only(right: isLast ? 0 : 8),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: selected ? accentColor.withValues(alpha: 0.12) : AppColors.card,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: selected ? accentColor : AppColors.border),
+                ),
+                child: Text(
+                  labels[i],
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: selected ? accentColor : AppColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
@@ -462,16 +466,36 @@ class BenchResultsCard extends StatelessWidget {
   }
 }
 
-/// Floating snackbar with OPEN RIG action after applying an improved layout.
+/// Floating snackbar after applying an improved layout.
 void showBenchApplySnackBar(
   BuildContext context, {
   required String message,
   required Color accentColor,
   required VoidCallback onOpenRig,
+  Future<void> Function()? onShareImage,
 }) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(message),
+      duration: const Duration(seconds: 6),
+      content: Row(
+        children: [
+          Expanded(child: Text(message)),
+          if (onShareImage != null) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: 'Share before/after image',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: const Icon(Icons.ios_share_rounded, color: Colors.white, size: 18),
+              onPressed: () async {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                await onShareImage();
+              },
+            ),
+          ],
+        ],
+      ),
       backgroundColor: accentColor.withValues(alpha: 0.9),
       behavior: SnackBarBehavior.floating,
       action: SnackBarAction(
@@ -487,15 +511,37 @@ void showBenchApplySnackBar(
 Future<bool> confirmBenchApply(
   BuildContext context, {
   required BenchmarkValidation validation,
+  bool fellBackToSample = false,
 }) async {
+  if (fellBackToSample) {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Cannot apply demo layout', style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          'Your Rig is empty, so Bench is showing a reference room. '
+          'Add furniture on Rig (or load a preset) before applying.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
+    return false;
+  }
+
   if (validation.hasHardLayoutConflicts) {
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Cannot apply layout'),
+        backgroundColor: AppColors.surface,
+        title: const Text('Cannot apply layout', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
           'The improved layout still has overlapping furniture or blocked doorways. '
           'Fix conflicts on the Rig or re-run the bench.',
+          style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
@@ -508,9 +554,12 @@ Future<bool> confirmBenchApply(
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Apply to Rig?'),
+      backgroundColor: AppColors.surface,
+      title: const Text('Apply to Rig?', style: TextStyle(color: AppColors.textPrimary)),
       content: const Text(
-        'This replaces your current furniture layout with the improved arrangement from the bench.',
+        'This replaces your current furniture layout with the improved arrangement from the bench. '
+        'A checkpoint is saved on this room.',
+        style: TextStyle(color: AppColors.textSecondary),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -519,6 +568,108 @@ Future<bool> confirmBenchApply(
     ),
   );
   return ok == true;
+}
+
+/// Short "why this wins" line from optimizer reasons (for Apply snackbars).
+String summarizeWhyWins(List<String> reasons, {int max = 2}) {
+  if (reasons.isEmpty) return '';
+  final clipped = reasons
+      .map((r) => r.trim())
+      .where((r) => r.isNotEmpty)
+      .take(max)
+      .toList();
+  if (clipped.isEmpty) return '';
+  return clipped.join(' · ');
+}
+
+/// Results-step card listing why the improved layout scores better.
+Widget benchWhyWinsCard({
+  required List<String> reasons,
+  required Color accentColor,
+  String title = 'Why this wins',
+}) {
+  if (reasons.isEmpty) return const SizedBox.shrink();
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+    decoration: BoxDecoration(
+      color: accentColor.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: accentColor.withValues(alpha: 0.40)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title.toUpperCase(),
+          style: TextStyle(
+            color: accentColor,
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.4,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...reasons.take(4).map(
+          (r) => Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.check_circle_outline_rounded, size: 14, color: accentColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    r,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Human-readable summary of furniture moves between two layouts.
+String summarizeLayoutDiff(List<FurnitureItem> before, List<FurnitureItem> after) {
+  final beforeById = {for (final f in before) f.id: f};
+  final afterById = {for (final f in after) f.id: f};
+  var moved = 0;
+  final movedNames = <String>[];
+  for (final entry in afterById.entries) {
+    final prior = beforeById[entry.key];
+    if (prior == null) continue;
+    final next = entry.value;
+    final shifted = (next.gridX - prior.gridX).abs() > 0.05 ||
+        (next.gridY - prior.gridY).abs() > 0.05 ||
+        (next.yawDegrees - prior.yawDegrees).abs() > 0.5 ||
+        (next.width - prior.width).abs() > 0.05 ||
+        (next.height - prior.height).abs() > 0.05;
+    if (!shifted) continue;
+    moved++;
+    if (movedNames.length < 3) movedNames.add(next.name);
+  }
+  final added = afterById.keys.where((id) => !beforeById.containsKey(id)).length;
+  final removed = beforeById.keys.where((id) => !afterById.containsKey(id)).length;
+  if (moved == 0 && added == 0 && removed == 0) {
+    return 'layout unchanged';
+  }
+  final parts = <String>[];
+  if (moved > 0) {
+    final names = movedNames.join(', ');
+    parts.add(moved == 1 ? 'moved $names' : 'moved $moved items ($names${moved > 3 ? '…' : ''})');
+  }
+  if (added > 0) parts.add('+$added');
+  if (removed > 0) parts.add('-$removed');
+  return parts.join(' · ');
 }
 
 /// True when improved furniture matches my-room — Apply would be a no-op.
