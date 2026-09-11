@@ -2,6 +2,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../services/ergonomics_simulator.dart';
+import '../services/furniture_sprites.dart';
 import '../theme/app_theme.dart';
 import 'bench_room_views.dart';
 
@@ -26,7 +27,7 @@ class ErgonomicsFieldPainter extends CustomPainter {
     this.lookAtX,
     this.lookAtZ,
     this.pulse = 0.5,
-  });
+  }) : super(repaint: FurnitureSprites.revision);
 
   /// Keep the busiest routes only so the view stays readable.
   List<ErgonomicsPath> get _focusPaths {
