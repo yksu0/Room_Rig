@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
 import '../services/bench_layouts.dart';
+import '../services/layout_share_image.dart';
 import '../services/lighting_simulator.dart';
 import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
@@ -150,7 +151,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
 
   String get _layoutHint => _layouts?.fellBackToSample ?? false
       ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-      : 'Lights the furniture in your Rig right now, then compares it against an optimized rearrange of the same room.';
+      : '2D lux proxy (not radiosity) on your Rig furniture, then compares a rule-based rearrange of the same room.';
 
   LightingSimSnapshot? get _activeSim {
     switch (_simVariant) {
@@ -255,24 +256,46 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
               message:
                   'Improved layout matches your room — lighting is already as good as the optimizer found.',
             )
-          : null,
+          : benchWhyWinsCard(
+              reasons: _layouts?.improvedReasons ?? const [],
+              accentColor: AppColors.lightingColor,
+            ),
       resultsBody: _results(state),
       applyEnabled: !applyBlocked,
       applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
           : (noOp ? 'Improved layout matches your room — nothing to apply.' : null),
       onApply: () async {
-        if (!await confirmBenchApply(context, validation: applyValidation)) return;
+        if (!await confirmBenchApply(
+          context,
+          validation: applyValidation,
+          fellBackToSample: _layouts?.fellBackToSample ?? false,
+        )) {
+          return;
+        }
         if (!context.mounted) return;
+        final before = List<FurnitureItem>.from(state.committedFurniture);
         state.applyFurnitureLayout(
           _furnitureFor(BenchLayoutKind.improved),
           markOptimized: true,
+          lockMode: 'lighting',
         );
+        final diff = summarizeLayoutDiff(before, state.furniture);
+        final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+        final room = state.currentRoomData;
+        final after = List<FurnitureItem>.from(state.furniture);
         showBenchApplySnackBar(
           context,
-          message: 'Improved lighting layout applied to Rig',
+          message: why.isEmpty ? 'Lighting applied · $diff' : 'Lighting applied · $diff · $why',
           accentColor: AppColors.lightingColor,
           onOpenRig: () => state.setTab(2),
+          onShareImage: () => LayoutShareImage.shareBeforeAfter(
+            gridCols: room.gridCols,
+            gridRows: room.gridRows,
+            before: before,
+            after: after,
+            footer: why.isEmpty ? diff : '$diff · $why',
+          ),
         );
       },
       onRefresh: _rebuild,
@@ -331,7 +354,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                   BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
                       ? 'Reference room — your Rig is empty'
                       : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                  BenchLayoutKind.improved => 'Improved — your room, rearranged for light',
+                  BenchLayoutKind.improved => 'Improved — your room, Auto-Rig layout',
                   BenchLayoutKind.sample => 'Sample room — daylight blocked, lamp misplaced',
                 },
                 style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 14),
@@ -669,8 +692,5 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       builder: builder,
     );
   }
-
-  // Silence unused warning — parent scroll can key off this later if needed.
-  bool get isOrbitDragging => _orbitDragging;
 
 }
