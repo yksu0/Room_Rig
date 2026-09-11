@@ -362,6 +362,17 @@ class RoomSvg {
   <line x1="6" y1="8" x2="18" y2="8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
 </svg>''';
 
+  static const String heater = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="4" y="7" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="currentColor" opacity="0.12"/>
+  <line x1="8" y1="10" x2="8" y2="16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="12" y1="10" x2="12" y2="16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="16" y1="10" x2="16" y2="16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M7 5 Q8 3 9 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+  <path d="M11 4.5 Q12 2.5 13 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+  <path d="M15 5 Q16 3 17 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+</svg>''';
+
   static const String trendingUp = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <polyline points="3,17 9,11 13,15 21,7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -473,9 +484,11 @@ String furnitureSvgFor(String id) {
     case 'console':
       return RoomSvg.gaming;
     case 'floorlamp':
-    case 'space_heater':
     case 'floor_lamp':
       return RoomSvg.floorLamp;
+    case 'heater':
+    case 'space_heater':
+      return RoomSvg.heater;
     case 'ceilinglight':
     case 'ceiling_light':
       return RoomSvg.lightBar;
