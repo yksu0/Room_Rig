@@ -5,10 +5,12 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
+import '../services/furniture_sprites.dart';
 import 'room_orbit_projection.dart';
 import 'room_plan_geometry.dart';
 import '../theme/app_theme.dart';
 import 'furniture_shapes.dart';
+import 'rig_customizer/room_orbit_3d_painter.dart';
 
 Color categoryColor(String cat) {
   switch (cat) {
@@ -157,7 +159,7 @@ class BenchRoom2DPainter extends CustomPainter {
     required this.gridRows,
     required this.furniture,
     this.selectedId,
-  });
+  }) : super(repaint: FurnitureSprites.revision);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -240,36 +242,24 @@ class BenchRoom3DPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final cam = _Cam(
+    // Same orbit meshes / wall fittings as Rig.
+    RoomOrbit3DPainter(
       roomWidth: roomWidth,
       roomDepth: roomDepth,
       roomHeight: roomHeight,
+      gridCols: gridCols,
+      gridRows: gridRows,
       yaw: yaw,
       pitch: pitch,
       distance: distance,
       lookAtX: lookAtX,
       lookAtZ: lookAtZ,
-    );
-
-    BenchFurnitureRenderer.paintRoomWireframe(
-      canvas,
-      size,
-      cam,
-      roomWidth: roomWidth,
-      roomDepth: roomDepth,
-      gridCols: gridCols,
-      gridRows: gridRows,
-    );
-
-    BenchFurnitureRenderer.paint3D(
-      canvas,
-      size,
-      cam,
-      gridCols: gridCols,
-      gridRows: gridRows,
-      roomHeight: roomHeight,
-      furniture: furniture,
-    );
+      items: BenchFurnitureRenderer.renderItems(
+        furniture: furniture,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      ),
+    ).paint(canvas, size);
   }
 
   @override
@@ -297,22 +287,19 @@ class _V3 {
   _V3 operator -(_V3 o) => _V3(x - o.x, y - o.y, z - o.z);
 }
 
-class _Cam {
+class BenchWireCam {
   final double roomWidth, roomDepth, roomHeight, yaw, pitch, distance;
-  final double? lookAtX, lookAtZ;
-  _Cam({
+  BenchWireCam({
     required this.roomWidth,
     required this.roomDepth,
     required this.roomHeight,
     required this.yaw,
     required this.pitch,
     required this.distance,
-    this.lookAtX,
-    this.lookAtZ,
   });
 
-  double get pivotX => lookAtX ?? roomWidth * 0.5;
-  double get pivotZ => lookAtZ ?? roomDepth * 0.5;
+  double get pivotX => roomWidth * 0.5;
+  double get pivotZ => roomDepth * 0.5;
 }
 
 class _Face {
@@ -339,7 +326,7 @@ _V3 _normalize(_V3 v) {
   return _V3(v.x / m, v.y / m, v.z / m);
 }
 
-(Offset, double)? _project(_V3 p, Size size, _Cam cam) {
+(Offset, double)? _project(_V3 p, Size size, BenchWireCam cam) {
   final center = _V3(cam.pivotX, cam.roomHeight * 0.45, cam.pivotZ);
   final horizontal = cam.distance * math.cos(cam.pitch);
   final eye = _V3(
@@ -360,7 +347,7 @@ _V3 _normalize(_V3 v) {
   return (Offset(size.width * 0.5 + (cx / cz) * focal, size.height * 0.58 - (cy / cz) * focal), cz);
 }
 
-_PFace? _projectFace(_Face face, Size size, _Cam cam) {
+_PFace? _projectFace(_Face face, Size size, BenchWireCam cam) {
   final points = <Offset>[];
   double depth = 0;
   for (final v in face.vertices) {
@@ -375,6 +362,27 @@ _PFace? _projectFace(_Face face, Size size, _Cam cam) {
 /// Rig-style furniture silhouettes for all Bench 2D/3D views.
 class BenchFurnitureRenderer {
   BenchFurnitureRenderer._();
+
+  /// Rig-parity orbit items for Bench 3D (same meshes / wall fittings).
+  static List<RoomRenderItem> renderItems({
+    required List<FurnitureItem> furniture,
+    required int gridCols,
+    required int gridRows,
+    String? selectedId,
+  }) {
+    return [
+      for (final item in furniture)
+        if (!item.hidden)
+          furnitureRenderItem(
+            item: item,
+            gridCols: gridCols,
+            gridRows: gridRows,
+            furniture: furniture,
+            color: categoryColor(item.category),
+            selected: selectedId != null && item.id == selectedId,
+          ),
+    ];
+  }
 
   static void paint2D(
     Canvas canvas, {
@@ -391,6 +399,7 @@ class BenchFurnitureRenderer {
     final ceilingItems = <FurnitureItem>[];
 
     for (final item in ordered) {
+      if (item.hidden) continue;
       final mount = SurfaceMounts.of(
         item,
         gridCols: gridCols,
@@ -427,17 +436,28 @@ class BenchFurnitureRenderer {
             ..strokeWidth = 2.4,
         );
       }
-      canvas.save();
-      canvas.translate(cell.left, cell.top);
-      FurnitureShapes.paintPlan(
+
+      final usedSprite = FurnitureSprites.paintPlanSprite(
         canvas,
-        cell.size,
-        FurnitureShapes.kindOf(item),
-        color,
-        selected: selected,
+        cell,
+        iconName: item.iconName,
+        color: color,
         yawDegrees: item.yawDegrees,
+        selected: selected,
       );
-      canvas.restore();
+      if (!usedSprite) {
+        canvas.save();
+        canvas.translate(cell.left, cell.top);
+        FurnitureShapes.paintPlan(
+          canvas,
+          cell.size,
+          FurnitureShapes.kindOf(item),
+          color,
+          selected: selected,
+          yawDegrees: item.yawDegrees,
+        );
+        canvas.restore();
+      }
 
       if (!FurnitureShapes.showsFacing(FurnitureShapes.kindOf(item))) continue;
       final cx = x + w * 0.5;
@@ -484,7 +504,7 @@ class BenchFurnitureRenderer {
   static void paintRoomWireframe(
     Canvas canvas,
     Size size,
-    _Cam cam, {
+    BenchWireCam cam, {
     required double roomWidth,
     required double roomDepth,
     required int gridCols,
@@ -542,7 +562,7 @@ class BenchFurnitureRenderer {
   static void paint3D(
     Canvas canvas,
     Size size,
-    _Cam cam, {
+    BenchWireCam cam, {
     required int gridCols,
     required int gridRows,
     required double roomHeight,
@@ -705,6 +725,18 @@ class BenchFurnitureRenderer {
         ..strokeWidth = selected ? 2.0 : 1.4,
     );
 
+    // Prefer the same sprite glyph Rig uses for door / window / AC.
+    final glyphSize = math.min(28.0, math.max(band.shortestSide + 10, 18.0));
+    final glyph = Rect.fromCenter(center: band.center, width: glyphSize, height: glyphSize);
+    final usedSprite = FurnitureSprites.paintPlanSprite(
+      canvas,
+      glyph,
+      iconName: item.iconName,
+      color: color,
+      selected: selected,
+    );
+    if (usedSprite) return;
+
     final stroke = Paint()
       ..color = color.withValues(alpha: 0.75)
       ..strokeWidth = 1.1;
@@ -783,7 +815,7 @@ class BenchFurnitureRenderer {
     FurnitureItem item,
     SurfaceMount mount,
     Size size,
-    _Cam cam,
+    BenchWireCam cam,
   ) {
     final span = mount.span!;
     final color = switch (mount.style) {
@@ -892,7 +924,7 @@ class BenchFurnitureRenderer {
     FurnitureItem item,
     SurfaceMount mount,
     Size size,
-    _Cam cam,
+    BenchWireCam cam,
   ) {
     final cx = item.gridX + item.width / 2;
     final cz = item.gridY + item.height / 2;
@@ -921,7 +953,7 @@ class BenchFurnitureRenderer {
     );
   }
 
-  /// Wireframe room + detailed furniture meshes (shared by all Bench 3D views).
+  /// Wireframe room + Rig orbit furniture meshes (shared by all Bench 3D views).
   static void paint3DScene(
     Canvas canvas,
     Size size, {
@@ -936,35 +968,26 @@ class BenchFurnitureRenderer {
     required double? lookAtX,
     required double? lookAtZ,
     required List<FurnitureItem> furniture,
+    String? selectedId,
   }) {
-    final cam = _Cam(
+    RoomOrbit3DPainter(
       roomWidth: roomWidth,
       roomDepth: roomDepth,
       roomHeight: roomHeight,
+      gridCols: gridCols,
+      gridRows: gridRows,
       yaw: yaw,
       pitch: pitch,
       distance: distance,
       lookAtX: lookAtX,
       lookAtZ: lookAtZ,
-    );
-    paintRoomWireframe(
-      canvas,
-      size,
-      cam,
-      roomWidth: roomWidth,
-      roomDepth: roomDepth,
-      gridCols: gridCols,
-      gridRows: gridRows,
-    );
-    paint3D(
-      canvas,
-      size,
-      cam,
-      gridCols: gridCols,
-      gridRows: gridRows,
-      roomHeight: roomHeight,
-      furniture: furniture,
-    );
+      items: renderItems(
+        furniture: furniture,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        selectedId: selectedId,
+      ),
+    ).paint(canvas, size);
   }
 }
 
