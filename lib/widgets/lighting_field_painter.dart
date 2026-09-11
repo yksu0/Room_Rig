@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/room_model.dart';
 import '../services/lighting_simulator.dart';
+import '../services/furniture_sprites.dart';
 import '../theme/app_theme.dart';
 import 'bench_room_views.dart';
 
@@ -29,7 +30,7 @@ class LightingFieldPainter extends CustomPainter {
     this.lookAtX,
     this.lookAtZ,
     this.pulse = 0.5,
-  });
+  }) : super(repaint: FurnitureSprites.revision);
 
   @override
   void paint(Canvas canvas, Size size) {
