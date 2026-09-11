@@ -1,5 +1,6 @@
 // lib/widgets/onboarding_sheet.dart
 import 'package:flutter/material.dart';
+import '../models/upgrade_catalog.dart';
 import '../theme/app_theme.dart';
 import 'room_icons.dart';
 
@@ -17,23 +18,30 @@ class OnboardingSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final steps = [
       (
+        RoomSvg.tune,
+        'Start from a preset (recommended)',
+        'Use Demo on Hub or load Gaming Setup — no camera needed for a full professor walkthrough.',
+        AppColors.green,
+        0,
+      ),
+      (
         RoomSvg.scan,
-        'Scan your room',
-        'Capture walls and furniture so Room Rig can build a layout model.',
+        'Scan is optional',
+        'Scan can seed a layout (approximate). If the camera struggles, skip it and stay on Rig → Bench.',
         AppColors.cyan,
         1,
       ),
       (
         RoomSvg.tune,
         'Arrange in Rig',
-        'Drag items in 2D/3D. Collision, undo, and conflict warnings keep edits safe.',
+        'Drag items in 2D/3D. Collision, undo, and Place ghosts keep edits safe.',
         AppColors.purple,
         2,
       ),
       (
         RoomSvg.speedometer,
-        'Bench & Auto-Rig',
-        'Stress-test airflow, lighting, and ergonomics — then apply an improved layout.',
+        'Bench & Apply',
+        'Simulate My Room → Improved, then Apply. Hub flips to ${HubScoreLabels.benchOk}. Rig edits show ${HubScoreLabels.roughEst} until you Apply again.',
         AppColors.amber,
         3,
       ),
@@ -68,7 +76,7 @@ class OnboardingSheet extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Three steps to a better setup',
+              'Four tips for a better setup',
               style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 22,
@@ -81,8 +89,12 @@ class OnboardingSheet extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GestureDetector(
                   onTap: () {
-                    onJumpTab?.call(s.$5);
-                    onDone();
+                    // Parent pops once via onJumpTab or onDone — never both.
+                    if (onJumpTab != null) {
+                      onJumpTab!(s.$5);
+                    } else {
+                      onDone();
+                    }
                   },
                   child: Container(
                     padding: const EdgeInsets.all(14),
