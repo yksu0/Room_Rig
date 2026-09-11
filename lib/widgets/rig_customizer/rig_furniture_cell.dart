@@ -1,10 +1,13 @@
 // lib/widgets/rig_customizer/rig_furniture_cell.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../../models/room_model.dart';
+import '../../services/furniture_sprites.dart';
 import '../../theme/app_theme.dart';
 import '../furniture_shapes.dart';
-class RigFurnitureCell extends StatelessWidget {
+
+class RigFurnitureCell extends StatefulWidget {
   final FurnitureItem item;
   final bool isSelected;
   final bool hasConflict;
@@ -16,7 +19,41 @@ class RigFurnitureCell extends StatelessWidget {
   });
 
   @override
+  State<RigFurnitureCell> createState() => _RigFurnitureCellState();
+}
+
+class _RigFurnitureCellState extends State<RigFurnitureCell> {
+  @override
+  void initState() {
+    super.initState();
+    _resolveSprites(widget.item.iconName);
+  }
+
+  @override
+  void didUpdateWidget(covariant RigFurnitureCell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.iconName != widget.item.iconName) {
+      _resolveSprites(widget.item.iconName);
+    }
+  }
+
+  Future<void> _resolveSprites(String iconName) async {
+    final hadSprite =
+        FurnitureSprites.cachedHasPng(iconName) || FurnitureSprites.cachedHasSvg(iconName);
+    final svg = await FurnitureSprites.hasSvg(iconName);
+    final png = svg ? false : await FurnitureSprites.hasPng(iconName);
+    if (!mounted) return;
+    final hasSprite = png || svg;
+    if (hasSprite != hadSprite) {
+      setState(() {});
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
+    final isSelected = widget.isSelected;
+    final hasConflict = widget.hasConflict;
     final color = hasConflict
         ? AppColors.red
         : switch (item.category) {
@@ -25,6 +62,20 @@ class RigFurnitureCell extends StatelessWidget {
             'ergonomics' => AppColors.ergonomicsColor,
             _ => AppColors.textMuted,
           };
+
+    final usePng = FurnitureSprites.cachedHasPng(item.iconName);
+    final useSvg = !usePng && FurnitureSprites.cachedHasSvg(item.iconName);
+    if (usePng || useSvg) {
+      return _SpritePlanCell(
+        iconName: item.iconName,
+        color: color,
+        selected: isSelected,
+        hasConflict: hasConflict,
+        yawDegrees: item.yawDegrees,
+        usePng: usePng,
+      );
+    }
+
     final kind = FurnitureShapes.kindOf(item);
     return CustomPaint(
       painter: _FurniturePlanPainter(
@@ -34,6 +85,56 @@ class RigFurnitureCell extends StatelessWidget {
         hasConflict: hasConflict,
         yawDegrees: item.yawDegrees,
         showFacing: FurnitureShapes.showsFacing(kind),
+      ),
+    );
+  }
+}
+
+class _SpritePlanCell extends StatelessWidget {
+  final String iconName;
+  final Color color;
+  final bool selected;
+  final bool hasConflict;
+  final double yawDegrees;
+  final bool usePng;
+
+  const _SpritePlanCell({
+    required this.iconName,
+    required this.color,
+    required this.selected,
+    required this.hasConflict,
+    required this.yawDegrees,
+    required this.usePng,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor = hasConflict
+        ? AppColors.red
+        : (selected ? AppColors.cyan : color.withValues(alpha: 0.7));
+    final sprite = usePng
+        ? Image.asset(
+            FurnitureSprites.pngPath(iconName),
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          )
+        : SvgPicture.asset(
+            FurnitureSprites.svgPath(iconName),
+            fit: BoxFit.contain,
+            colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+          );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: borderColor, width: selected || hasConflict ? 2 : 1.2),
+        color: color.withValues(alpha: selected ? 0.18 : 0.08),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: Transform.rotate(
+          angle: yawDegrees * math.pi / 180.0,
+          child: sprite,
+        ),
       ),
     );
   }
