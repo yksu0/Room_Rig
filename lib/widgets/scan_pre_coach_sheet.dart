@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../services/scan_model_availability.dart';
 import '../theme/app_theme.dart';
 import 'room_icons.dart';
 
-/// Short pre-scan tips before ARCore / camera capture starts.
+/// Short pre-scan tips — honest about approximate Scan vs Rig/Bench core loop.
 Future<bool> showScanPreCoachSheet(
   BuildContext context, {
   required String detectorLabel,
@@ -45,7 +46,7 @@ Future<bool> showScanPreCoachSheet(
               ),
               const SizedBox(height: 8),
               const Text(
-                'A clean scan in under two minutes',
+                'Optional layout seed',
                 style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 20,
@@ -54,52 +55,68 @@ Future<bool> showScanPreCoachSheet(
               ),
               const SizedBox(height: 10),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   color: AppColors.amber.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.memory_outlined, size: 16, color: AppColors.amber),
+                    Icon(Icons.info_outline_rounded, size: 16, color: AppColors.amber),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Detector: $detectorLabel',
+                        'Detector: $detectorLabel\n'
+                        'Room size: preset · Tracking: visual estimate',
                         style: TextStyle(
                           color: AppColors.amber,
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
+                          height: 1.35,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
-              const _TipRow(
-                icon: Icons.gps_fixed_rounded,
-                title: 'Lock tracking first',
-                detail: 'Stand by the door and slowly pan floor → furniture. We will not record yet.',
+              const SizedBox(height: 14),
+              ...ScanModelAvailability.honestyBullets.map(
+                (b) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.check_rounded, size: 14, color: AppColors.cyan),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          b,
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const _TipRow(
-                icon: Icons.straighten_rounded,
-                title: 'Then one short walk',
-                detail: 'Walk toward the far wall so we can size the room. Corners come after that.',
-              ),
+              const SizedBox(height: 8),
               const _TipRow(
                 icon: Icons.smartphone_rounded,
-                title: 'Hold chest-high',
-                detail: 'Keep the phone upright. Fast turns and blank walls break ARCore.',
+                title: 'Hold chest-high, move slowly',
+                detail: 'Good light helps. Fast spins confuse visual tracking.',
               ),
               const _TipRow(
-                icon: Icons.wb_sunny_outlined,
-                title: 'Use good light',
-                detail: 'Turn lights on and include edges — desks, doors, window frames.',
+                icon: Icons.chair_alt_outlined,
+                title: 'Point at furniture',
+                detail: 'Chairs, beds, TVs work best with the smoke YOLO path.',
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
