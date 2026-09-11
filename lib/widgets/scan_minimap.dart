@@ -15,6 +15,7 @@ class ScanMinimap extends StatelessWidget {
   final double yawDegrees;
   final RoomDimensions dimensions;
   final double coverageRatio;
+  final bool compact;
 
   const ScanMinimap({
     super.key,
@@ -25,15 +26,17 @@ class ScanMinimap extends StatelessWidget {
     required this.yawDegrees,
     required this.coverageRatio,
     this.target,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final mapSize = compact ? 72.0 : 108.0;
     return Container(
-      width: 124,
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+      width: compact ? 88 : 124,
+      padding: EdgeInsets.fromLTRB(compact ? 6 : 8, compact ? 6 : 8, compact ? 6 : 8, compact ? 4 : 6),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.62),
+        color: Colors.black.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.cyan.withValues(alpha: 0.35)),
       ),
@@ -41,8 +44,8 @@ class ScanMinimap extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: 108,
-            height: 108,
+            width: mapSize,
+            height: mapSize,
             child: CustomPaint(
               painter: _ScanMinimapPainter(
                 grid: grid,
@@ -54,13 +57,13 @@ class ScanMinimap extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: compact ? 4 : 6),
           Text(
-            '${(coverageRatio * 100).round()}% scanned',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
+            compact ? 'you' : 'you · facing',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: compact ? 9 : 10,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -137,17 +140,29 @@ class _ScanMinimapPainter extends CustomPainter {
     final wid = math.max(0.001, dimensions.widthMeters);
     final px = ((cameraX / len).clamp(0.04, 0.96)) * size.width;
     final py = ((cameraZ / wid).clamp(0.04, 0.96)) * size.height;
-    final yaw = yawDegrees * math.pi / 180;
+
+    // Yaw 0 = facing +Z (toward bottom of this map). +90 = facing +X (right).
+    // Draw the tip along that forward vector instead of canvas.rotate + "up".
+    final yawRad = yawDegrees * math.pi / 180.0;
+    final fx = math.sin(yawRad);
+    final fz = math.cos(yawRad);
+    final pxp = -fz; // perpendicular
+    final pzp = fx;
+    const tipLen = 9.0;
+    const backLen = 5.0;
+    const halfWidth = 5.5;
+    final tip = Offset(fx * tipLen, fz * tipLen);
+    final back = Offset(-fx * backLen, -fz * backLen);
+    final notch = Offset(-fx * 2.0, -fz * 2.0);
+    final path = Path()
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo(back.dx + pxp * halfWidth, back.dy + pzp * halfWidth)
+      ..lineTo(notch.dx, notch.dy)
+      ..lineTo(back.dx - pxp * halfWidth, back.dy - pzp * halfWidth)
+      ..close();
 
     canvas.save();
     canvas.translate(px, py);
-    canvas.rotate(yaw);
-    final path = Path()
-      ..moveTo(0, -8)
-      ..lineTo(5.5, 7)
-      ..lineTo(0, 4)
-      ..lineTo(-5.5, 7)
-      ..close();
     canvas.drawPath(path, Paint()..color = Colors.white);
     canvas.drawPath(
       path,
@@ -165,5 +180,6 @@ class _ScanMinimapPainter extends CustomPainter {
       old.target != target ||
       old.cameraX != cameraX ||
       old.cameraZ != cameraZ ||
-      old.yawDegrees != yawDegrees;
+      old.yawDegrees != yawDegrees ||
+      old.dimensions != dimensions;
 }
