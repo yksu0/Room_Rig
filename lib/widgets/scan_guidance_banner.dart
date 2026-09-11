@@ -80,6 +80,7 @@ class ScanDirectionCueCard extends StatelessWidget {
   final int remainingCells;
   final int scannedCells;
   final int totalCells;
+  final bool compact;
 
   const ScanDirectionCueCard({
     super.key,
@@ -87,12 +88,49 @@ class ScanDirectionCueCard extends StatelessWidget {
     required this.remainingCells,
     required this.scannedCells,
     required this.totalCells,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final remainingPct =
         totalCells == 0 ? 0 : ((remainingCells / totalCells) * 100).round();
+
+    if (compact) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.cyan.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            Icon(cue.icon, color: AppColors.cyan, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                cue.headline,
+                style: const TextStyle(
+                  color: AppColors.cyan,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(
+              cue.targetLabel,
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
