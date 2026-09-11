@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_theme.dart';
 
-/// Offset magnifier bubble — shows what's under the finger on the current canvas.
+/// Offset loupe for Rig drag — samples the live 2D/3D canvas under [focalPoint].
 ///
-/// The bubble sits above the touch (so the finger doesn't cover it) and samples
-/// the same 2D/3D view already on screen. Light zoom only; no separate camera.
+/// Must lay the [scene] out at full [canvasSize] (via [OverflowBox]). Clipping the
+/// bubble to ~104px without that step shrinks the scene first, so scale/translate
+/// math zooms nonsense instead of the current orbit / floor plan.
 class RigDragMagnifier extends StatelessWidget {
   final Offset pointerLocal;
+  final Offset focalPoint;
   final Size canvasSize;
   final bool blocked;
   final Widget scene;
@@ -15,89 +17,176 @@ class RigDragMagnifier extends StatelessWidget {
   const RigDragMagnifier({
     super.key,
     required this.pointerLocal,
+    required this.focalPoint,
     required this.canvasSize,
     required this.blocked,
     required this.scene,
   });
 
-  static const _diameter = 104.0;
-  /// Mild zoom so under-finger detail is readable without looking alien.
-  static const _scale = 1.45;
-  static const _lift = 88.0;
+  static const diameter = 124.0;
+  /// Mild zoom — enough to place precisely without feeling glued to the item.
+  static const scale = 1.35;
+  /// Keep the bubble clearly above the finger.
+  static const lift = 140.0;
+  static const edgePad = 6.0;
+
+  /// Maps [focal] to the bubble center after magnification.
+  static Matrix4 sampleTransform({
+    required Offset focal,
+    required double diameter,
+    required double scale,
+  }) {
+    final r = diameter * 0.5;
+    return Matrix4.identity()
+      ..translateByDouble(r, r, 0, 1)
+      ..scaleByDouble(scale, scale, 1.0, 1)
+      ..translateByDouble(-focal.dx, -focal.dy, 0, 1);
+  }
+
+  /// Bubble top-left; prefers above the finger, then side / below near edges.
+  static Offset bubbleOrigin({
+    required Offset pointer,
+    required Size canvas,
+    double diameter = RigDragMagnifier.diameter,
+    double lift = RigDragMagnifier.lift,
+    double pad = RigDragMagnifier.edgePad,
+  }) {
+    final maxLeft = (canvas.width - diameter - pad).clamp(pad, double.infinity);
+    final maxTop = (canvas.height - diameter - pad).clamp(pad, double.infinity);
+    var left = (pointer.dx - diameter * 0.5).clamp(pad, maxLeft);
+    var top = pointer.dy - lift - diameter;
+
+    if (top < pad) {
+      // Prefer a side loupe when there is no room above.
+      final rightSlot = pointer.dx + 28;
+      final leftSlot = pointer.dx - diameter - 28;
+      if (rightSlot + diameter <= canvas.width - pad) {
+        left = rightSlot.clamp(pad, maxLeft);
+        top = (pointer.dy - diameter * 0.5).clamp(pad, maxTop);
+      } else if (leftSlot >= pad) {
+        left = leftSlot.clamp(pad, maxLeft);
+        top = (pointer.dy - diameter * 0.5).clamp(pad, maxTop);
+      } else {
+        top = (pointer.dy + 28).clamp(pad, maxTop);
+        left = (pointer.dx - diameter * 0.5).clamp(pad, maxLeft);
+      }
+    } else {
+      top = top.clamp(pad, maxTop);
+    }
+    return Offset(left, top);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final radius = _diameter * 0.5;
-    final left = (pointerLocal.dx - radius).clamp(6.0, canvasSize.width - _diameter - 6);
-    final top =
-        (pointerLocal.dy - _lift - _diameter).clamp(6.0, canvasSize.height - _diameter - 6);
+    final origin = bubbleOrigin(pointer: pointerLocal, canvas: canvasSize);
     final borderColor = blocked ? AppColors.red : AppColors.cyan;
-    final finger = pointerLocal;
+    final stemTop = origin.dy + diameter;
+    final stemHeight = (pointerLocal.dy - stemTop).clamp(0.0, lift + 40);
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Positioned(
-          left: finger.dx - 4,
-          top: finger.dy - 4,
+          left: focalPoint.dx - 5,
+          top: focalPoint.dy - 5,
           child: IgnorePointer(
             child: Container(
-              width: 8,
-              height: 8,
+              width: 10,
+              height: 10,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: borderColor.withValues(alpha: 0.5),
-                border: Border.all(color: Colors.white, width: 1),
+                color: borderColor.withValues(alpha: 0.35),
+                border: Border.all(color: Colors.white, width: 1.2),
               ),
             ),
           ),
         ),
-        Positioned(
-          left: finger.dx - 0.5,
-          top: top + _diameter,
-          child: IgnorePointer(
-            child: Container(
-              width: 1,
-              height: (finger.dy - (top + _diameter)).clamp(0.0, _lift),
-              color: borderColor.withValues(alpha: 0.45),
+        if (stemHeight > 2)
+          Positioned(
+            left: pointerLocal.dx - 0.5,
+            top: stemTop,
+            child: IgnorePointer(
+              child: Container(
+                width: 1,
+                height: stemHeight,
+                color: borderColor.withValues(alpha: 0.45),
+              ),
             ),
           ),
-        ),
         Positioned(
-          left: left,
-          top: top,
+          left: origin.dx,
+          top: origin.dy,
           child: IgnorePointer(
             child: Container(
-              width: _diameter,
-              height: _diameter,
+              width: diameter,
+              height: diameter,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(color: borderColor, width: 2.5),
                 boxShadow: const [
                   BoxShadow(
-                    blurRadius: 8,
+                    blurRadius: 10,
                     offset: Offset(0, 3),
-                    color: Colors.black38,
+                    color: Colors.black45,
                   ),
                 ],
               ),
               clipBehavior: Clip.antiAlias,
-              child: ClipRect(
-                child: Transform.translate(
-                  offset: Offset(
-                    radius - finger.dx * _scale,
-                    radius - finger.dy * _scale,
-                  ),
-                  child: Transform.scale(
-                    scale: _scale,
-                    alignment: Alignment.topLeft,
-                    child: SizedBox(
-                      width: canvasSize.width,
-                      height: canvasSize.height,
-                      child: scene,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipOval(
+                    child: OverflowBox(
+                      alignment: Alignment.topLeft,
+                      minWidth: canvasSize.width,
+                      maxWidth: canvasSize.width,
+                      minHeight: canvasSize.height,
+                      maxHeight: canvasSize.height,
+                      child: Transform(
+                        alignment: Alignment.topLeft,
+                        transform: sampleTransform(
+                          focal: focalPoint,
+                          diameter: diameter,
+                          scale: scale,
+                        ),
+                        child: SizedBox(
+                          width: canvasSize.width,
+                          height: canvasSize.height,
+                          child: scene,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  CustomPaint(
+                    painter: _LoupeCrosshairPainter(color: borderColor),
+                  ),
+                  // Soft vignette so the sample reads as a lens, not a hard crop.
+                  IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.22),
+                          ],
+                          stops: const [0.72, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Center(
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: borderColor.withValues(alpha: 0.85),
+                        border: Border.all(color: Colors.white, width: 1),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -105,4 +194,26 @@ class RigDragMagnifier extends StatelessWidget {
       ],
     );
   }
+}
+
+class _LoupeCrosshairPainter extends CustomPainter {
+  final Color color;
+
+  _LoupeCrosshairPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.55)
+      ..strokeWidth = 1;
+    final cx = size.width * 0.5;
+    final cy = size.height * 0.5;
+    const arm = 14.0;
+    canvas.drawLine(Offset(cx - arm, cy), Offset(cx + arm, cy), paint);
+    canvas.drawLine(Offset(cx, cy - arm), Offset(cx, cy + arm), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _LoupeCrosshairPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
