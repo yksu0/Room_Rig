@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/room_model.dart';
 import '../services/airflow_simulator.dart';
+import '../services/furniture_sprites.dart';
 import '../theme/app_theme.dart';
 import 'bench_room_views.dart';
 
@@ -38,7 +39,7 @@ class AirflowVoxelPainter extends CustomPainter {
     this.lookAtZ,
     this.showVoxels = true,
     this.showDeadZones = true,
-  });
+  }) : super(repaint: FurnitureSprites.revision);
 
   @override
   void paint(Canvas canvas, Size size) {
