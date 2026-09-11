@@ -44,15 +44,15 @@ class DetectionOverlayPainter extends CustomPainter {
       canvas.drawRect(
         rect,
         Paint()
-          ..color = box.color.withValues(alpha: 0.35)
+          ..color = box.color.withValues(alpha: 0.08)
           ..style = PaintingStyle.fill,
       );
       canvas.drawRect(
         rect,
         Paint()
-          ..color = box.color
+          ..color = box.color.withValues(alpha: 0.9)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2,
+          ..strokeWidth = 1.5,
       );
     }
   }
