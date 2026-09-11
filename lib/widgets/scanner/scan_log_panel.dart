@@ -66,84 +66,115 @@ class ScanLogPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final filteredLogs = filterScanLogs(logs, logFilter);
     final collapsed = compact ? true : logPanelCollapsed;
-    final height = collapsed ? (compact ? 40.0 : 52.0) : (compact ? 100.0 : 140.0);
+    final height = collapsed ? (compact ? 36.0 : 52.0) : (compact ? 100.0 : 140.0);
 
     return Container(
       height: height,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: compact ? 6 : 8),
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.95),
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
       child: Column(
         children: [
-          Row(
-            children: [
-              GestureDetector(
-                onTap: onToggleCollapsed,
-                child: Icon(
-                  logPanelCollapsed ? Icons.expand_less_rounded : Icons.expand_more_rounded,
-                  size: 18,
-                  color: AppColors.cyan,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'LOGS',
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const SizedBox(width: 8),
-              _LogFilterChip(
-                label: 'All',
-                active: logFilter == ScanLogFilter.all,
-                onTap: () => onSetFilter(ScanLogFilter.all),
-              ),
-              const SizedBox(width: 6),
-              _LogFilterChip(
-                label: 'Warn+Error',
-                active: logFilter == ScanLogFilter.warnError,
-                onTap: () => onSetFilter(ScanLogFilter.warnError),
-              ),
-              const SizedBox(width: 6),
-              _LogFilterChip(
-                label: 'Error',
-                active: logFilter == ScanLogFilter.errorOnly,
-                onTap: () => onSetFilter(ScanLogFilter.errorOnly),
-              ),
-              const SizedBox(width: 6),
-              _LogFilterChip(
-                label: logAutoScroll ? 'AutoScroll On' : 'AutoScroll Off',
-                active: logAutoScroll,
-                onTap: onToggleAutoScroll,
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: onClearLogs,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.red.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppColors.red.withValues(alpha: 0.4)),
-                  ),
-                  child: Text(
-                    'Clear',
-                    style: TextStyle(color: AppColors.red, fontSize: 10, fontWeight: FontWeight.w700),
+          if (compact)
+            Row(
+              children: [
+                Icon(Icons.terminal_rounded, size: 14, color: AppColors.textMuted),
+                const SizedBox(width: 6),
+                Text(
+                  'LOGS',
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
                   ),
                 ),
-              ),
-              const Spacer(),
-              Text(
-                '${filteredLogs.length}/${logs.length}',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
+                const Spacer(),
+                Text(
+                  '${filteredLogs.length}',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w600),
+                ),
+              ],
+            )
+          else
+            Row(
+              children: [
+                GestureDetector(
+                  onTap: onToggleCollapsed,
+                  child: Icon(
+                    logPanelCollapsed ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                    size: 18,
+                    color: AppColors.cyan,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'LOGS',
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _LogFilterChip(
+                          label: 'All',
+                          active: logFilter == ScanLogFilter.all,
+                          onTap: () => onSetFilter(ScanLogFilter.all),
+                        ),
+                        const SizedBox(width: 6),
+                        _LogFilterChip(
+                          label: 'Warn+Error',
+                          active: logFilter == ScanLogFilter.warnError,
+                          onTap: () => onSetFilter(ScanLogFilter.warnError),
+                        ),
+                        const SizedBox(width: 6),
+                        _LogFilterChip(
+                          label: 'Error',
+                          active: logFilter == ScanLogFilter.errorOnly,
+                          onTap: () => onSetFilter(ScanLogFilter.errorOnly),
+                        ),
+                        const SizedBox(width: 6),
+                        _LogFilterChip(
+                          label: logAutoScroll ? 'AutoScroll On' : 'AutoScroll Off',
+                          active: logAutoScroll,
+                          onTap: onToggleAutoScroll,
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: onClearLogs,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.red.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: AppColors.red.withValues(alpha: 0.4)),
+                            ),
+                            child: Text(
+                              'Clear',
+                              style: TextStyle(color: AppColors.red, fontSize: 10, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${filteredLogs.length}/${logs.length}',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
           if (!collapsed) ...[
             const SizedBox(height: 8),
             Expanded(
