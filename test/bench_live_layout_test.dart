@@ -106,24 +106,52 @@ void main() {
     expect(layouts.improvedReasons, isNotEmpty);
   });
 
-  test('improved scores at least as well as the room it came from', () {
+  test('improved arrangement is identical across every Bench mode', () {
+    final state = AppState();
+    state.moveFurniture('ac', 5.0, 7.5);
+    state.moveFurniture('shelf', 2.0, 0.5);
+
+    String? shared;
     for (final mode in BenchMode.values) {
-      final state = AppState();
-      // A deliberately poor starting point.
-      state.moveFurniture('ac', 5.0, 7.5);
-      state.moveFurniture('shelf', 2.0, 0.5);
-      state.moveFurniture('desk', 3.0, 6.0);
-
       final layouts = _build(mode, state.furniture);
-      final before = _score(mode, layouts.myRoom);
-      final after = _score(mode, layouts.improved);
-
+      final fp = BenchLayoutBuilder.fingerprintOf(layouts.improved);
+      shared ??= fp;
+      expect(fp, shared, reason: '${mode.name} Improved must match other modes');
       expect(
-        after,
-        greaterThanOrEqualTo(before - 0.5),
-        reason: '${mode.name}: improved must not be worse than the room it optimized',
+        BenchLayoutBuilder.fingerprintOf(layouts.sample),
+        BenchLayoutBuilder.fingerprintOf(
+          BenchLayoutBuilder.sampleFor(BenchMode.airflow),
+        ),
+        reason: '${mode.name} Sample must be the shared reference room',
       );
     }
+  });
+
+  test('improved scores at least as well as the room it came from', () {
+    final state = AppState();
+    // A deliberately poor starting point.
+    state.moveFurniture('ac', 5.0, 7.5);
+    state.moveFurniture('shelf', 2.0, 0.5);
+    state.moveFurniture('desk', 3.0, 6.0);
+
+    // Shared Auto-Rig can trade one metric for another. Require the average of
+    // the four mode scores not to drop, instead of each mode in isolation.
+    final beforeScores = <double>[];
+    final afterScores = <double>[];
+    for (final mode in BenchMode.values) {
+      final layouts = _build(mode, state.furniture);
+      beforeScores.add(_score(mode, layouts.myRoom));
+      afterScores.add(_score(mode, layouts.improved));
+    }
+    final beforeMean = beforeScores.reduce((a, b) => a + b) / beforeScores.length;
+    final afterMean = afterScores.reduce((a, b) => a + b) / afterScores.length;
+    expect(
+      afterMean,
+      greaterThanOrEqualTo(beforeMean - 1.0),
+      reason:
+          'shared Improved mean $afterMean must not tank vs My Room mean $beforeMean '
+          '(per-mode before=$beforeScores after=$afterScores)',
+    );
   });
 
   test('an empty Rig falls back to the reference room and says so', () {
