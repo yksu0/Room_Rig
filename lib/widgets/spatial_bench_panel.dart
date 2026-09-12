@@ -7,11 +7,12 @@ import '../models/room_model.dart';
 import '../models/room_scale.dart';
 import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
+import '../services/layout_share_image.dart';
 import '../services/spatial_analyzer.dart';
+import '../services/furniture_sprites.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
-import 'furniture_shapes.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
 import 'score_ring.dart';
@@ -142,7 +143,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
 
   String get _layoutHint => _layouts?.fellBackToSample ?? false
       ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-      : 'Estimates floor use from the furniture in your Rig right now, then compares an optimized rearrange of the same room.';
+      : 'Rule-based floor-use estimate from Rig furniture (not measured area), then compares an optimized rearrange of the same room.';
 
   List<String> _notesFor(BenchLayoutKind kind) {
     switch (kind) {
@@ -183,15 +184,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       _step = _SpatialStep.results;
       _analyzeVariant = BenchLayoutKind.improved;
     });
-  }
-
-  BenchmarkValidation _validationForAnalyzeVariant(AppState state) {
-    return BenchmarkValidator.validateLayout(
-      furniture: _furnitureFor(_analyzeVariant),
-      gridCols: state.currentRoomData.gridCols,
-      gridRows: state.currentRoomData.gridRows,
-      mode: 'spatial',
-    );
   }
 
   BenchmarkValidation _validationForImproved(AppState state) {
@@ -235,6 +227,11 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
           ),
         ],
       ),
+      layoutRunAction: BenchRunAction(
+        buttonLabel: 'RUN SPATIAL ANALYSIS',
+        icon: RoomSvg.scan,
+        onRun: _runAnalysis,
+      ),
       middleBody: _analyzeSection(state),
       middleRunAction: BenchRunAction(
         buttonLabel: 'RUN SPATIAL ANALYSIS',
@@ -246,24 +243,46 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
               message:
                   'Improved layout matches your room — walkways are already clear enough to leave in place.',
             )
-          : null,
+          : benchWhyWinsCard(
+              reasons: _layouts?.improvedReasons ?? const [],
+              accentColor: AppColors.spatialColor,
+            ),
       resultsBody: _results(state),
       applyEnabled: !applyBlocked,
       applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
           : (_improvedIsNoOp ? 'Improved layout matches your room — nothing to apply.' : null),
       onApply: () async {
-        if (!await confirmBenchApply(context, validation: applyValidation)) return;
+        if (!await confirmBenchApply(
+          context,
+          validation: applyValidation,
+          fellBackToSample: _layouts?.fellBackToSample ?? false,
+        )) {
+          return;
+        }
         if (!context.mounted) return;
+        final before = List<FurnitureItem>.from(state.committedFurniture);
         state.applyFurnitureLayout(
           _furnitureFor(BenchLayoutKind.improved),
           markOptimized: true,
+          lockMode: 'spatial',
         );
+        final diff = summarizeLayoutDiff(before, state.furniture);
+        final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+        final room = state.currentRoomData;
+        final after = List<FurnitureItem>.from(state.furniture);
         showBenchApplySnackBar(
           context,
-          message: 'Improved walkway layout applied to Rig',
+          message: why.isEmpty ? 'Spatial applied · $diff' : 'Spatial applied · $diff · $why',
           accentColor: AppColors.spatialColor,
           onOpenRig: () => state.setTab(2),
+          onShareImage: () => LayoutShareImage.shareBeforeAfter(
+            gridCols: room.gridCols,
+            gridRows: room.gridRows,
+            before: before,
+            after: after,
+            footer: why.isEmpty ? diff : '$diff · $why',
+          ),
         );
       },
       onRefresh: _rebuild,
@@ -326,7 +345,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
                   BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
                       ? 'Reference room — your Rig is empty'
                       : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                  BenchLayoutKind.improved => 'Improved — your room, rearranged for walkways',
+                  BenchLayoutKind.improved => 'Improved — your room, Auto-Rig layout',
                   BenchLayoutKind.sample => 'Sample room — door aisle blocked, floor packed',
                 },
                 style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 14),
@@ -495,7 +514,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
   }
 
   Widget _results(AppState state) {
-    final validation = _validationForAnalyzeVariant(state);
+    final validation = _validationForImproved(state);
     final base = _myRoomMetrics!;
     final opt = _improvedMetrics!;
     final sample = _sampleMetrics;
@@ -531,7 +550,7 @@ class _SpatialHeatPainter extends CustomPainter {
     required this.cols,
     required this.rows,
     required this.furniture,
-  });
+  }) : super(repaint: FurnitureSprites.revision);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -561,21 +580,13 @@ class _SpatialHeatPainter extends CustomPainter {
       }
     }
 
-    for (final f in furniture) {
-      if (!FurnitureShapes.drawsMesh(f)) continue;
-      FurnitureShapes.paintItemPlan(
-        canvas,
-        f,
-        cell: Rect.fromLTWH(
-          rect.left + f.gridX * cellW,
-          rect.top + f.gridY * cellH,
-          f.width * cellW,
-          f.height * cellH,
-        ),
-        color: Colors.white,
-        strong: true,
-      );
-    }
+    BenchFurnitureRenderer.paint2D(
+      canvas,
+      roomRect: rect,
+      gridCols: cols,
+      gridRows: rows,
+      furniture: furniture,
+    );
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect, const Radius.circular(10)),
