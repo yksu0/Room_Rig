@@ -65,13 +65,50 @@ void main() {
     expect(FurnitureShapes.yBaseFor(monitor, [desk, monitor]), FurnitureShapes.deskTopY);
   });
 
-  test('retainV1 drops kitchen, purifier and upgrade leftovers', () {
+  test('retainV1 drops kitchen leftovers but keeps placed upgrades', () {
     final kept = RigCatalog.retainV1([
       FurnitureItem(id: 'chair', name: 'Chair', iconName: 'chair', category: 'ergonomics', gridX: 0, gridY: 0),
       FurnitureItem(id: 'kitchen', name: 'Kitchen Counter', iconName: 'kitchen', category: 'neutral', gridX: 0, gridY: 0),
       FurnitureItem(id: 'upg_purifier', name: 'Smart Air Purifier', iconName: 'purifier', category: 'airflow', gridX: 1, gridY: 1),
       FurnitureItem(id: 'custom_1', name: 'Box', iconName: 'shelf', category: 'neutral', gridX: 2, gridY: 2),
     ]);
-    expect(kept.map((f) => f.id), ['chair', 'custom_1']);
+    expect(kept.map((f) => f.id), ['chair', 'upg_purifier', 'custom_1']);
+  });
+
+  test('upgrade SKUs resolve to dedicated shapes, not generic boxes', () {
+    expect(
+      FurnitureShapes.kindFrom(id: 'upg_purifier', name: 'Smart Air Purifier', iconName: 'purifier'),
+      FurnitureKind.purifier,
+    );
+    expect(
+      FurnitureShapes.kindFrom(id: 'upg_monitor_arm', name: 'Monitor Arm', iconName: 'monitorArm'),
+      FurnitureKind.monitorArm,
+    );
+    expect(
+      FurnitureShapes.kindFrom(id: 'upg_cable_tray', name: 'Cable Tray', iconName: 'cableTray'),
+      FurnitureKind.cableTray,
+    );
+    expect(
+      FurnitureShapes.kindFrom(id: 'upg_mat', name: 'Anti-Fatigue Mat', iconName: 'mat'),
+      FurnitureKind.mat,
+    );
+    expect(
+      FurnitureShapes.kindFrom(id: 'upg_blinds', name: 'Smart Blinds', iconName: 'smartBlinds'),
+      FurnitureKind.smartBlinds,
+    );
+    expect(
+      FurnitureShapes.kindFrom(id: 'upg_light_bar', name: 'Smart Light Bar', iconName: 'lightBar'),
+      FurnitureKind.lightBar,
+    );
+
+    final boxes = FurnitureShapes.boxes(
+      kind: FurnitureKind.purifier,
+      x: 0,
+      z: 0,
+      width: 1,
+      depth: 1,
+      color: const Color(0xFFFFFFFF),
+    );
+    expect(boxes.length, greaterThan(1), reason: 'purifier should not be a single generic cube');
   });
 }
