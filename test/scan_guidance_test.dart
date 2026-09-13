@@ -41,7 +41,7 @@ void main() {
         target: target,
         cameraX: 2,
         cameraZ: 2,
-        yawDegrees: 0, // facing +Z / "top" of map
+        yawDegrees: 0, // facing +Z / bottom of map
         coverageReadyForFinish: false,
       );
       expect(
@@ -122,6 +122,30 @@ void main() {
       final corners = ScanGuidance.cornerChecklist(grid);
       expect(corners.firstWhere((c) => c.id == 'tl').done, isTrue);
       expect(corners.firstWhere((c) => c.id == 'br').done, isFalse);
+    });
+  });
+
+  group('ScanGuidance heading', () {
+    test('headingDegrees prefers look-at ray when floor hit exists', () {
+      final heading = ScanGuidance.headingDegrees(
+        cameraX: 1,
+        cameraZ: 1,
+        yawDegrees: 0,
+        lookAtX: 2,
+        lookAtZ: 1,
+        hasFloorHit: true,
+      );
+      expect(heading, closeTo(90, 0.1));
+    });
+
+    test('headingDegrees falls back to euler yaw without look-at', () {
+      final heading = ScanGuidance.headingDegrees(
+        cameraX: 1,
+        cameraZ: 1,
+        yawDegrees: 45,
+        hasFloorHit: false,
+      );
+      expect(heading, 45);
     });
   });
 }
