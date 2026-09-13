@@ -45,6 +45,65 @@ void main() {
       expect(finalized.scanSource, 'simulated');
     });
 
+    test('refineDimensionsFromObjects nudges oversized room claims', () {
+      final refined = ScanLayoutConverter.refineDimensionsFromObjects(
+        const RoomDimensions(lengthMeters: 3.6, widthMeters: 4.8, heightMeters: 2.7),
+        const [
+          ScanObject(
+            id: 'bed_1',
+            label: 'bed',
+            category: 'neutral',
+            confidence: 0.9,
+            center: Vec3(x: 1.5, y: 0.4, z: 2.0),
+            // Claims almost the whole room length — should scale length up toward bed prior.
+            sizeMeters: Vec3(x: 2.5, y: 0.5, z: 1.0),
+            yawDegrees: 0,
+            source: 'scan-fusion',
+          ),
+        ],
+      );
+      expect(refined.usedObjectScale, isTrue);
+      expect(refined.dimensions.lengthMeters, greaterThan(3.6));
+    });
+
+    test('COCO couch/tv labels map to Rig sofa/tv icons', () {
+      final layout = ScanLayoutConverter.finalizeLayout(
+        RoomLayoutModel(
+          roomName: 'Map',
+          dimensions: const RoomDimensions(lengthMeters: 3.6, widthMeters: 4.8, heightMeters: 2.7),
+          coverageGrid: CoverageGrid.empty(cols: 6, rows: 8),
+          objects: const [
+            ScanObject(
+              id: 'c1',
+              label: 'couch',
+              category: 'neutral',
+              confidence: 0.9,
+              center: Vec3(x: 1, y: 0.4, z: 2),
+              sizeMeters: Vec3(x: 1.8, y: 0.8, z: 0.9),
+              yawDegrees: 0,
+              source: 'yolo',
+            ),
+            ScanObject(
+              id: 't1',
+              label: 'tv',
+              category: 'neutral',
+              confidence: 0.9,
+              center: Vec3(x: 2.5, y: 0.6, z: 2),
+              sizeMeters: Vec3(x: 1.0, y: 0.7, z: 0.15),
+              yawDegrees: 0,
+              source: 'yolo',
+            ),
+          ],
+          updatedAt: DateTime.utc(2026, 1, 1),
+        ),
+        gridCols: 6,
+        gridRows: 8,
+      );
+      final items = ScanLayoutConverter.toFurniture(layout, gridCols: 6, gridRows: 8);
+      expect(items.any((f) => f.iconName == 'sofa'), isTrue);
+      expect(items.any((f) => f.iconName == 'tv'), isTrue);
+    });
+
     test('toFurniture maps detections onto the grid', () {
       final layout = ScanLayoutConverter.finalizeLayout(
         RoomLayoutModel(
@@ -74,6 +133,56 @@ void main() {
       expect(furniture.any((f) => f.iconName == 'chair'), isTrue);
       expect(furniture.any((f) => f.iconName == 'door'), isTrue);
       expect(furniture.any((f) => f.iconName == 'window'), isTrue);
+    });
+    test('toFurniture maps COCO couch/tv/laptop labels to room icons', () {
+      final layout = ScanLayoutConverter.finalizeLayout(
+        RoomLayoutModel(
+          roomName: 'Test',
+          dimensions: const RoomDimensions(lengthMeters: 3.6, widthMeters: 4.8, heightMeters: 2.7),
+          coverageGrid: CoverageGrid.empty(cols: 6, rows: 8),
+          objects: const [
+            ScanObject(
+              id: 'couch_1',
+              label: 'Couch',
+              category: 'ergonomics',
+              confidence: 0.9,
+              center: Vec3(x: 2.0, y: 0.5, z: 2.5),
+              sizeMeters: Vec3(x: 1.8, y: 0.8, z: 0.9),
+              yawDegrees: 0,
+              source: 'scan-fusion',
+            ),
+            ScanObject(
+              id: 'tv_1',
+              label: 'Tv',
+              category: 'lighting',
+              confidence: 0.85,
+              center: Vec3(x: 1.2, y: 0.8, z: 1.0),
+              sizeMeters: Vec3(x: 1.0, y: 0.6, z: 0.2),
+              yawDegrees: 0,
+              source: 'scan-fusion',
+            ),
+            ScanObject(
+              id: 'laptop_1',
+              label: 'Laptop',
+              category: 'lighting',
+              confidence: 0.8,
+              center: Vec3(x: 2.5, y: 0.5, z: 1.5),
+              sizeMeters: Vec3(x: 0.4, y: 0.2, z: 0.3),
+              yawDegrees: 0,
+              source: 'scan-fusion',
+            ),
+          ],
+          updatedAt: DateTime.utc(2026, 7, 22),
+        ),
+        gridCols: 6,
+        gridRows: 8,
+        inputProviderId: 'test',
+      );
+
+      final furniture = ScanLayoutConverter.toFurniture(layout, gridCols: 6, gridRows: 8);
+      expect(furniture.any((f) => f.iconName == 'sofa'), isTrue);
+      expect(furniture.any((f) => f.iconName == 'tv'), isTrue);
+      expect(furniture.any((f) => f.iconName == 'pc'), isTrue);
     });
   });
 
