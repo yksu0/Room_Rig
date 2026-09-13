@@ -51,6 +51,8 @@ void main() {
     expect(state.hasPendingPlacement, isFalse);
     expect(state.furniture.any((f) => f.id == 'upg_fan'), isFalse);
     expect(state.upgrades.first['added'], isFalse);
+    expect(state.takeTabNotice(), contains('Place cancelled'));
+    expect(state.takeTabNotice(), isNull);
   });
 
   test('jumping to Rig with a pending upgrade keeps the ghost', () {
