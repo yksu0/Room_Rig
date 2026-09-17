@@ -57,7 +57,7 @@ def _write_labels() -> None:
     roomrig = [
         "door", "window", "desk", "chair", "bed", "sofa", "tv", "monitor",
         "pc", "lamp", "fan", "ac", "shelf", "wardrobe", "plant", "purifier",
-        "heater", "blinds", "mat", "cable_tray", "light_bar", "monitor_arm",
+        "vent", "blinds",
     ]
     target = ASSETS / "yolo_roomrig_target_labels.txt"
     target.write_text("\n".join(roomrig) + "\n", encoding="utf-8")
