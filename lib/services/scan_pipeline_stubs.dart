@@ -1,94 +1,13 @@
 import 'dart:math';
-import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
+import 'dart:typed_data';
 
+import '../models/item_detection.dart';
 import '../models/scan_layout_model.dart';
+import 'scan_layout_converter.dart';
 import 'scan_pipeline.dart';
 
-class ArCoreTrackingProviderStub implements TrackingProvider {
-  static const _channelName = 'room_rig/arcore';
-  static const MethodChannel _channel = MethodChannel(_channelName);
-
-  int _frameIndex = 0;
-  bool _nativeReady = false;
-
-  @override
-  Future<void> initialize() async {
-    _frameIndex = 0;
-    _nativeReady = false;
-
-    if (!defaultTargetPlatform.name.toLowerCase().contains('android')) {
-      return;
-    }
-
-    try {
-      final result = await _channel.invokeMethod<Map<Object?, Object?>>('initializeTracking');
-      _nativeReady = (result?['ready'] as bool?) ?? false;
-    } catch (_) {
-      _nativeReady = false;
-    }
-  }
-
-  @override
-  Future<void> dispose() async {
-    if (!_nativeReady) return;
-    try {
-      await _channel.invokeMethod<void>('disposeTracking');
-    } catch (_) {
-      // Ignore and allow fallback path on next session.
-    }
-    _nativeReady = false;
-  }
-
-  @override
-  Future<TrackingSample> update(ScanFrameInput frame) async {
-    if (_nativeReady) {
-      try {
-        final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-          'updateTracking',
-          {'timestampMs': frame.timestamp.millisecondsSinceEpoch},
-        );
-
-        if (result != null) {
-          return TrackingSample(
-            cameraPosition: Vec3(
-              x: (result['x'] as num?)?.toDouble() ?? 0,
-              y: (result['y'] as num?)?.toDouble() ?? 0,
-              z: (result['z'] as num?)?.toDouble() ?? 0,
-            ),
-            cameraEulerDegrees: Vec3(
-              x: (result['pitch'] as num?)?.toDouble() ?? 0,
-              y: (result['yaw'] as num?)?.toDouble() ?? 0,
-              z: (result['roll'] as num?)?.toDouble() ?? 0,
-            ),
-            trackingStable: (result['trackingStable'] as bool?) ?? true,
-          );
-        }
-      } catch (_) {
-        _nativeReady = false;
-      }
-    }
-
-    // Fallback simulated tracking when native channel is unavailable.
-    _frameIndex++;
-    final t = _frameIndex / 16.0;
-
-    return TrackingSample(
-      cameraPosition: Vec3(
-        x: 1.2 + sin(t) * 0.9,
-        y: 1.5,
-        z: 1.1 + cos(t * 0.8) * 0.9,
-      ),
-      cameraEulerDegrees: Vec3(
-        x: 0,
-        y: (t * 25) % 360,
-        z: 0,
-      ),
-      trackingStable: true,
-    );
-  }
-}
+// Tracking providers live in scan_tracking.dart (Composite + visual odometry).
+export 'scan_tracking.dart';
 
 class BasicFrameQualityAnalyzer implements FrameQualityAnalyzer {
   @override
@@ -121,219 +40,233 @@ class BasicFrameQualityAnalyzer implements FrameQualityAnalyzer {
     if (avgBrightness < 35) {
       issues.add(ScanQualityIssue.poorLighting);
     }
-    if (avgContrast < 12) {
-      issues.add(ScanQualityIssue.motionBlur);
-    }
-    if (avgContrast < 8) {
+    if (avgContrast < 10) {
       issues.add(ScanQualityIssue.lowTexture);
     }
 
-    return ScanQualityReport(acceptable: issues.length < 2, issues: issues);
+    final acceptable = issues.isEmpty ||
+        (issues.length == 1 && issues.contains(ScanQualityIssue.lowTexture));
+    return ScanQualityReport(acceptable: acceptable, issues: issues);
   }
 }
 
 class HeuristicObjectDetector implements ObjectDetector {
+  final ObjectDetector _inner = LumaStructureObjectDetector();
+
+  @override
+  Future<List<Detection2D>> detect(ScanFrameInput frame) {
+    return _inner.detect(frame);
+  }
+}
+
+/// Finds high-contrast structure in luma frames and maps blobs to room labels.
+/// Used when a TFLite model is missing or returns no boxes (typical on S10+ until a model is shipped).
+class LumaStructureObjectDetector implements ObjectDetector {
+  static const _grid = 8;
   int _frameIndex = 0;
+  List<Detection2D> _last = const [];
 
   @override
   Future<List<Detection2D>> detect(ScanFrameInput frame) async {
     _frameIndex++;
-    if (_frameIndex % 6 != 0) {
-      return const [];
+    if (frame.bytes.isEmpty || frame.width <= 0 || frame.height <= 0) {
+      return _last;
     }
 
-    final hash = (frame.timestamp.microsecondsSinceEpoch ~/ 10000) % 3;
-    switch (hash) {
-      case 0:
-        return const [
-          Detection2D(
-            label: 'Desk',
-            category: 'ergonomics',
-            confidence: 0.82,
-            left: 0.20,
-            top: 0.36,
-            width: 0.28,
-            height: 0.16,
-          ),
-        ];
-      case 1:
-        return const [
-          Detection2D(
-            label: 'Chair',
-            category: 'ergonomics',
-            confidence: 0.80,
-            left: 0.52,
-            top: 0.48,
-            width: 0.18,
-            height: 0.20,
-          ),
-        ];
-      default:
-        return const [
-          Detection2D(
-            label: 'Window',
-            category: 'lighting',
-            confidence: 0.86,
-            left: 0.62,
-            top: 0.18,
-            width: 0.25,
-            height: 0.22,
-          ),
-        ];
-    }
-  }
-}
-
-class TfliteObjectDetectorPlaceholder implements ObjectDetector {
-  final String modelAssetPath;
-  final double scoreThreshold;
-  final double iouThreshold;
-  final int maxDetections;
-  final List<String> classLabels;
-
-  bool _initAttempted = false;
-  Interpreter? _interpreter;
-  int _inputWidth = 640;
-  int _inputHeight = 640;
-  bool _inputIsNhwc = true;
-
-  TfliteObjectDetectorPlaceholder({
-    required this.modelAssetPath,
-    this.scoreThreshold = 0.35,
-    this.iouThreshold = 0.45,
-    this.maxDetections = 12,
-    this.classLabels = const [
-      'chair',
-      'desk',
-      'sofa',
-      'bed',
-      'table',
-      'monitor',
-      'tv',
-      'lamp',
-      'window',
-      'door',
-      'shelf',
-      'cabinet',
-      'fan',
-      'plant',
-      'ac',
-    ],
-  });
-
-  @override
-  Future<List<Detection2D>> detect(ScanFrameInput frame) async {
-    await _ensureInterpreter();
-    final interpreter = _interpreter;
-    if (interpreter == null) {
-      return const [];
+    // Keep boxes sticky between frames so fusion can accumulate.
+    if (_frameIndex % 3 != 0 && _last.isNotEmpty) {
+      return _last;
     }
 
-    if (frame.bytes.isEmpty) {
-      return const [];
-    }
+    final w = frame.width;
+    final h = frame.height;
+    final bw = max(1, w ~/ _grid);
+    final bh = max(1, h ~/ _grid);
+    final energy = List<double>.filled(_grid * _grid, 0);
+    final brightness = List<double>.filled(_grid * _grid, 0);
 
-    try {
-      final input = _buildInputTensor(frame.bytes);
-      final outputTensor = interpreter.getOutputTensor(0);
-      final outputShape = outputTensor.shape;
-      final output = _createZeros(outputShape);
-
-      interpreter.run(input, output);
-
-      return YoloLikePostProcessor.decode(
-        rawOutput: output,
-        outputShape: outputShape,
-        labels: classLabels,
-        inputWidth: _inputWidth,
-        inputHeight: _inputHeight,
-        scoreThreshold: scoreThreshold,
-        iouThreshold: iouThreshold,
-        maxDetections: maxDetections,
-      );
-    } catch (_) {
-      // Let HybridObjectDetector fallback path handle failures.
-      return const [];
-    }
-  }
-
-  Future<void> _ensureInterpreter() async {
-    if (_initAttempted) return;
-    _initAttempted = true;
-
-    try {
-      await rootBundle.load(modelAssetPath);
-
-      final options = InterpreterOptions()..threads = 2;
-      final interpreter = await Interpreter.fromAsset(modelAssetPath, options: options);
-
-      final inputTensor = interpreter.getInputTensor(0);
-      final shape = inputTensor.shape;
-      if (shape.length == 4) {
-        if (shape[3] == 3) {
-          _inputIsNhwc = true;
-          _inputHeight = shape[1];
-          _inputWidth = shape[2];
-        } else if (shape[1] == 3) {
-          _inputIsNhwc = false;
-          _inputHeight = shape[2];
-          _inputWidth = shape[3];
+    for (int gy = 0; gy < _grid; gy++) {
+      for (int gx = 0; gx < _grid; gx++) {
+        final x0 = gx * bw;
+        final y0 = gy * bh;
+        final x1 = min(w, x0 + bw);
+        final y1 = min(h, y0 + bh);
+        var sum = 0.0;
+        var sumSq = 0.0;
+        var n = 0;
+        for (int y = y0; y < y1; y += 2) {
+          for (int x = x0; x < x1; x += 2) {
+            final idx = y * w + x;
+            if (idx >= frame.bytes.length) continue;
+            final v = frame.bytes[idx].toDouble();
+            sum += v;
+            sumSq += v * v;
+            n++;
+          }
         }
+        final mean = n == 0 ? 0.0 : sum / n;
+        final variance = n == 0 ? 0.0 : max(0.0, (sumSq / n) - mean * mean);
+        final i = gy * _grid + gx;
+        energy[i] = sqrt(variance);
+        brightness[i] = mean;
       }
-
-      _interpreter = interpreter;
-    } catch (_) {
-      _interpreter = null;
     }
-  }
 
-  dynamic _buildInputTensor(List<int> lumaBytes) {
-    if (_inputIsNhwc) {
-      final input = List.generate(
-        1,
-        (_) => List.generate(
-          _inputHeight,
-          (y) => List.generate(_inputWidth, (x) {
-            final pixel = _sampleLuma(lumaBytes, x, y, _inputWidth, _inputHeight) / 255.0;
-            return <double>[pixel, pixel, pixel];
-          }),
+    final threshold = _adaptiveThreshold(energy);
+    final visited = List<bool>.filled(energy.length, false);
+    final detections = <Detection2D>[];
+
+    for (int i = 0; i < energy.length; i++) {
+      if (visited[i] || energy[i] < threshold) continue;
+      final cluster = <int>[];
+      _flood(i, energy, threshold, visited, cluster);
+      if (cluster.length < 3) continue;
+
+      var minX = _grid, minY = _grid, maxX = 0, maxY = 0;
+      var avgBright = 0.0;
+      var avgEnergy = 0.0;
+      for (final c in cluster) {
+        final cx = c % _grid;
+        final cy = c ~/ _grid;
+        minX = min(minX, cx);
+        minY = min(minY, cy);
+        maxX = max(maxX, cx);
+        maxY = max(maxY, cy);
+        avgBright += brightness[c];
+        avgEnergy += energy[c];
+      }
+      avgBright /= cluster.length;
+      avgEnergy /= cluster.length;
+
+      final left = (minX / _grid).clamp(0.0, 0.92);
+      final top = (minY / _grid).clamp(0.0, 0.92);
+      final width = (((maxX - minX + 1) / _grid)).clamp(0.08, 1.0 - left);
+      final height = (((maxY - minY + 1) / _grid)).clamp(0.08, 1.0 - top);
+      final labeled = _stickyLabel(
+        left: left,
+        top: top,
+        width: width,
+        height: height,
+        brightness: avgBright,
+        energy: avgEnergy,
+      );
+      detections.add(
+        Detection2D(
+          label: labeled.$1,
+          category: labeled.$2,
+          confidence: (0.55 + (avgEnergy / 80.0).clamp(0.0, 0.35)).clamp(0.5, 0.92),
+          left: left,
+          top: top,
+          width: width,
+          height: height,
         ),
       );
-      return input;
+      if (detections.length >= 3) break;
     }
 
-    final input = List.generate(
-      1,
-      (_) => List.generate(
-        3,
-        (_) => List.generate(_inputHeight, (y) {
-          return List.generate(_inputWidth, (x) {
-            final pixel = _sampleLuma(lumaBytes, x, y, _inputWidth, _inputHeight) / 255.0;
-            return pixel;
-          });
-        }),
-      ),
+    if (detections.isEmpty) {
+      return _last;
+    }
+
+    detections.sort((a, b) => b.confidence.compareTo(a.confidence));
+    _last = detections.take(6).toList(growable: false);
+    return _last;
+  }
+
+  double _adaptiveThreshold(List<double> energy) {
+    final sorted = List<double>.from(energy)..sort();
+    final p70 = sorted[(sorted.length * 0.70).floor().clamp(0, sorted.length - 1)];
+    return max(12.0, p70 * 0.95);
+  }
+
+  void _flood(
+    int start,
+    List<double> energy,
+    double threshold,
+    List<bool> visited,
+    List<int> out,
+  ) {
+    final stack = <int>[start];
+    while (stack.isNotEmpty) {
+      final i = stack.removeLast();
+      if (i < 0 || i >= energy.length || visited[i] || energy[i] < threshold) continue;
+      visited[i] = true;
+      out.add(i);
+      final x = i % _grid;
+      final y = i ~/ _grid;
+      if (x > 0) stack.add(i - 1);
+      if (x < _grid - 1) stack.add(i + 1);
+      if (y > 0) stack.add(i - _grid);
+      if (y < _grid - 1) stack.add(i + _grid);
+    }
+  }
+
+  (String, String) _labelBlob({
+    required double left,
+    required double top,
+    required double width,
+    required double height,
+    required double brightness,
+    required double energy,
+  }) {
+    final cx = left + width / 2;
+    final cy = top + height / 2;
+    final area = width * height;
+
+    if (top < 0.28 && brightness > 140 && height < 0.35) {
+      return ('Window', 'lighting');
+    }
+    if (left < 0.12 && height > 0.28) {
+      return ('Door', 'neutral');
+    }
+    if (rightish(cx) && cy < 0.45 && brightness > 120) {
+      return ('Lamp', 'lighting');
+    }
+    if (cy > 0.42 && area > 0.06 && width > height) {
+      return ('Desk', 'ergonomics');
+    }
+    if (cy > 0.48 && area > 0.04 && height >= width * 0.85) {
+      return ('Chair', 'ergonomics');
+    }
+    if (area > 0.12 && cy > 0.35) {
+      return ('Sofa', 'ergonomics');
+    }
+    if (energy > 28 && cy < 0.5) {
+      return ('Monitor', 'ergonomics');
+    }
+    return ('Desk', 'ergonomics');
+  }
+
+  (String, String) _stickyLabel({
+    required double left,
+    required double top,
+    required double width,
+    required double height,
+    required double brightness,
+    required double energy,
+  }) {
+    final fresh = _labelBlob(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      brightness: brightness,
+      energy: energy,
     );
-    return input;
+    final cx = left + width / 2;
+    final cy = top + height / 2;
+    for (final prev in _last) {
+      final px = prev.left + prev.width / 2;
+      final py = prev.top + prev.height / 2;
+      final overlap = (cx - px).abs() < 0.22 && (cy - py).abs() < 0.22;
+      if (overlap) {
+        return (prev.label, prev.category);
+      }
+    }
+    return fresh;
   }
 
-  int _sampleLuma(List<int> bytes, int x, int y, int width, int height) {
-    final srcX = (x * (sqrt(bytes.length).toInt().clamp(1, width)) / max(1, width)).floor();
-    final srcY = (y * (sqrt(bytes.length).toInt().clamp(1, height)) / max(1, height)).floor();
-    final srcW = sqrt(bytes.length).toInt().clamp(1, bytes.length);
-    final idx = (srcY * srcW + srcX).clamp(0, bytes.length - 1);
-    return bytes[idx];
-  }
-
-  dynamic _createZeros(List<int> shape) {
-    if (shape.isEmpty) {
-      return 0.0;
-    }
-    if (shape.length == 1) {
-      return List<double>.filled(shape.first, 0.0);
-    }
-    return List.generate(shape.first, (_) => _createZeros(shape.sublist(1)));
-  }
+  bool rightish(double cx) => cx > 0.62;
 }
 
 class YoloLikePostProcessor {
@@ -347,40 +280,45 @@ class YoloLikePostProcessor {
     required double iouThreshold,
     required int maxDetections,
   }) {
-    final candidates = _toCandidates(rawOutput, outputShape);
-    if (candidates.isEmpty) {
+    if (outputShape.length != 3 || outputShape.first != 1) {
       return const [];
     }
 
+    final flat = _asFlatFloats(rawOutput);
+    if (flat.isEmpty) return const [];
+
+    final a = outputShape[1];
+    final b = outputShape[2];
+    final featuresFirst = (a >= 6 && b < 6) || (a >= 6 && b >= 6 && b >= a);
+    final featureCount = featuresFirst ? a : b;
+    final boxCount = featuresFirst ? b : a;
+    if (featureCount < 6 || boxCount <= 0) return const [];
+    if (flat.length < featureCount * boxCount) return const [];
+
+    final hasObj = _rowHasObjectness(featureCount, labels.length);
+    final classOffset = hasObj ? 5 : 4;
+    if (classOffset >= featureCount) return const [];
+
     final detections = <_DecodedCandidate>[];
-    for (final row in candidates) {
-      if (row.length < 6) continue;
+    for (int c = 0; c < boxCount; c++) {
+      double at(int f) => featuresFirst ? flat[f * boxCount + c] : flat[c * featureCount + f];
 
-      final cx = row[0];
-      final cy = row[1];
-      final w = row[2].abs();
-      final h = row[3].abs();
-
-      bool hasObj = false;
-      if (row.length >= 6) {
-        final obj = row[4];
-        hasObj = obj >= 0 && obj <= 1;
-      }
-
-      final classOffset = hasObj ? 5 : 4;
-      if (classOffset >= row.length) continue;
+      final cx = at(0);
+      final cy = at(1);
+      final w = at(2).abs();
+      final h = at(3).abs();
 
       var bestClass = 0;
       var bestClassScore = 0.0;
-      for (int i = classOffset; i < row.length; i++) {
-        final s = row[i];
+      for (int i = classOffset; i < featureCount; i++) {
+        final s = at(i);
         if (s > bestClassScore) {
           bestClassScore = s;
           bestClass = i - classOffset;
         }
       }
 
-      final conf = hasObj ? (row[4] * bestClassScore) : bestClassScore;
+      final conf = hasObj ? (at(4) * bestClassScore) : bestClassScore;
       if (conf < scoreThreshold) continue;
 
       final normCx = cx > 1.5 ? cx / inputWidth : cx;
@@ -388,19 +326,14 @@ class YoloLikePostProcessor {
       final normW = w > 1.5 ? w / inputWidth : w;
       final normH = h > 1.5 ? h / inputHeight : h;
 
-      final left = (normCx - normW / 2).clamp(0.0, 1.0);
-      final top = (normCy - normH / 2).clamp(0.0, 1.0);
-      final width = normW.clamp(0.0, 1.0);
-      final height = normH.clamp(0.0, 1.0);
-
       detections.add(
         _DecodedCandidate(
           classIndex: bestClass,
           score: conf,
-          left: left,
-          top: top,
-          width: width,
-          height: height,
+          left: (normCx - normW / 2).clamp(0.0, 1.0),
+          top: (normCy - normH / 2).clamp(0.0, 1.0),
+          width: normW.clamp(0.0, 1.0),
+          height: normH.clamp(0.0, 1.0),
         ),
       );
     }
@@ -424,50 +357,25 @@ class YoloLikePostProcessor {
         .toList(growable: false);
   }
 
-  static List<List<double>> _toCandidates(dynamic output, List<int> shape) {
-    if (shape.length != 3 || shape.first != 1) {
-      return const [];
+  static Float32List _asFlatFloats(dynamic output) {
+    if (output is Float32List) return output;
+    if (output is TypedData) {
+      return Float32List.view(
+        output.buffer,
+        output.offsetInBytes,
+        output.lengthInBytes ~/ 4,
+      );
     }
-
     final flat = <double>[];
     _flatten(output, flat);
-    if (flat.isEmpty) return const [];
-
-    final a = shape[1];
-    final b = shape[2];
-
-    final rows = <List<double>>[];
-    final featuresFirst = (a >= 6 && b < 6) ||
-        (a >= 6 && b >= 6 && b >= a);
-
-    if (featuresFirst) {
-      // [1, features, count]
-      for (int c = 0; c < b; c++) {
-        final row = List<double>.filled(a, 0.0);
-        for (int f = 0; f < a; f++) {
-          row[f] = flat[f * b + c];
-        }
-        rows.add(row);
-      }
-      return rows;
-    }
-
-    if (b >= 6) {
-      // [1, count, features]
-      for (int c = 0; c < a; c++) {
-        final row = List<double>.filled(b, 0.0);
-        for (int f = 0; f < b; f++) {
-          row[f] = flat[c * b + f];
-        }
-        rows.add(row);
-      }
-      return rows;
-    }
-
-    return const [];
+    return Float32List.fromList(flat);
   }
 
   static void _flatten(dynamic value, List<double> out) {
+    if (value is Float32List) {
+      out.addAll(value);
+      return;
+    }
     if (value is List) {
       for (final v in value) {
         _flatten(v, out);
@@ -532,12 +440,33 @@ class YoloLikePostProcessor {
     return clean[0].toUpperCase() + clean.substring(1);
   }
 
+  static bool _rowHasObjectness(int rowLength, int labelCount) {
+    if (labelCount > 0) {
+      if (rowLength == labelCount + 5) return true;
+      if (rowLength == labelCount + 4) return false;
+    }
+    // COCO-80 smoke models: 84 = no obj, 85 = with obj.
+    if (rowLength == 84) return false;
+    if (rowLength == 85) return true;
+    return false;
+  }
+
   static String _mapCategory(String label) {
     final v = label.toLowerCase();
-    if (v.contains('chair') || v.contains('desk') || v.contains('table') || v.contains('sofa') || v.contains('bed')) {
+    if (v.contains('chair') ||
+        v.contains('desk') ||
+        v.contains('table') ||
+        v.contains('sofa') ||
+        v.contains('couch') ||
+        v.contains('bed')) {
       return 'ergonomics';
     }
-    if (v.contains('window') || v.contains('lamp') || v.contains('light') || v.contains('monitor') || v.contains('tv')) {
+    if (v.contains('window') ||
+        v.contains('lamp') ||
+        v.contains('light') ||
+        v.contains('monitor') ||
+        v.contains('tv') ||
+        v.contains('laptop')) {
       return 'lighting';
     }
     if (v.contains('fan') || v.contains('ac') || v.contains('vent') || v.contains('air')) {
@@ -582,12 +511,49 @@ class HybridObjectDetector implements ObjectDetector {
 }
 
 class GridCoverageFusionEngine implements ScanFusionEngine {
-  static const double _staleDecayPerFrame = 0.035;
-  static const double _minConfidenceToKeep = 0.18;
+  static const double _staleDecayPerFrame = 0.012;
+  static const double _minConfidenceToKeep = 0.16;
+  int _frameIndex = 0;
+  Vec3? _poseOrigin;
+  Vec3? _seedOrigin;
+
+  /// Pin the room origin to a measured world point (center of the size-walk).
+  void useWorldOrigin(Vec3 origin) {
+    _seedOrigin = origin;
+  }
 
   @override
   ScanFusionState initialize(RoomLayoutModel seedLayout) {
+    _frameIndex = 0;
+    _poseOrigin = _seedOrigin;
     return ScanFusionState(layout: seedLayout);
+  }
+
+  Vec3 _mapWorldPoint(Vec3 pose, RoomDimensions dimensions) {
+    _poseOrigin ??= Vec3(x: pose.x, y: pose.y, z: pose.z);
+    final x = (pose.x - _poseOrigin!.x) + dimensions.lengthMeters * 0.5;
+    final z = (pose.z - _poseOrigin!.z) + dimensions.widthMeters * 0.5;
+    return Vec3(
+      x: x.clamp(0.15, dimensions.lengthMeters - 0.15),
+      y: pose.y,
+      z: z.clamp(0.15, dimensions.widthMeters - 0.15),
+    );
+  }
+
+  TrackingSample _mappedTracking(TrackingSample tracking, RoomDimensions dimensions) {
+    final mapped = _mapWorldPoint(tracking.cameraPosition, dimensions);
+    final look = tracking.lookAtPosition;
+    return TrackingSample(
+      cameraPosition: mapped,
+      cameraEulerDegrees: tracking.cameraEulerDegrees,
+      trackingStable: tracking.trackingStable,
+      confidence: tracking.confidence,
+      source: tracking.source,
+      motionMeters: tracking.motionMeters,
+      depthHintMeters: tracking.depthHintMeters,
+      lookAtPosition: look == null ? null : _mapWorldPoint(look, dimensions),
+      hasFloorHit: tracking.hasFloorHit,
+    );
   }
 
   @override
@@ -597,46 +563,74 @@ class GridCoverageFusionEngine implements ScanFusionEngine {
   }) {
     final layout = current.layout;
     final grid = layout.coverageGrid;
+    _frameIndex += 1;
 
     if (grid.cols == 0 || grid.rows == 0) {
       return current;
     }
 
-    final nx = (frame.tracking.cameraPosition.x / max(0.001, layout.dimensions.lengthMeters)).clamp(0.0, 0.9999);
-    final nz = (frame.tracking.cameraPosition.z / max(0.001, layout.dimensions.widthMeters)).clamp(0.0, 0.9999);
+    final tracking = _mappedTracking(frame.tracking, layout.dimensions);
+    final aim = tracking.lookAtPosition ?? tracking.cameraPosition;
+    final nx = (aim.x / max(0.001, layout.dimensions.lengthMeters)).clamp(0.0, 0.9999);
+    final nz = (aim.z / max(0.001, layout.dimensions.widthMeters)).clamp(0.0, 0.9999);
 
     final col = (nx * grid.cols).floor().clamp(0, grid.cols - 1);
     final row = (nz * grid.rows).floor().clamp(0, grid.rows - 1);
 
-    var nextGrid = grid.markCell(col, row, 1.0);
-
-    final localBoost = frame.quality.acceptable ? 0.75 : 0.45;
-    for (int dx = -1; dx <= 1; dx++) {
-      for (int dy = -1; dy <= 1; dy++) {
-        if (dx == 0 && dy == 0) continue;
-        nextGrid = nextGrid.markCell(col + dx, row + dy, localBoost);
-      }
-    }
-
-    for (final d in frame.detections) {
-      final dCol = (d.left * grid.cols).floor().clamp(0, grid.cols - 1);
-      final dRow = (d.top * grid.rows).floor().clamp(0, grid.rows - 1);
-      nextGrid = nextGrid.markCell(dCol, dRow, 1.0);
+    // Mark what the camera is looking at — not a wide blob under the user's feet.
+    var nextGrid = grid.markCell(col, row, tracking.hasFloorHit || frame.quality.acceptable ? 1.0 : 0.45);
+    if (frame.quality.acceptable) {
+      nextGrid = nextGrid.markCell(col - 1, row, 0.55);
+      nextGrid = nextGrid.markCell(col + 1, row, 0.55);
+      nextGrid = nextGrid.markCell(col, row - 1, 0.55);
+      nextGrid = nextGrid.markCell(col, row + 1, 0.55);
     }
 
     final nextObjects = _fuseObjects(
       currentObjects: layout.objects,
       detections: frame.detections,
-      tracking: frame.tracking,
+      tracking: tracking,
       dimensions: layout.dimensions,
     );
 
-    return ScanFusionState(layout: layout.withCoverage(nextGrid).withObjects(nextObjects));
+    for (final obj in nextObjects) {
+      final oCol = ((obj.center.x / max(0.001, layout.dimensions.lengthMeters)) * grid.cols)
+          .floor()
+          .clamp(0, grid.cols - 1);
+      final oRow = ((obj.center.z / max(0.001, layout.dimensions.widthMeters)) * grid.rows)
+          .floor()
+          .clamp(0, grid.rows - 1);
+      nextGrid = nextGrid.markCell(oCol, oRow, 1.0);
+    }
+
+    final itemDetections = <ItemDetection>[
+      for (int i = 0; i < frame.detections.length; i++)
+        frame.detections[i].toItemDetection(
+          id: 'det_${_frameIndex}_$i',
+          sourceFrame: _frameIndex,
+        ),
+    ];
+
+    return ScanFusionState(
+      layout: layout
+          .withCoverage(nextGrid)
+          .withObjects(nextObjects)
+          .withDetections(itemDetections),
+    );
   }
 
   @override
   RoomLayoutModel finalize(ScanFusionState state) {
-    return state.layout;
+    final layout = state.layout;
+    final cols = layout.coverageGrid.cols;
+    final rows = layout.coverageGrid.rows;
+    if (cols <= 0 || rows <= 0) return layout;
+    return ScanLayoutConverter.finalizeLayout(
+      layout,
+      gridCols: cols,
+      gridRows: rows,
+      inputProviderId: layout.scanSource ?? 'scan-fusion',
+    );
   }
 
   List<ScanObject> _fuseObjects({
@@ -649,15 +643,19 @@ class GridCoverageFusionEngine implements ScanFusionEngine {
     final updatedIndices = <int>{};
 
     for (final det in detections) {
+      if (det.confidence < 0.55) continue;
       final candidate = _estimateObject(det, tracking, dimensions);
 
       int bestIndex = -1;
-      double bestDist = 1.25;
+      double bestDist = 0.95;
       for (int i = 0; i < next.length; i++) {
         final obj = next[i];
-        if (obj.label.toLowerCase() != candidate.label.toLowerCase()) continue;
+        final sameLabel = obj.label.toLowerCase() == candidate.label.toLowerCase();
+        final generic = obj.label.toLowerCase() == 'furniture' ||
+            candidate.label.toLowerCase() == 'furniture';
         final dist = _distanceMeters(obj.center, candidate.center);
-        if (dist < bestDist) {
+        final limit = sameLabel || generic ? 0.95 : 0.55;
+        if (dist < limit && dist < bestDist) {
           bestDist = dist;
           bestIndex = i;
         }
@@ -711,25 +709,44 @@ class GridCoverageFusionEngine implements ScanFusionEngine {
   }
 
   ScanObject _estimateObject(Detection2D det, TrackingSample tracking, RoomDimensions dimensions) {
-    final cxNorm = (det.left + det.width / 2).clamp(0.0, 1.0);
-    final czNorm = (det.top + det.height / 2).clamp(0.0, 1.0);
+    final cx = ((det.left + det.width / 2) - 0.5).clamp(-0.5, 0.5);
+    final yawRad = tracking.cameraEulerDegrees.y * pi / 180.0;
+    final look = tracking.lookAtPosition;
+    final depth = (tracking.depthHintMeters ?? 1.8).clamp(0.7, 5.5);
+    late final double worldX;
+    late final double worldZ;
+    if (look != null && tracking.hasFloorHit) {
+      final rightX = cos(yawRad);
+      final rightZ = -sin(yawRad);
+      final lateral = cx * depth * 0.35;
+      worldX = (look.x + rightX * lateral).clamp(0.15, dimensions.lengthMeters - 0.15);
+      worldZ = (look.z + rightZ * lateral).clamp(0.15, dimensions.widthMeters - 0.15);
+    } else {
+      final forwardX = sin(yawRad);
+      final forwardZ = cos(yawRad);
+      final rightX = cos(yawRad);
+      final rightZ = -sin(yawRad);
+      final lateral = cx * depth * 0.55;
+      worldX = (tracking.cameraPosition.x + forwardX * depth + rightX * lateral)
+          .clamp(0.15, dimensions.lengthMeters - 0.15);
+      worldZ = (tracking.cameraPosition.z + forwardZ * depth + rightZ * lateral)
+          .clamp(0.15, dimensions.widthMeters - 0.15);
+    }
 
-    final worldX = ((cxNorm * dimensions.lengthMeters) * 0.7 + tracking.cameraPosition.x * 0.3)
-        .clamp(0.0, dimensions.lengthMeters);
-    final worldZ = ((czNorm * dimensions.widthMeters) * 0.7 + tracking.cameraPosition.z * 0.3)
-        .clamp(0.0, dimensions.widthMeters);
-
-    final estWidth = (det.width * dimensions.lengthMeters).clamp(0.25, 2.4);
-    final estDepth = (det.height * dimensions.widthMeters).clamp(0.25, 2.4);
-    final estHeight = ((det.height * dimensions.heightMeters) * 0.95).clamp(0.35, 2.2);
+    final depthWeight = (1.6 / depth).clamp(0.55, 1.35);
+    final estWidth = (det.width * dimensions.lengthMeters * 0.45 * depthWeight).clamp(0.35, 1.8);
+    final estDepth = (det.height * dimensions.widthMeters * 0.35 * depthWeight).clamp(0.35, 1.8);
+    final estHeight = ((det.height * dimensions.heightMeters) * 0.85 * depthWeight).clamp(0.4, 2.0);
 
     final id = '${det.label.toLowerCase().replaceAll(' ', '_')}_${worldX.toStringAsFixed(1)}_${worldZ.toStringAsFixed(1)}';
+    final confBoost = tracking.confidence.clamp(0.0, 1.0);
+    final confidence = (det.confidence * 0.75 + confBoost * 0.25).clamp(0.0, 1.0);
 
     return ScanObject(
       id: id,
       label: det.label,
       category: det.category,
-      confidence: det.confidence,
+      confidence: confidence,
       center: Vec3(x: worldX, y: estHeight / 2, z: worldZ),
       sizeMeters: Vec3(x: estWidth, y: estHeight, z: estDepth),
       yawDegrees: tracking.cameraEulerDegrees.y,

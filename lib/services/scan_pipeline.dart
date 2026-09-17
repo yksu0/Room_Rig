@@ -1,3 +1,4 @@
+import '../models/item_detection.dart';
 import '../models/scan_layout_model.dart';
 
 enum ScanQualityIssue {
@@ -13,11 +14,15 @@ class ScanFrameInput {
   final int height;
   final List<int> bytes;
 
+  /// When set (e.g. ARCore-owned capture), tracking skips a second native poll.
+  final TrackingSample? attachedTracking;
+
   const ScanFrameInput({
     required this.timestamp,
     required this.width,
     required this.height,
     required this.bytes,
+    this.attachedTracking,
   });
 }
 
@@ -25,11 +30,23 @@ class TrackingSample {
   final Vec3 cameraPosition;
   final Vec3 cameraEulerDegrees;
   final bool trackingStable;
+  final double confidence;
+  final String source;
+  final double motionMeters;
+  final double? depthHintMeters;
+  final Vec3? lookAtPosition;
+  final bool hasFloorHit;
 
   const TrackingSample({
     required this.cameraPosition,
     required this.cameraEulerDegrees,
     required this.trackingStable,
+    this.confidence = 0.7,
+    this.source = 'unknown',
+    this.motionMeters = 0,
+    this.depthHintMeters,
+    this.lookAtPosition,
+    this.hasFloorHit = false,
   });
 }
 
@@ -58,6 +75,17 @@ class Detection2D {
     required this.width,
     required this.height,
   });
+
+  ItemDetection toItemDetection({required String id, required int sourceFrame}) {
+    return ItemDetection(
+      id: id,
+      label: label,
+      category: category,
+      bbox: BBox2D(left: left, top: top, width: width, height: height),
+      confidence: confidence,
+      sourceFrame: sourceFrame,
+    );
+  }
 }
 
 class ScanFrameResult {
@@ -122,6 +150,39 @@ class ScanPipeline {
   Future<void> initialize(RoomLayoutModel seedLayout) async {
     await trackingProvider.initialize();
     _state = fusionEngine.initialize(seedLayout);
+  }
+
+  /// Swap the fusion layout without tearing down ARCore / tracking.
+  void rebindLayout(RoomLayoutModel seedLayout) {
+    _state = fusionEngine.initialize(seedLayout);
+  }
+
+  Future<(TrackingSample, ScanQualityReport)> sampleTrackingAndQuality(
+    ScanFrameInput frame,
+  ) async {
+    TrackingSample tracking;
+    try {
+      tracking = await trackingProvider.update(frame);
+      _lastTrackingSample = tracking;
+    } catch (_) {
+      tracking = _lastTrackingSample ??
+          const TrackingSample(
+            cameraPosition: Vec3(x: 0, y: 1.5, z: 0),
+            cameraEulerDegrees: Vec3(x: 0, y: 0, z: 0),
+            trackingStable: false,
+          );
+    }
+
+    ScanQualityReport baseQuality;
+    try {
+      baseQuality = await qualityAnalyzer.analyze(frame);
+    } catch (_) {
+      baseQuality = const ScanQualityReport(
+        acceptable: false,
+        issues: [ScanQualityIssue.lowTexture],
+      );
+    }
+    return (tracking, _mergeTrackingQuality(baseQuality, tracking));
   }
 
   Future<ScanPipelineTick> processFrame(ScanFrameInput frame) async {
@@ -189,10 +250,12 @@ class ScanPipeline {
       layout: next.layout,
       frameResult: result,
       diagnostics: ScanPipelineDiagnostics(
-        trackingFallbackUsed: trackingFallbackUsed,
+        trackingFallbackUsed: trackingFallbackUsed || tracking.source == 'simulated' || tracking.source == 'fallback',
         qualityFallbackUsed: qualityFallbackUsed,
         detectorFallbackUsed: detectorFallbackUsed,
         fusionFallbackUsed: fusionFallbackUsed,
+        trackingSource: tracking.source,
+        trackingConfidence: tracking.confidence,
       ),
     );
   }
@@ -201,16 +264,21 @@ class ScanPipeline {
     ScanQualityReport base,
     TrackingSample tracking,
   ) {
-    if (tracking.trackingStable) {
-      return base;
-    }
-
     final mergedIssues = <ScanQualityIssue>[...base.issues];
-    if (!mergedIssues.contains(ScanQualityIssue.trackingLost)) {
-      mergedIssues.add(ScanQualityIssue.trackingLost);
+    if (!tracking.trackingStable || tracking.confidence < 0.35) {
+      if (!mergedIssues.contains(ScanQualityIssue.trackingLost)) {
+        mergedIssues.add(ScanQualityIssue.trackingLost);
+      }
+    }
+    if (tracking.motionMeters > 0.35) {
+      if (!mergedIssues.contains(ScanQualityIssue.motionBlur)) {
+        mergedIssues.add(ScanQualityIssue.motionBlur);
+      }
     }
 
-    return ScanQualityReport(acceptable: false, issues: mergedIssues);
+    final trackingOk = tracking.trackingStable && tracking.confidence >= 0.35;
+    final acceptable = trackingOk && base.acceptable;
+    return ScanQualityReport(acceptable: acceptable, issues: mergedIssues);
   }
 
   RoomLayoutModel finalize() {
@@ -243,12 +311,16 @@ class ScanPipelineDiagnostics {
   final bool qualityFallbackUsed;
   final bool detectorFallbackUsed;
   final bool fusionFallbackUsed;
+  final String trackingSource;
+  final double trackingConfidence;
 
   const ScanPipelineDiagnostics({
     this.trackingFallbackUsed = false,
     this.qualityFallbackUsed = false,
     this.detectorFallbackUsed = false,
     this.fusionFallbackUsed = false,
+    this.trackingSource = 'unknown',
+    this.trackingConfidence = 0,
   });
 
   bool get hasFallback =>

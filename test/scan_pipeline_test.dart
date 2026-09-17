@@ -241,20 +241,21 @@ void main() {
         updatedAt: DateTime.utc(2026, 1, 1),
       );
 
-      final next = engine.fuseFrame(
-        current: engine.initialize(seed),
-        frame: const ScanFrameResult(
-          tracking: TrackingSample(
-            cameraPosition: Vec3(x: 2, y: 1.5, z: 2),
-            cameraEulerDegrees: Vec3(x: 0, y: 0, z: 0),
-            trackingStable: true,
-          ),
-          quality: ScanQualityReport(acceptable: true, issues: []),
-          detections: [],
+      var state = engine.initialize(seed);
+      const empty = ScanFrameResult(
+        tracking: TrackingSample(
+          cameraPosition: Vec3(x: 2, y: 1.5, z: 2),
+          cameraEulerDegrees: Vec3(x: 0, y: 0, z: 0),
+          trackingStable: true,
         ),
+        quality: ScanQualityReport(acceptable: true, issues: []),
+        detections: [],
       );
+      for (int i = 0; i < 6; i++) {
+        state = engine.fuseFrame(current: state, frame: empty);
+      }
 
-      expect(next.layout.objects.where((o) => o.id == 'stale_obj'), isEmpty);
+      expect(state.layout.objects.where((o) => o.id == 'stale_obj'), isEmpty);
     });
 
     test('keeps locked scan-fusion objects even when stale', () {

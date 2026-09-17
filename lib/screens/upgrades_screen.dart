@@ -2,10 +2,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
+import '../models/upgrade_catalog.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/score_ring.dart';
+import '../widgets/confirm_dialogs.dart';
 
 class UpgradesScreen extends StatelessWidget {
   const UpgradesScreen({super.key});
@@ -28,6 +30,15 @@ class UpgradesScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildImpactPreview(state),
+                    const SizedBox(height: 10),
+                    Text(
+                      UpgradeCatalog.honestyNote,
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                        height: 1.35,
+                      ),
+                    ),
                     const SizedBox(height: 24),
                     _buildUpgradeList(context, state),
                     const SizedBox(height: 32),
@@ -55,6 +66,12 @@ class UpgradesScreen extends StatelessWidget {
             ],
           ),
           const Spacer(),
+          if (addedCount > 0)
+            Text(
+              '\$${state.upgradesCost.toStringAsFixed(0)} spent',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          if (addedCount > 0) const SizedBox(width: 8),
           if (addedCount > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -104,7 +121,8 @@ class UpgradesScreen extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  'Install upgrades below to see score impact',
+                  'Install an upgrade to drop it onto your Rig layout, then rescore in Bench',
+                  textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.textMuted, fontSize: 13),
                 ),
               ),
@@ -114,19 +132,19 @@ class UpgradesScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 ScoreRing(
-                  score: (state.airflowScore + state.upgradeAirflowBonus).clamp(0, 100),
+                  score: state.airflowScore.clamp(0, 100),
                   size: 75,
                   color: AppColors.airflowColor,
                   label: 'Airflow',
                 ),
                 ScoreRing(
-                  score: (state.lightingScore + state.upgradeLightingBonus).clamp(0, 100),
+                  score: state.lightingScore.clamp(0, 100),
                   size: 75,
                   color: AppColors.lightingColor,
                   label: 'Lighting',
                 ),
                 ScoreRing(
-                  score: (state.ergonomicsScore + state.upgradeErgonomicsBonus).clamp(0, 100),
+                  score: state.ergonomicsScore.clamp(0, 100),
                   size: 75,
                   color: AppColors.ergonomicsColor,
                   label: 'Ergonomics',
@@ -134,11 +152,16 @@ class UpgradesScreen extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            _BoostRow(label: 'Airflow boost', value: state.upgradeAirflowBonus, color: AppColors.airflowColor),
+            const Text(
+              'Catalog tags (not Hub score points). Hub rings use Bench sims / layout impacts.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 11, height: 1.35),
+            ),
+            const SizedBox(height: 10),
+            _BoostRow(label: 'Airflow tag', value: state.upgradeAirflowBonus, color: AppColors.airflowColor),
             const SizedBox(height: 6),
-            _BoostRow(label: 'Lighting boost', value: state.upgradeLightingBonus, color: AppColors.lightingColor),
+            _BoostRow(label: 'Lighting tag', value: state.upgradeLightingBonus, color: AppColors.lightingColor),
             const SizedBox(height: 6),
-            _BoostRow(label: 'Ergonomics boost', value: state.upgradeErgonomicsBonus, color: AppColors.ergonomicsColor),
+            _BoostRow(label: 'Ergo tag', value: state.upgradeErgonomicsBonus, color: AppColors.ergonomicsColor),
           ],
         ],
       ),
@@ -187,7 +210,48 @@ class UpgradesScreen extends StatelessWidget {
                   upgrade: u,
                   isAdded: isAdded,
                   categoryColor: cat.$3,
-                  onToggle: () => state.toggleUpgrade(i),
+                  onToggle: () async {
+                    final adding = !(u['added'] as bool);
+                    if (!adding) {
+                      final ok = await confirmAction(
+                        context,
+                        title: 'Remove ${u['name']}?',
+                        body: 'This removes the upgrade from your Rig layout.',
+                        confirmLabel: 'Remove',
+                        danger: true,
+                      );
+                      if (!ok || !context.mounted) return;
+                    }
+                    final ok = state.toggleUpgrade(i, pending: adding);
+                    if (!ok) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('No free cell — move furniture in Rig first'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                      return;
+                    }
+                    if (adding) {
+                      state.setTab(2);
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          adding
+                              ? '${u['name']} — drag the ghost on Rig, then Place'
+                              : '${u['name']} removed from Rig',
+                        ),
+                        backgroundColor: cat.$3.withValues(alpha: 0.9),
+                        behavior: SnackBarBehavior.floating,
+                        action: SnackBarAction(
+                          label: 'OPEN RIG',
+                          textColor: Colors.black,
+                          onPressed: () => state.setTab(2),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               );
             }),
@@ -265,6 +329,21 @@ class _UpgradeCard extends StatelessWidget {
                   Text(
                     upgrade['desc'] as String,
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(
+                        '\$${(upgrade['price'] as num?)?.toStringAsFixed(0) ?? '0'}',
+                        style: TextStyle(color: AppColors.cyan, fontSize: 12, fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(width: 8),
+                      if (isAdded)
+                        Text(
+                          'Installed',
+                          style: TextStyle(color: categoryColor, fontSize: 10, fontWeight: FontWeight.w700),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   Row(
@@ -350,7 +429,7 @@ class _BoostRow extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Text(
-          '+${value.toInt()} pts',
+          '+${value.toInt()}',
           style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800),
         ),
       ],

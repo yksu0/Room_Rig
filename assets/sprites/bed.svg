@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Top-down bed: mattress + pillow -->
+  <rect x="10" y="8" width="44" height="48" rx="3" stroke="currentColor" stroke-width="3" fill="currentColor" fill-opacity="0.18"/>
+  <rect x="14" y="12" width="36" height="14" rx="2" stroke="currentColor" stroke-width="2" fill="currentColor" fill-opacity="0.4"/>
+  <line x1="14" y1="32" x2="50" y2="32" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.5"/>
+</svg>

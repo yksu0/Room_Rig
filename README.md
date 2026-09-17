@@ -1,63 +1,64 @@
 # Room Rig
 
-Room Rig is a Flutter prototype for room scanning, room layout editing, and benchmark-style optimization.
+Flutter app that treats an indoor room like a PC build: **layout → score → optimize**.
 
-The product goal is:
-- scan a room
-- generate 2D and 3D layouts
-- list detected items in a sidebar for quick selection/highlighting
-- support manual drag-and-drop arrangement in 2D
-- support 3D orbit, tap-to-select, and deselect-on-second-tap in the room view
-- support auto-arrangement optimized for airflow, lighting, or ergonomics
+**Core loop (demo-ready):** Hub → Rig → Bench → Upgrades  
+**Optional:** Scan seeds a layout when the camera cooperates.
 
-## Current Prototype Status
+## What works now
 
-Implemented now:
-- multi-screen app shell and state model
-- scanner experience UI with progress/log simulation
-- 2D grid canvas with furniture drag-and-drop
-- 3D room view with orbit controls, zoom, and item highlighting
-- benchmark screen with live room-model preview and simulation results
-- score model for airflow, lighting, and ergonomics
-- upgrades and optimization visualization screens
+- **Hub** — presets, manual rooms, My Rooms, score rings (`ROUGH EST.` / `BENCH OK`), checkpoints / history / compare (local builds)
+- **Rig** — 2D drag + snap/collision, 3D orbit + MOVE, Place ghosts from Upgrades, Auto-Rig, undo
+- **Bench** — airflow / lighting / ergonomics / spatial sims on the live Rig layout; My Room → Improved compare; Apply with conflict + no-op gates
+- **Upgrades** — catalog → ghost on Rig → Place; boosts feed scores
+- **Scan (approximate)** — live camera preview; COCO YOLO smoke model *or* luma heuristics; preset room size; visual tracking for the minimap you-marker
 
-Not implemented yet:
-- real camera/depth room scan pipeline
-- real 3D model generation and rendering pipeline from camera capture
-- detected-items sidebar fed by actual scan results
-- true layout optimization engine that repositions objects automatically
+## Honest limits (say this in a presentation)
 
-See [plan.md](plan.md) for milestone details.
+- Scan is **not** full AR SLAM or a custom furniture network yet
+- Bench Airflow / Lighting / Ergonomics are **coarse heuristics** (voxel field, 2D lux proxy, clearance paths) — not CFD / radiosity / motion capture. Calibration notes: `assets/bench/`
+- Pre-Bench Hub scores are impact estimates until you run Bench
+- Upgrades prices/boosts are authored constants for the prototype
+- ML weights under `assets/models/` are for **Scan detection only**, not Bench scoring
 
-## Tech Stack
+## Professor demo (no camera)
 
-- Flutter
-- flutter_svg
-- google_fonts
-- provider
+1. Hub → **Demo** → loads Gaming Setup → Rig  
+2. Drag one item  
+3. Bench → **Simulate** (My Room → Improved) → **Apply**  
+4. Hub shows **BENCH OK**  
+5. Optional: Upgrades → Place on Rig  
 
-## Run Locally
-
-1. Install Flutter and ensure flutter is on PATH.
-2. From project root, run:
+## Run
 
 ```bash
 flutter pub get
-flutter analyze
 flutter run
 ```
 
-## Project Structure
+Phone install example:
 
-- lib/main.dart: app shell and bottom navigation
-- lib/models/app_state.dart: global state, scoring, room presets, and benchmark mode
-- lib/models/room_model.dart: room presets and furniture model
-- lib/screens/scanner_screen.dart: scanner prototype UI
-- lib/screens/rig_customizer_screen.dart: 2D layout editor and 3D room orbit view
-- lib/screens/benchmark_screen.dart: live room preview plus simulation and score results
-- lib/screens/upgrades_screen.dart: upgrade catalog and boosts
+```bash
+flutter build apk --debug
+flutter install -d <deviceId> --debug
+```
 
-## Quality Notes
+Optional YOLO smoke weights (gitignored): see `ml/README.md` and `assets/models/README.md`.
 
-- Analyzer status: clean (no issues at last check)
-- Current implementation is still a prototype and contains mocked behavior for scan and simulation data
+## Stack
+
+Flutter, Provider, camera, tflite_flutter, flutter_svg, google_fonts, share_plus, shared_preferences
+
+## Layout
+
+- `lib/main.dart` — tab shell  
+- `lib/models/app_state.dart` — rooms, scores, persistence  
+- `lib/screens/` — Hub, Scan, Rig, Bench, Upgrades  
+- `lib/services/` — scan pipeline, Bench sims/optimizers, share/compare  
+- `test/` — unit/widget coverage for layout, scan, Bench, Place ghosts  
+
+## Status note
+
+This README matches the current prototype. Scan quality and a custom furniture
+detector remain the main milestones; soft Auto-Rig clearances (sofa↔TV,
+wardrobe swing, side-light) and Hub ROUGH EST / BENCH OK honesty are in place.

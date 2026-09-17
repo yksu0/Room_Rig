@@ -62,6 +62,26 @@ class RoomSvg {
   <path d="M17 17 Q16 19 15 21" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/>
 </svg>''';
 
+  static const String intake = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="3" y="4" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+  <line x1="6" y1="8" x2="18" y2="8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.55"/>
+  <line x1="6" y1="11" x2="18" y2="11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.55"/>
+  <line x1="6" y1="14" x2="18" y2="14" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.55"/>
+  <path d="M12 16 L12 21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M9 19 L12 22 L15 19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>''';
+
+  static const String exhaust = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="3" y="8" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+  <line x1="6" y1="12" x2="18" y2="12" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.55"/>
+  <line x1="6" y1="15" x2="18" y2="15" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.55"/>
+  <line x1="6" y1="18" x2="18" y2="18" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.55"/>
+  <path d="M12 8 L12 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M9 5 L12 2 L15 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>''';
+
   static const String window = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect x="3" y="3" width="18" height="18" rx="1.5" stroke="currentColor" stroke-width="1.5"/>
@@ -71,6 +91,15 @@ class RoomSvg {
   <rect x="13.5" y="4.5" width="6" height="6" rx="0.3" fill="currentColor" opacity="0.08"/>
   <rect x="4.5" y="13.5" width="6" height="6" rx="0.3" fill="currentColor" opacity="0.08"/>
   <rect x="13.5" y="13.5" width="6" height="6" rx="0.3" fill="currentColor" opacity="0.08"/>
+</svg>''';
+
+  static const String door = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="5" y="2.5" width="14" height="19" rx="1.2" stroke="currentColor" stroke-width="1.5"/>
+  <rect x="6.5" y="4" width="11" height="16" rx="0.6" fill="currentColor" opacity="0.12"/>
+  <circle cx="14.5" cy="12.5" r="1.1" fill="currentColor"/>
+  <path d="M5 21.5 H19" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M7.5 4.5 H16.5" stroke="currentColor" stroke-width="1" opacity="0.45"/>
 </svg>''';
 
   static const String lamp = '''
@@ -333,6 +362,17 @@ class RoomSvg {
   <line x1="6" y1="8" x2="18" y2="8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
 </svg>''';
 
+  static const String heater = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="4" y="7" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.5" fill="currentColor" opacity="0.12"/>
+  <line x1="8" y1="10" x2="8" y2="16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="12" y1="10" x2="12" y2="16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="16" y1="10" x2="16" y2="16" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M7 5 Q8 3 9 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+  <path d="M11 4.5 Q12 2.5 13 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+  <path d="M15 5 Q16 3 17 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.7"/>
+</svg>''';
+
   static const String trendingUp = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <polyline points="3,17 9,11 13,15 21,7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -409,18 +449,53 @@ String furnitureSvgFor(String id) {
     case 'desk': return RoomSvg.desk;
     case 'chair': return RoomSvg.chair;
     case 'monitor': return RoomSvg.monitor;
-    case 'pc': return RoomSvg.pcTower;
-    case 'ac': return RoomSvg.acUnit;
+    case 'pc':
+    case 'nas':
+    case 'server':
+      return RoomSvg.pcTower;
+    case 'ac':
+    case 'portable_ac':
+    case 'acunit':
+      return RoomSvg.acUnit;
+    case 'intake':
+      return RoomSvg.intake;
+    case 'exhaust':
+      return RoomSvg.exhaust;
     case 'window': return RoomSvg.window;
+    case 'door': return RoomSvg.door;
     case 'lamp': return RoomSvg.lamp;
     case 'plant': return RoomSvg.plant;
     case 'bookshelf': return RoomSvg.bookshelf;
     case 'sofa': return RoomSvg.sofa;
     case 'wardrobe': return RoomSvg.wardrobe;
-    case 'kitchen': return RoomSvg.kitchen;
+    case 'kitchen':
+    case 'radiator':
+    case 'mini_fridge':
+    case 'table':
+    case 'cabinet':
+      return RoomSvg.kitchen;
+    case 'tv':
+      return RoomSvg.monitor;
     case 'shelf': return RoomSvg.bookshelf;
-    case 'fan': return RoomSvg.fan;
-    default: return RoomSvg.house;
+    case 'fan':
+    case 'desk_fan':
+      return RoomSvg.fan;
+    case 'gaming':
+    case 'console':
+      return RoomSvg.gaming;
+    case 'floorlamp':
+    case 'floor_lamp':
+      return RoomSvg.floorLamp;
+    case 'heater':
+    case 'space_heater':
+      return RoomSvg.heater;
+    case 'ceilinglight':
+    case 'ceiling_light':
+      return RoomSvg.lightBar;
+    case 'purifier':
+    case 'evaporative':
+      return RoomSvg.purifier;
+    default: return upgradeSvgFor(id);
   }
 }
 

@@ -59,5 +59,39 @@ void main() {
       expect(detections.length, 1);
       expect(detections.first.label, 'Chair');
     });
+    test('decodes YOLOv8-style [1, 4+C, count] without objectness', () {
+      // 2 classes => 6 features: cx,cy,w,h,cls0,cls1  (no obj)
+      final output = [
+        [
+          [0.50, 0.20], // cx
+          [0.40, 0.80], // cy
+          [0.30, 0.20], // w
+          [0.40, 0.20], // h
+          [0.95, 0.05], // class0 couch
+          [0.05, 0.90], // class1 chair
+        ]
+      ];
+
+      final detections = YoloLikePostProcessor.decode(
+        rawOutput: output,
+        outputShape: const [1, 6, 2],
+        labels: const ['couch', 'chair'],
+        inputWidth: 640,
+        inputHeight: 640,
+        scoreThreshold: 0.2,
+        iouThreshold: 0.45,
+        maxDetections: 5,
+      );
+
+      expect(detections.length, 2);
+      expect(
+        detections.any((d) => d.label == 'Couch' && d.category == 'ergonomics'),
+        isTrue,
+      );
+      expect(
+        detections.any((d) => d.label == 'Chair' && d.category == 'ergonomics'),
+        isTrue,
+      );
+    });
   });
 }

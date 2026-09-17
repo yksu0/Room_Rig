@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'models/app_state.dart';
+import 'models/rig_catalog.dart';
+import 'services/furniture_sprites.dart';
 import 'theme/app_theme.dart';
 import 'widgets/room_icons.dart';
 import 'screens/home_screen.dart';
@@ -11,7 +13,7 @@ import 'screens/rig_customizer_screen.dart';
 import 'screens/benchmark_screen.dart';
 import 'screens/upgrades_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -20,6 +22,25 @@ void main() {
     systemNavigationBarColor: Color(0xFF0A0B0F),
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+  // Decode catalog + upgrade sprites so Rig and Bench share the same art.
+  await FurnitureSprites.warmCache({
+    ...RigCatalog.items.map((e) => e.iconName),
+    'fan',
+    'purifier',
+    'lightBar',
+    'floorLamp',
+    'monitorArm',
+    'cableTray',
+    'mat',
+    'smartBlinds',
+    'heater',
+    'wardrobe',
+    'plant',
+    'tv',
+    'intake',
+    'exhaust',
+    'ceilingLight',
+  });
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState(),
@@ -42,9 +63,14 @@ class RoomRigApp extends StatelessWidget {
   }
 }
 
-class _MainShell extends StatelessWidget {
+class _MainShell extends StatefulWidget {
   const _MainShell();
 
+  @override
+  State<_MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<_MainShell> {
   static const _screens = [
     HomeScreen(),
     ScannerScreen(),
@@ -53,9 +79,33 @@ class _MainShell extends StatelessWidget {
     UpgradesScreen(),
   ];
 
+  int? _handledTab;
+
+  void _consumeTabNotice(AppState state) {
+    final notice = state.takeTabNotice();
+    if (notice == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(notice),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final tab = state.currentTab;
+    if (_handledTab != tab) {
+      final previous = _handledTab;
+      _handledTab = tab;
+      if (previous != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _consumeTabNotice(context.read<AppState>());
+        });
+      }
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -102,7 +152,9 @@ class _RigNavBar extends StatelessWidget {
           final isSelected = i == currentIndex;
           return Expanded(
             child: GestureDetector(
-              onTap: () => context.read<AppState>().setTab(i),
+              onTap: () {
+                context.read<AppState>().setTab(i);
+              },
               behavior: HitTestBehavior.opaque,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -134,7 +186,7 @@ class _RigNavBar extends StatelessWidget {
                         color: isSelected ? AppColors.cyan : AppColors.textMuted,
                         fontSize: 10,
                         fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                        letterSpacing: 0.5,
+                        letterSpacing: 0.3,
                       ),
                     ),
                   ],
