@@ -284,18 +284,22 @@ class RigCatalog {
     // Placed upgrades must survive Apply / room load / persist.
     if (id.startsWith('upg_')) return true;
     final hay = '$id ${f.name} ${f.iconName}'.toLowerCase();
+    // Detector-native classes (Room Rig YOLO) must survive Scan → Rig commit.
+    // Do not reject purifier / smartBlinds — they are first-class Scan labels.
     if (f.iconName == 'kitchen' ||
-        f.iconName == 'purifier' ||
-        f.iconName == 'mat' ||
-        f.iconName == 'smartBlinds' ||
-        f.iconName == 'cableTray' ||
         hay.contains('kitchen') ||
-        hay.contains('purifier') ||
         hay.contains('evaporative') ||
-        hay.contains('radiator') ||
         hay.contains('mini fridge') ||
         hay.contains('mini_fridge') ||
         RegExp(r'\b(nas|console)\b').hasMatch(hay)) {
+      return false;
+    }
+    // Radiator without vent/intake context was demo junk; keep explicit heater SKUs.
+    if (hay.contains('radiator') &&
+        f.iconName != 'heater' &&
+        !hay.contains('heater') &&
+        !hay.contains('vent') &&
+        !hay.contains('intake')) {
       return false;
     }
     const keep = [
@@ -318,6 +322,10 @@ class RigCatalog {
       'exhaust',
       'fan',
       'heater',
+      'vent',
+      'purifier',
+      'blinds',
+      'smartblinds',
       'lamp',
       'light',
     ];
