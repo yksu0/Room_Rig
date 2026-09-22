@@ -111,8 +111,7 @@ class ItemPlacementRules {
     if (h.contains('plant') ||
         h.contains('floorlamp') ||
         h.contains('floor_lamp') ||
-        h.contains('floor lamp') ||
-        h.contains('mat')) {
+        h.contains('floor lamp')) {
       return PlacementZone.accent;
     }
     if (h.contains('tv') || h.contains('table')) {
@@ -151,21 +150,11 @@ class ItemPlacementRules {
         return 'Directly in front of the desk face, centered, with ~0.9–1.2 m pull-back; '
             'prefer a view toward the door (prospect–refuge).';
       case 'monitor':
-      case 'monitorarm':
-      case 'upg_monitor_arm':
         return 'On the desk, facing the chair; eye-height / arm reach — never on the floor.';
       case 'pc':
         return 'On or under the desk host; keep intake clear of walls when floor-standing.';
       case 'lamp':
-      case 'lightbar':
-      case 'upg_light_bar':
         return 'Task light on the desk surface, beside the monitor.';
-      case 'cabletray':
-      case 'upg_cable_tray':
-        return 'Under the desk front edge.';
-      case 'mat':
-      case 'upg_mat':
-        return 'On the floor under/just behind the chair.';
       case 'bed':
         return 'Against a solid wall, not in the door’s straight inbound view; '
             '≥24 in walk side; keep ≥~1 m clear of the desk work zone.';
