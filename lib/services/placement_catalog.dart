@@ -90,7 +90,7 @@ class PlacementSpec {
   final OrientationMode orientation;
   final PlacementClass klass;
 
-  /// True mount: Monitor Arm → Desk, Blinds → Window.
+  /// True mount: Blinds → Window.
   final String? physicalParent;
 
   /// Arrangement membership without a bolt: Monitor/PC/Lamp → Desk.
@@ -147,10 +147,6 @@ class PlacementCatalog {
 
   /// CamelCase / legacy icon ids → canonical catalog id.
   static const Map<String, String> aliases = {
-    'lightBar': 'upg_light_bar',
-    'monitorArm': 'upg_monitor_arm',
-    'cableTray': 'upg_cable_tray',
-    'mat': 'upg_mat',
     'smartBlinds': 'upg_blinds',
     'blinds': 'upg_blinds',
     'purifier': 'upg_purifier',
@@ -263,8 +259,8 @@ class PlacementCatalog {
     // Wall-mounted TV defaults to must-wall; stand mode can relax later.
     'tv': PlacementSpec(
       id: 'tv',
-      surface: PlacementSurface.wall,
-      wall: WallRequirement.must,
+      surface: PlacementSurface.floor,
+      wall: WallRequirement.preferred,
       facing: FaceTarget.sofa,
       orientation: OrientationMode.faceTarget,
       klass: PlacementClass.bMajor,
@@ -418,17 +414,6 @@ class PlacementCatalog {
       orientation: OrientationMode.free,
       klass: PlacementClass.dClimate,
     ),
-    'upg_light_bar': PlacementSpec(
-      id: 'upg_light_bar',
-      surface: PlacementSurface.onFurniture,
-      wall: WallRequirement.forbidden,
-      facing: FaceTarget.desk,
-      orientation: OrientationMode.sameAsParent,
-      klass: PlacementClass.eAttached,
-      physicalParent: 'desk',
-      relative: RelativePlacement.mountedTo,
-      participatesInMainLayout: false,
-    ),
     'upg_floor_lamp': PlacementSpec(
       id: 'upg_floor_lamp',
       surface: PlacementSurface.floor,
@@ -436,39 +421,6 @@ class PlacementCatalog {
       facing: FaceTarget.none,
       orientation: OrientationMode.free,
       klass: PlacementClass.cPeripheral,
-    ),
-    'upg_monitor_arm': PlacementSpec(
-      id: 'upg_monitor_arm',
-      surface: PlacementSurface.onFurniture,
-      wall: WallRequirement.forbidden,
-      facing: FaceTarget.chair,
-      orientation: OrientationMode.faceTarget,
-      klass: PlacementClass.eAttached,
-      physicalParent: 'desk',
-      relative: RelativePlacement.mountedTo,
-      participatesInMainLayout: false,
-    ),
-    'upg_cable_tray': PlacementSpec(
-      id: 'upg_cable_tray',
-      surface: PlacementSurface.underFurniture,
-      wall: WallRequirement.forbidden,
-      facing: FaceTarget.desk,
-      orientation: OrientationMode.sameAsParent,
-      klass: PlacementClass.eAttached,
-      physicalParent: 'desk',
-      relative: RelativePlacement.under,
-      participatesInMainLayout: false,
-    ),
-    'upg_mat': PlacementSpec(
-      id: 'upg_mat',
-      surface: PlacementSurface.floor,
-      wall: WallRequirement.forbidden,
-      facing: FaceTarget.desk,
-      orientation: OrientationMode.free,
-      klass: PlacementClass.eAttached,
-      physicalParent: 'desk',
-      relative: RelativePlacement.under,
-      participatesInMainLayout: false,
     ),
     'upg_blinds': PlacementSpec(
       id: 'upg_blinds',
