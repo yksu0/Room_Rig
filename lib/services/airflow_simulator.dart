@@ -1125,6 +1125,13 @@ class AirflowSimulator {
       if (id.contains('desk') || name.contains('desk fan')) {
         return (strength: 0.7, directional: true, floorStanding: true);
       }
+      final icon = f.iconName.toLowerCase();
+      if (icon == 'purifier' ||
+          id.contains('purifier') ||
+          name.contains('purifier')) {
+        // Floor purifier — mild room stir, not a stand-fan cone.
+        return (strength: 0.45, directional: false, floorStanding: true);
+      }
       return (strength: 1.0, directional: true, floorStanding: true);
     }
 
@@ -1154,8 +1161,11 @@ class AirflowSimulator {
     }
     if (_isHeatEmitter(id: id, name: name, icon: icon)) return 'heat';
     if (icon == 'fan' ||
+        icon == 'purifier' ||
         id.contains('fan') ||
+        id.contains('purifier') ||
         name.contains('fan') ||
+        name.contains('purifier') ||
         name.contains('circulator')) {
       return 'fan';
     }
