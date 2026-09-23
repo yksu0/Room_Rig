@@ -165,7 +165,6 @@ class LayoutOptimizerCommon {
   static FurnitureItem? findMonitor(List<FurnitureItem> furniture) =>
       firstWhere(furniture, (f) {
         final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
-        if (hay.contains('monitor arm') || f.iconName == 'monitorArm') return false;
         return f.iconName == 'monitor' ||
             hay.contains('monitor') ||
             hay.contains('display');
@@ -176,6 +175,91 @@ class LayoutOptimizerCommon {
 
   static FurnitureItem? findWindow(List<FurnitureItem> furniture) =>
       firstWhere(furniture, SurfaceMounts.isWindow);
+
+  /// 0–100 human-layout quality for the workstation + bounds (feeds Auto-Rig scoring).
+  static double workClusterIntegrityScore(
+    List<FurnitureItem> furniture, {
+    required int gridCols,
+    required int gridRows,
+  }) {
+    var score = 100.0;
+    final desk = findDesk(furniture);
+    final chair = findChair(furniture);
+    final monitor = findMonitor(furniture);
+
+    for (final f in furniture) {
+      if (f.hidden || f.locked) continue;
+      if (f.gridX < -0.02 ||
+          f.gridY < -0.02 ||
+          f.gridX + f.width > gridCols + 0.05 ||
+          f.gridY + f.height > gridRows + 0.05) {
+        score -= 18;
+        break;
+      }
+    }
+
+    if (desk != null) {
+      if (!ItemPlacementRules.deskOnSideWall(desk, gridCols, gridRows)) {
+        score -= 22;
+      }
+      if (chair != null &&
+          !ItemPlacementRules.chairOnWorkFace(
+            chair,
+            desk,
+            gridCols: gridCols,
+            gridRows: gridRows,
+          )) {
+        score -= 28;
+      }
+      for (final f in furniture) {
+        if (!_isWorkClusterDeskItem(f)) continue;
+        final host = SurfaceMounts.hostUnder(f, furniture);
+        if (host == null || host.id != desk.id) {
+          score -= 20;
+          break;
+        }
+      }
+      if (monitor != null && chair != null) {
+        final mc = monitor.gridX + monitor.width * 0.5;
+        final my = monitor.gridY + monitor.height * 0.5;
+        final cc = chair.gridX + chair.width * 0.5;
+        final cy = chair.gridY + chair.height * 0.5;
+        final face = ItemPlacementRules.deskWorkFace(desk, gridCols, gridRows);
+        final monitorFacesUser = switch (face) {
+          'south' => monitor.yawDegrees % 360 == 0,
+          'north' => (monitor.yawDegrees % 360).abs() == 180,
+          'east' => (monitor.yawDegrees % 360).abs() == 90,
+          'west' => (monitor.yawDegrees % 360).abs() == 270,
+          _ => true,
+        };
+        if (!monitorFacesUser) score -= 12;
+        final dist = (mc - cc).abs() + (my - cy).abs();
+        if (dist > desk.width + desk.height) score -= 8;
+      }
+    }
+
+    return score.clamp(0.0, 100.0);
+  }
+
+  /// Keep every footprint inside the grid (prevents PC phased through walls).
+  static List<FurnitureItem> clampItemsToRoomBounds({
+    required List<FurnitureItem> items,
+    required int gridCols,
+    required int gridRows,
+  }) {
+    final cols = gridCols.toDouble();
+    final rows = gridRows.toDouble();
+    return [
+      for (final f in items)
+        if (f.locked || SurfaceMounts.isStructuralMount(f))
+          f.copyWith()
+        else
+          f.copyWith(
+            gridX: f.gridX.clamp(0.0, (cols - f.width).clamp(0.0, cols)),
+            gridY: f.gridY.clamp(0.0, (rows - f.height).clamp(0.0, rows)),
+          ),
+    ];
+  }
 
   /// Proven desk / chair / desk-top layout for Auto-Rig.
   ///
@@ -600,6 +684,7 @@ class LayoutOptimizerCommon {
         primary,
         placedOnHost: placedOnHost,
       );
+      if (host == null) continue; // lounge TV/plant with no table — floor pose
       final hay = ItemPlacementRules.hay(item);
       // Fit lounge stackables on a table top (leave room for a plant beside the TV).
       if (ItemPlacementRules.isTv(item)) {
@@ -656,13 +741,8 @@ class LayoutOptimizerCommon {
         hay.contains('pc') ||
         hay.contains('tower') ||
         hay.contains('computer') ||
-        hay.contains('cable') ||
-        hay.contains('light bar') ||
         item.iconName == 'monitor' ||
-        item.iconName == 'monitorArm' ||
-        item.iconName == 'pc' ||
-        item.iconName == 'lightBar' ||
-        item.iconName == 'cableTray') {
+        item.iconName == 'pc') {
       return true;
     }
     if ((hay.contains('lamp') || item.iconName == 'lamp') && !hay.contains('floor')) {
@@ -672,7 +752,8 @@ class LayoutOptimizerCommon {
   }
 
   /// TV / plant prefer a lounge table; monitor + PC + lamp stay on one work desk.
-  static FurnitureItem _hostForDeskTopItem(
+  /// Returns null when a lounge item has no table — leave it on the floor.
+  static FurnitureItem? _hostForDeskTopItem(
     FurnitureItem item,
     List<FurnitureItem> room,
     FurnitureItem primary, {
@@ -722,7 +803,7 @@ class LayoutOptimizerCommon {
       });
       return tables.first;
     }
-    return primary;
+    return null;
   }
 
   /// Target pose on [host] for a desk-top item (used by domain optimizers).
@@ -746,17 +827,14 @@ class LayoutOptimizerCommon {
     if (hay.contains('monitor') ||
         hay.contains('screen') ||
         hay.contains('display') ||
-        hay.contains('monitorarm') ||
-        f.iconName == 'monitorArm' ||
         ItemPlacementRules.isTv(f)) {
       return 0;
     }
-    if (hay.contains('cable')) return 2;
     if (hay.contains('pc') || hay.contains('tower') || hay.contains('computer')) {
       return 4;
     }
     if (hay.contains('plant')) return 5;
-    return 1; // lamp / light bar
+    return 1; // lamp
   }
 
   /// Desk-top slots relative to [workFace] (chair side):
@@ -1273,7 +1351,7 @@ class LayoutOptimizerCommon {
           x: 0.2.clamp(0.0, cols - f.width),
           y: (rows * 0.55).clamp(1.0, rows - f.height),
         );
-      } else if (hay.contains('purifier') || hay.contains('mat')) {
+      } else if (hay.contains('purifier')) {
         // Near the work zone but on the floor — south of desk if present.
         final dx = desk != null ? (targets[desk.id]?.x ?? desk.gridX) : 1.0;
         final dy = desk != null
@@ -1635,6 +1713,9 @@ class LayoutOptimizerCommon {
       gridRows: gridRows,
     );
 
+    // Sofa wall picks can break viewing distance — re-pair after hierarchy.
+    next = _relinkSofaTvDistance(next, cols, rows);
+
     // Re-seat chair after wall pins may have moved the desk.
     desk = findDesk(next);
     final chairAfter = findChair(next);
@@ -1678,7 +1759,21 @@ class LayoutOptimizerCommon {
       if (ItemPlacementRules.isTv(f) && !f.locked) tv ??= f;
     }
     if (sofa == null || tv == null) return next;
-    if (ItemPlacementRules.sofaTvDistanceOk(sofa, tv)) return next;
+
+    FurnitureItem? table;
+    for (final f in next) {
+      if (SurfaceMounts.isTableHost(f)) {
+        table = f;
+        break;
+      }
+    }
+    final tvHost = SurfaceMounts.hostUnder(tv, next);
+    final tvOnTable =
+        table != null && tvHost != null && tvHost.id == table.id;
+    if (ItemPlacementRules.sofaTvDistanceOk(sofa, tv) &&
+        (table == null || tvOnTable)) {
+      return next;
+    }
 
     final preferred = ItemPlacementRules.sofaTvPreferred;
     final sofaIdx = next.indexWhere((f) => f.id == sofa!.id);
@@ -1687,20 +1782,41 @@ class LayoutOptimizerCommon {
 
     final s = next[sofaIdx];
     final t = next[tvIdx];
+    final tvDepth = t.height > 0.55 ? 0.45 : t.height;
     final sofaY = s.gridY;
     var sofaX = 0.0;
     var sofaCx = sofaX + s.width * 0.5;
     var tvX = (sofaCx + preferred - t.width * 0.5).clamp(0.0, cols - t.width);
+    var tvY = sofaY.clamp(0.0, rows - tvDepth);
     if ((tvX + t.width * 0.5) - sofaCx < preferred - 0.4) {
       tvX = (cols - t.width - 0.1).clamp(0.0, cols - t.width);
       final actualTvCx = tvX + t.width * 0.5;
       sofaX = ((actualTvCx - preferred) - s.width * 0.5).clamp(0.0, cols - s.width);
     }
     next[sofaIdx] = s.copyWith(gridX: sofaX, gridY: sofaY.clamp(0.0, rows - s.height));
-    next[tvIdx] = t.copyWith(
-      gridX: tvX,
-      gridY: sofaY.clamp(0.0, rows - t.height),
-    );
+    if (table != null) {
+      final tableIdx = next.indexWhere((f) => f.id == table!.id);
+      final hostX = tvX.clamp(0.0, cols - table.width);
+      final hostY = tvY.clamp(0.0, rows - table.height);
+      if (tableIdx >= 0) {
+        next[tableIdx] = table.copyWith(gridX: hostX, gridY: hostY);
+      }
+      final tvW = math.min(t.width, math.max(1.0, table.width - 0.55));
+      next[tvIdx] = t.copyWith(
+        width: tvW,
+        height: tvDepth,
+        gridX: (hostX + (table.width - tvW) * 0.5)
+            .clamp(hostX, hostX + table.width - tvW),
+        gridY: (hostY + (table.height - tvDepth) * 0.5)
+            .clamp(hostY, hostY + table.height - tvDepth),
+      );
+    } else {
+      next[tvIdx] = t.copyWith(
+        gridX: tvX,
+        gridY: tvY,
+        height: tvDepth,
+      );
+    }
     return next;
   }
 
@@ -1864,6 +1980,10 @@ class LayoutOptimizerCommon {
               ItemPlacementRules.hay(item).contains('desk')) {
             continue;
           }
+          if (SurfaceMounts.isDeskTopItem(item) && findDesk(mutable) != null) {
+            final host = SurfaceMounts.hostUnder(item, mutable);
+            if (host != null && _isWorkDesk(host)) continue;
+          }
           // Prefer moving the larger soft piece when bed/sofa fight.
           if (mover == null ||
               item.width * item.height > mover.width * mover.height) {
@@ -1895,9 +2015,12 @@ class LayoutOptimizerCommon {
           gridRows: gridRows,
         );
 
-        // Hard fallback: pick a free cell so overlaps cannot stick.
+        // Openings skip floor occupancy, so resolveMove can leave a piece sitting
+        // on a door/window. Force an empty-cell search for blocked openings.
         final trial = item.copyWith(gridX: resolved.gridX, gridY: resolved.gridY);
-        if (LayoutCollision.itemCollides(trial, mutable)) {
+        final needsEmpty = LayoutCollision.itemCollides(trial, mutable) ||
+            conflict.kind == LayoutConflictKind.blockedOpening;
+        if (needsEmpty) {
           final others = mutable.where((f) => f.id != item.id).toList(growable: false);
           final bias = _emptyBiasFor(item);
           final empty = LayoutCollision.findEmptyCell(
@@ -1925,7 +2048,11 @@ class LayoutOptimizerCommon {
     }
 
     return ensureNoHardOverlaps(
-      items: mutable,
+      items: clampItemsToRoomBounds(
+        items: mutable,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      ),
       gridCols: gridCols,
       gridRows: gridRows,
     );
@@ -1972,6 +2099,10 @@ class LayoutOptimizerCommon {
           if (SurfaceMounts.isDeskHost(item) &&
               ItemPlacementRules.hay(item).contains('desk')) {
             continue;
+          }
+          if (SurfaceMounts.isDeskTopItem(item) && findDesk(mutable) != null) {
+            final host = SurfaceMounts.hostUnder(item, mutable);
+            if (host != null && _isWorkDesk(host)) continue;
           }
           candidates.add(item);
         }
