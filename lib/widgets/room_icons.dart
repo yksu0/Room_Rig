@@ -302,35 +302,6 @@ class RoomSvg {
   <circle cx="12" cy="17" r="1.5" stroke="currentColor" stroke-width="1.2"/>
 </svg>''';
 
-  static const String monitorArm = '''
-<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="3" y="3" width="12" height="8" rx="1" stroke="currentColor" stroke-width="1.4"/>
-  <line x1="9" y1="11" x2="9" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-  <path d="M9 14 Q9 17 14 17 L14 20" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-  <line x1="12" y1="20" x2="16" y2="20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-</svg>''';
-
-  static const String cableTray = '''
-<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="3" y="10" width="18" height="5" rx="1.5" stroke="currentColor" stroke-width="1.4"/>
-  <line x1="7" y1="10" x2="7" y2="15" stroke="currentColor" stroke-width="1" opacity="0.4"/>
-  <line x1="12" y1="10" x2="12" y2="15" stroke="currentColor" stroke-width="1" opacity="0.4"/>
-  <line x1="17" y1="10" x2="17" y2="15" stroke="currentColor" stroke-width="1" opacity="0.4"/>
-  <path d="M7 10 Q7 7 10 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-  <path d="M12 10 Q12 6 15 6 Q17 6 17 8 L17 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-</svg>''';
-
-  static const String mat = '''
-<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="3" y="15" width="18" height="5" rx="2" stroke="currentColor" stroke-width="1.5"/>
-  <line x1="6" y1="15" x2="6" y2="20" stroke="currentColor" stroke-width="0.9" opacity="0.4"/>
-  <line x1="9" y1="15" x2="9" y2="20" stroke="currentColor" stroke-width="0.9" opacity="0.4"/>
-  <line x1="12" y1="15" x2="12" y2="20" stroke="currentColor" stroke-width="0.9" opacity="0.4"/>
-  <line x1="15" y1="15" x2="15" y2="20" stroke="currentColor" stroke-width="0.9" opacity="0.4"/>
-  <line x1="18" y1="15" x2="18" y2="20" stroke="currentColor" stroke-width="0.9" opacity="0.4"/>
-  <path d="M8 6 Q12 4 16 6 Q12 15 8 6 Z" stroke="currentColor" stroke-width="1.3" fill="currentColor" opacity="0.1"/>
-</svg>''';
-
   static const String smartBlinds = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect x="3" y="2" width="18" height="2" rx="1" fill="currentColor" opacity="0.6"/>
@@ -341,7 +312,8 @@ class RoomSvg {
   <line x1="12" y1="3" x2="12" y2="22" stroke="currentColor" stroke-width="1" opacity="0.3"/>
 </svg>''';
 
-  static const String lightBar = '''
+  /// Inline art for ceiling disc fixtures (not a separate catalog SKU).
+  static const String ceilingLight = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect x="4" y="10" width="16" height="4" rx="2" stroke="currentColor" stroke-width="1.5"/>
   <line x1="7" y1="14" x2="6" y2="18" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" opacity="0.6"/>
@@ -491,7 +463,7 @@ String furnitureSvgFor(String id) {
       return RoomSvg.heater;
     case 'ceilinglight':
     case 'ceiling_light':
-      return RoomSvg.lightBar;
+      return RoomSvg.ceilingLight;
     case 'purifier':
     case 'evaporative':
       return RoomSvg.purifier;
@@ -515,11 +487,7 @@ String upgradeSvgFor(String iconName) {
   switch (iconName) {
     case 'fan': return RoomSvg.fan;
     case 'purifier': return RoomSvg.purifier;
-    case 'lightBar': return RoomSvg.lightBar;
     case 'floorLamp': return RoomSvg.floorLamp;
-    case 'monitorArm': return RoomSvg.monitorArm;
-    case 'cableTray': return RoomSvg.cableTray;
-    case 'mat': return RoomSvg.mat;
     case 'smartBlinds': return RoomSvg.smartBlinds;
     default: return RoomSvg.upgrade;
   }
