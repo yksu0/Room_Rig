@@ -308,6 +308,37 @@ class ScanLayoutConverter {
 
   static String _iconFor(String label, String id) {
     final hay = '${label}_$id'.toLowerCase();
+    // Native Room Rig head labels (trained / target list).
+    if (hay.contains('purifier')) return 'purifier';
+    // Exhaust / outlet before vent — YOLO class "vent" still maps to intake
+    // (one detector slot folds inlets+outlets); explicit exhaust labels keep exhaust.
+    if (hay.contains('air outlet') ||
+        hay.contains('exhaust') ||
+        hay.contains('extract')) {
+      return 'exhaust';
+    }
+    if (hay.contains('vent') ||
+        hay.contains('grille') ||
+        hay.contains('grill') ||
+        hay.contains('air inlet') ||
+        hay.contains('intake')) {
+      return 'intake';
+    }
+    if (hay.contains('heater') || hay.contains('radiator')) return 'heater';
+    if (hay.contains('blinds') || hay.contains('curtain')) return 'smartBlinds';
+    if (hay.contains('wardrobe') || hay.contains('closet')) return 'wardrobe';
+    if (hay.contains('fan')) return 'fan';
+    // Match whole-token "ac" so "rack" / "face" do not false-trigger.
+    if (RegExp(r'(^|[^a-z])ac([^a-z]|$)').hasMatch(hay) ||
+        hay.contains('air conditioner') ||
+        hay.contains('air-conditioner') ||
+        hay.contains('portable_ac')) {
+      return 'ac';
+    }
+    if (hay.contains('pc') || hay.contains('tower') || hay.contains('computer')) {
+      return 'pc';
+    }
+    if (hay.contains('monitor') || hay.contains('display')) return 'monitor';
     // COCO smoke → Rig catalog icons (honest remap, not a custom detector).
     if (hay.contains('potted plant') || hay.contains('plant')) return 'plant';
     if (hay.contains('couch')) return 'sofa';
@@ -316,8 +347,7 @@ class ScanLayoutConverter {
     if (hay.contains('laptop') || hay.contains('keyboard') || hay.contains('mouse')) {
       return 'pc';
     }
-    if (hay.contains('monitor') || hay.contains('display')) return 'monitor';
-    if (hay.contains('book') || hay.contains('bookshelf') || hay.contains('cabinet')) {
+    if (hay.contains('book') || hay.contains('bookshelf') || hay.contains('cabinet') || hay.contains('shelf')) {
       return 'shelf';
     }
     if (hay.contains('refrigerator') || hay.contains('oven') || hay.contains('microwave')) {
@@ -326,14 +356,9 @@ class ScanLayoutConverter {
     if (hay.contains('bed')) return 'bed';
     if (hay.contains('chair')) return 'chair';
     if (hay.contains('sofa')) return 'sofa';
-    if (hay.contains('lamp') || hay.contains('light_bar') || hay.contains('light bar')) {
-      return 'lamp';
-    }
-    if (hay.contains('fan')) return 'fan';
+    if (hay.contains('lamp')) return 'lamp';
     if (hay.contains('door')) return 'door';
     if (hay.contains('window')) return 'window';
-    if (hay.contains('wardrobe') || hay.contains('closet')) return 'wardrobe';
-    if (hay.contains('ac') || hay.contains('air conditioner')) return 'ac';
     if (hay.contains('table')) return 'desk';
     if (hay.contains('furniture')) return 'shelf';
     return 'desk';
@@ -354,9 +379,14 @@ class ScanLayoutConverter {
     switch (icon) {
       case 'window':
       case 'lamp':
+      case 'smartBlinds':
         return 'lighting';
       case 'ac':
       case 'fan':
+      case 'purifier':
+      case 'heater':
+      case 'intake':
+      case 'exhaust':
         return 'airflow';
       case 'desk':
       case 'chair':
@@ -364,6 +394,7 @@ class ScanLayoutConverter {
       case 'monitor':
       case 'tv':
       case 'sofa':
+      case 'pc':
         return 'ergonomics';
       default:
         return 'neutral';
@@ -376,6 +407,14 @@ class ScanLayoutConverter {
         return 0.9;
       case 'fan':
         return 0.7;
+      case 'intake':
+        return 0.7;
+      case 'exhaust':
+        return 0.65;
+      case 'purifier':
+        return 0.55;
+      case 'heater':
+        return -0.7;
       case 'window':
       case 'door':
         return 0.3;
@@ -392,6 +431,8 @@ class ScanLayoutConverter {
         return 0.75;
       case 'lamp':
         return 0.55;
+      case 'smartBlinds':
+        return 0.4;
       case 'monitor':
         return 0.15;
       default:
