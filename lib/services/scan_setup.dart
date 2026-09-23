@@ -48,6 +48,11 @@ class ScanSetupController {
   int _extentSamples = 0;
   int _readyExtentHold = 0;
 
+  RoomDimensions? _manualDimensions;
+
+  /// `preset` | `measured` | `manual`
+  String roomSizeSource = 'preset';
+
   Vec3? get origin {
     if (_minX == null || _maxX == null || _minZ == null || _maxZ == null) return null;
     return Vec3(
@@ -73,6 +78,17 @@ class ScanSetupController {
     _maxZ = null;
     _extentSamples = 0;
     _readyExtentHold = 0;
+    _manualDimensions = null;
+    roomSizeSource = 'preset';
+  }
+
+  void setManualDimensions(RoomDimensions dims) {
+    _manualDimensions = RoomDimensions(
+      lengthMeters: dims.lengthMeters.clamp(minRoomMeters, maxRoomMeters),
+      widthMeters: dims.widthMeters.clamp(minRoomMeters, maxRoomMeters),
+      heightMeters: dims.heightMeters.clamp(2.2, 3.5),
+    );
+    roomSizeSource = 'manual';
   }
 
   void observe(TrackingSample tracking) {
@@ -98,11 +114,17 @@ class ScanSetupController {
       return;
     }
 
+    if (_manualDimensions != null) {
+      phase = ScanSessionPhase.capture;
+      return;
+    }
+
     _noteExtent(tracking.cameraPosition);
     if (extentMeters >= requiredExtentMeters) {
       _readyExtentHold += 1;
       if (_readyExtentHold >= 4) {
         phase = ScanSessionPhase.capture;
+        roomSizeSource = 'measured';
       }
     } else {
       _readyExtentHold = 0;
@@ -115,7 +137,8 @@ class ScanSetupController {
   bool get canAdvanceLock => _lockReady || _stableStreak >= requiredStableFrames * 2;
 
   bool get canAdvanceSize =>
-      extentMeters >= skipExtentMeters && _extentSamples >= 4;
+      _manualDimensions != null ||
+      (extentMeters >= skipExtentMeters && _extentSamples >= 4);
 
   void advanceFromLock() {
     if (phase == ScanSessionPhase.lockTracking) {
@@ -125,16 +148,24 @@ class ScanSetupController {
   }
 
   void advanceFromSize() {
-    if (phase == ScanSessionPhase.sizeRoom && (canAdvanceSize || origin != null)) {
+    if (phase == ScanSessionPhase.sizeRoom &&
+        (canAdvanceSize || origin != null || _manualDimensions != null)) {
+      if (_manualDimensions == null && measuredDimensions() != null) {
+        roomSizeSource = 'measured';
+      }
       phase = ScanSessionPhase.capture;
     }
   }
 
   void skipToCapture() {
     phase = ScanSessionPhase.capture;
+    if (_manualDimensions == null && measuredDimensions() == null) {
+      roomSizeSource = 'preset';
+    }
   }
 
   RoomDimensions? measuredDimensions() {
+    if (_manualDimensions != null) return _manualDimensions;
     if (_minX == null || _maxX == null || _minZ == null || _maxZ == null) return null;
     final length = ((_maxX! - _minX!) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
     final width = ((_maxZ! - _minZ!) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
@@ -146,9 +177,13 @@ class ScanSetupController {
   }
 
   RoomLayoutModel buildLayout({required String roomName, RoomDimensions? fallback}) {
-    final dims = measuredDimensions() ??
+    final measured = measuredDimensions();
+    final dims = measured ??
         fallback ??
         const RoomDimensions(lengthMeters: 4.2, widthMeters: 3.6, heightMeters: 2.7);
+    if (_manualDimensions == null && measured == null) {
+      roomSizeSource = 'preset';
+    }
     final cols = (dims.lengthMeters / cellMeters).round().clamp(5, 16);
     final rows = (dims.widthMeters / cellMeters).round().clamp(5, 16);
     return RoomLayoutModel(
@@ -179,6 +214,19 @@ class ScanSetupController {
               : 'Hold the phone chest-high and turn your body left and right until this fills up.',
         );
       case ScanSessionPhase.sizeRoom:
+        if (_manualDimensions != null) {
+          final d = _manualDimensions!;
+          return ScanSetupSnapshot(
+            phase: phase,
+            progress: 1,
+            canAdvance: true,
+            stepLabel: '2 / 2  SIZE THE ROOM',
+            headline: 'Manual size set',
+            detail:
+                '${d.lengthMeters.toStringAsFixed(1)} × ${d.widthMeters.toStringAsFixed(1)} m '
+                '(${d.heightMeters.toStringAsFixed(1)} m high). Continue to capture.',
+          );
+        }
         final p = (extentMeters / requiredExtentMeters).clamp(0.0, 1.0);
         return ScanSetupSnapshot(
           phase: phase,
@@ -187,7 +235,7 @@ class ScanSetupController {
           stepLabel: '2 / 2  SIZE THE ROOM',
           headline: p < 0.35 ? 'Walk toward the far wall' : 'A bit farther…',
           detail: p < 1
-              ? 'Take a few slow steps across the room. We are measuring size — furniture comes next.'
+              ? 'Take a few slow steps across the room — or enter length × width manually.'
               : 'Size locked. Capturing starts automatically.',
         );
       case ScanSessionPhase.capture:
