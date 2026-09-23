@@ -46,21 +46,24 @@ class TfliteObjectDetector implements ObjectDetector {
     this.iouThreshold = 0.45,
     this.maxDetections = 12,
     this.classLabels = const [
-      'chair',
-      'desk',
-      'sofa',
-      'bed',
-      'table',
-      'monitor',
-      'tv',
-      'lamp',
-      'window',
       'door',
-      'shelf',
-      'cabinet',
+      'window',
+      'desk',
+      'chair',
+      'bed',
+      'sofa',
+      'tv',
+      'monitor',
+      'pc',
+      'lamp',
       'fan',
-      'plant',
       'ac',
+      'shelf',
+      'wardrobe',
+      'plant',
+      'purifier',
+      'vent',
+      'blinds',
     ],
   }) {
     _resolvedLabels = List<String>.from(classLabels);
@@ -117,6 +120,11 @@ class TfliteObjectDetector implements ObjectDetector {
       _lastInferAt = now;
       _lastResults = kept;
       _consecutiveFailures = 0;
+      final ms = DateTime.now().difference(now).inMilliseconds;
+      debugPrint(
+        'TfliteObjectDetector: infer ${ms}ms boxes=${kept.length} '
+        'labels=${kept.map((d) => d.label).take(6).join(",")}',
+      );
       return kept;
     } catch (e, st) {
       _consecutiveFailures++;
@@ -134,12 +142,6 @@ class TfliteObjectDetector implements ObjectDetector {
 
     try {
       final fromAsset = await _loadLabelsFromAsset();
-      if (fromAsset != null && fromAsset.isNotEmpty) {
-        _resolvedLabels = fromAsset;
-        debugPrint(
-          'TfliteObjectDetector: loaded ${fromAsset.length} labels from $labelsAssetPath',
-        );
-      }
 
       final options = InterpreterOptions()..threads = 1;
       final interpreter = await Interpreter.fromAsset(modelAssetPath, options: options);
@@ -176,16 +178,50 @@ class TfliteObjectDetector implements ObjectDetector {
         outElems * 4,
       );
 
+      final inferredNc = _inferNumClasses(_outputShape);
+      if (fromAsset != null &&
+          fromAsset.isNotEmpty &&
+          (inferredNc == null || fromAsset.length == inferredNc)) {
+        _resolvedLabels = fromAsset;
+        debugPrint(
+          'TfliteObjectDetector: loaded ${fromAsset.length} labels from $labelsAssetPath',
+        );
+      } else if (fromAsset != null &&
+          inferredNc != null &&
+          fromAsset.length != inferredNc) {
+        debugPrint(
+          'TfliteObjectDetector: labels file has ${fromAsset.length} names but '
+          'model nc=$inferredNc — using length-matched names',
+        );
+        _resolvedLabels = List.generate(
+          inferredNc,
+          (i) => i < classLabels.length
+              ? classLabels[i]
+              : (i < fromAsset.length ? fromAsset[i] : 'class_$i'),
+        );
+      }
+
       _interpreter = interpreter;
       debugPrint(
         'TfliteObjectDetector: ready ($modelAssetPath, '
         '${_inputWidth}x$_inputHeight, nhwc=$_inputIsNhwc, '
-        'in=$inElems out=$outElems)',
+        'in=$inElems out=$outElems nc=${inferredNc ?? "?"})',
       );
     } catch (e, st) {
       debugPrint('TfliteObjectDetector init failed ($modelAssetPath): $e\n$st');
       _disable('init failed');
     }
+  }
+
+  /// YOLOv8 detect head is usually `[1, 4+nc, anchors]` or `[1, anchors, 4+nc]`.
+  static int? _inferNumClasses(List<int> shape) {
+    if (shape.length < 2) return null;
+    final a = shape[shape.length - 2];
+    final b = shape[shape.length - 1];
+    // Prefer the smaller channel-like dim minus 4 (box).
+    if (a > 4 && a < 200 && b > a) return a - 4;
+    if (b > 4 && b < 200 && a > b) return b - 4;
+    return null;
   }
 
   void _disable(String reason) {
@@ -252,33 +288,14 @@ class TfliteObjectDetector implements ObjectDetector {
   static bool _isRoomRelevantLabel(Detection2D det) {
     final v = det.label.toLowerCase();
     const keep = <String>[
-      'chair',
-      'couch',
-      'sofa',
-      'bed',
-      'table',
-      'tv',
-      'laptop',
-      'monitor',
-      'plant',
-      'book',
-      'clock',
-      'vase',
-      'refrigerator',
-      'microwave',
-      'oven',
-      'sink',
-      'toilet',
-      'keyboard',
-      'mouse',
-      'desk',
-      'lamp',
-      'fan',
-      'window',
-      'door',
-      'shelf',
-      'cabinet',
-      'ac',
+      // Room Rig target / custom head
+      'door', 'window', 'desk', 'chair', 'bed', 'sofa', 'tv', 'monitor', 'pc',
+      'lamp', 'fan', 'ac', 'shelf', 'wardrobe', 'plant', 'purifier', 'vent',
+      'blinds', 'heater', 'intake', 'exhaust',
+      // COCO smoke aliases still remapped in scan_layout_converter
+      'couch', 'table', 'laptop', 'book', 'cabinet', 'potted plant',
+      'keyboard', 'mouse', 'refrigerator', 'microwave', 'oven',
+      'curtain',
     ];
     return keep.any(v.contains);
   }
