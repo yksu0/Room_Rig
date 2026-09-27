@@ -300,7 +300,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'BENCHMARK CENTER',
+                'BENCH CENTER',
                 style: TextStyle(
                   color: AppColors.cyan,
                   fontSize: 10,
