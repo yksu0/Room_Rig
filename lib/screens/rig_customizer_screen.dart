@@ -129,10 +129,25 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             Expanded(
               child: Column(
                 children: [
-                  Expanded(child: _buildCanvas(state)),
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        _buildCanvas(state),
+                        if (selectedFurniture != null &&
+                            !state.hasPendingPlacement &&
+                            !_drag2dGestureStarted &&
+                            _drag2dItemId == null)
+                          Positioned(
+                            left: 8,
+                            right: 8,
+                            top: 4,
+                            child: _buildFurnitureInfoCard(state, selectedFurniture),
+                          ),
+                      ],
+                    ),
+                  ),
                   if (state.hasPendingPlacement) _buildPlacementBar(state),
-                  if (selectedFurniture != null && !state.hasPendingPlacement)
-                    _buildFurnitureInfoCard(state, selectedFurniture),
                   if (selectedScanObject != null) _buildScanInfoCard(state, selectedScanObject),
                   _buildOptimizationPanel(state),
                 ],
@@ -256,14 +271,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
   Future<void> _runAutoRig(BuildContext context, AppState state) async {
     final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text('Run Auto-Rig?', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Auto-Rig scores several layouts for your current goal and applies the best. '
-          'Run again to try the next-best alternate.',
+          'Auto-Rig scores several layouts and applies the best for your goal. '
+          'Use “Try alternate” to cycle other ranked layouts without changing weights.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -272,13 +287,17 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Run'),
+            onPressed: () => Navigator.of(ctx).pop('alternate'),
+            child: const Text('Try alternate'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('best'),
+            child: const Text('Run best'),
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted) return;
+    if (confirmed != 'best' && confirmed != 'alternate' || !mounted) return;
 
     final beforeFp = BenchLayoutBuilder.fingerprintOf(state.furniture);
     final goal = switch (_optimizeGoal) {
@@ -288,10 +307,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       _OptimizeGoal.spatial => 'spatial',
       _OptimizeGoal.balanced => null,
     };
+    final tryAlternate = confirmed == 'alternate';
     if (goal == null) {
-      state.runOptimization();
+      state.runOptimization(tryAlternate: tryAlternate);
     } else {
-      state.runOptimization(goal: goal);
+      state.runOptimization(goal: goal, tryAlternate: tryAlternate);
     }
     if (BenchLayoutBuilder.fingerprintOf(state.furniture) == beforeFp) return;
     if (!mounted) return;
@@ -1996,11 +2016,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   Widget _buildFurnitureInfoCard(AppState state, FurnitureItem item) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-      child: NeonBorderCard(
+    return NeonBorderCard(
         glowColor: AppColors.cyan,
-        padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+        padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -2150,7 +2168,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             ],
           ],
         ),
-      ),
     );
   }
 
