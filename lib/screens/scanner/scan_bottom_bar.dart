@@ -8,6 +8,7 @@ class ScanSetupActionsBar extends StatelessWidget {
   final bool isLockPhase;
   final VoidCallback? onAdvance;
   final VoidCallback onSkipToPreset;
+  final VoidCallback? onEnterManualSize;
 
   const ScanSetupActionsBar({
     super.key,
@@ -15,6 +16,7 @@ class ScanSetupActionsBar extends StatelessWidget {
     required this.isLockPhase,
     required this.onAdvance,
     required this.onSkipToPreset,
+    this.onEnterManualSize,
   });
 
   @override
@@ -55,6 +57,14 @@ class ScanSetupActionsBar extends StatelessWidget {
             style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
           ),
         ),
+        if (onEnterManualSize != null)
+          TextButton(
+            onPressed: onEnterManualSize,
+            child: Text(
+              'Enter length × width manually',
+              style: TextStyle(color: AppColors.cyan, fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ),
       ],
     );
   }
@@ -271,6 +281,7 @@ class ScanBottomBar extends StatelessWidget {
   final VoidCallback onRequestStartScan;
   final VoidCallback? onSetupAdvance;
   final VoidCallback onSetupSkipToPreset;
+  final VoidCallback? onEnterManualSize;
   final VoidCallback? onFinishScan;
   final VoidCallback onCancelScan;
   final VoidCallback onOpenRig;
@@ -289,6 +300,7 @@ class ScanBottomBar extends StatelessWidget {
     required this.onRequestStartScan,
     required this.onSetupAdvance,
     required this.onSetupSkipToPreset,
+    this.onEnterManualSize,
     required this.onFinishScan,
     required this.onCancelScan,
     required this.onOpenRig,
@@ -305,6 +317,8 @@ class ScanBottomBar extends StatelessWidget {
               isLockPhase: setupPhase == ScanSessionPhase.lockTracking,
               onAdvance: setupSnap.canAdvance ? onSetupAdvance : null,
               onSkipToPreset: onSetupSkipToPreset,
+              onEnterManualSize:
+                  setupPhase == ScanSessionPhase.sizeRoom ? onEnterManualSize : null,
             )
           : isScanning
           ? ScanActiveCaptureBottomBar(
