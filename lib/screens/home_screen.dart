@@ -981,7 +981,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               _ActionButton(
                 svgString: RoomSvg.speedometer,
-                label: 'Benchmark',
+                label: 'Bench',
                 color: AppColors.amber,
                 onTap: () => context.read<AppState>().setTab(3),
               ),
