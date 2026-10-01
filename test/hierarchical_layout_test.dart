@@ -149,21 +149,21 @@ void main() {
   });
 
   test('upgrade aliases resolve to canonical ids', () {
-    final arm = PlacementCatalog.of(
+    final blinds = PlacementCatalog.of(
       FurnitureItem(
-        id: 'upg_monitor_arm_1',
-        name: 'Monitor Arm',
-        iconName: 'monitorArm',
-        category: 'ergonomics',
+        id: 'upg_blinds_1',
+        name: 'Smart Blinds',
+        iconName: 'smartBlinds',
+        category: 'lighting',
         gridX: 0,
         gridY: 0,
         width: 1,
         height: 1,
       ),
     );
-    expect(arm.id, 'upg_monitor_arm');
-    expect(arm.klass, PlacementClass.eAttached);
-    expect(arm.physicalParent, 'desk');
+    expect(blinds.id, 'upg_blinds');
+    expect(blinds.klass, PlacementClass.eAttached);
+    expect(blinds.physicalParent, 'window');
   });
 
   test('TV wall-mounted uses must wall', () {
