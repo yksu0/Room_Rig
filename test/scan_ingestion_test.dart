@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/room_model.dart';
+import 'package:room_rig/models/rig_catalog.dart';
 import 'package:room_rig/models/scan_layout_model.dart';
 import 'package:room_rig/services/scan_input_provider.dart';
 import 'package:room_rig/services/scan_layout_converter.dart';
@@ -290,5 +291,75 @@ void main() {
     expect(grid.coverage[4], 1.0);
     grid = grid.markCell(1, 1, 0.9);
     expect(grid.coverage[4], 1.0);
+  });
+
+  test('Scan purifier and blinds survive retainV1 (detector-native classes)', () {
+    final furniture = ScanLayoutConverter.toFurniture(
+      RoomLayoutModel(
+        roomName: 'scan',
+        dimensions: const RoomDimensions(lengthMeters: 4, widthMeters: 3.5, heightMeters: 2.7),
+        coverageGrid: CoverageGrid.empty(cols: 6, rows: 6),
+        objects: const [
+          ScanObject(
+            id: 'purifier_1.0_1.0',
+            label: 'purifier',
+            category: 'airflow',
+            confidence: 0.9,
+            center: Vec3(x: 1.0, y: 0.5, z: 1.0),
+            sizeMeters: Vec3(x: 0.4, y: 0.8, z: 0.4),
+            yawDegrees: 0,
+            source: 'scan-fusion',
+          ),
+          ScanObject(
+            id: 'blinds_2.0_0.3',
+            label: 'blinds',
+            category: 'lighting',
+            confidence: 0.85,
+            center: Vec3(x: 2.0, y: 1.2, z: 0.3),
+            sizeMeters: Vec3(x: 1.2, y: 1.4, z: 0.1),
+            yawDegrees: 0,
+            source: 'scan-fusion',
+          ),
+        ],
+        detections: const [],
+        updatedAt: DateTime.now().toUtc(),
+        scanSource: 'test',
+      ),
+      gridCols: 6,
+      gridRows: 6,
+    );
+    final kept = RigCatalog.retainV1(furniture);
+    expect(kept.any((f) => f.iconName == 'purifier'), isTrue);
+    expect(kept.any((f) => f.iconName == 'smartBlinds'), isTrue);
+  });
+
+  test('exhaust / air outlet map to exhaust icon (not intake)', () {
+    expect(
+      ScanLayoutConverter.toFurniture(
+        RoomLayoutModel(
+          roomName: 'scan',
+          dimensions: const RoomDimensions(lengthMeters: 4, widthMeters: 3.5, heightMeters: 2.7),
+          coverageGrid: CoverageGrid.empty(cols: 6, rows: 6),
+          objects: const [
+            ScanObject(
+              id: 'exhaust_1',
+              label: 'exhaust',
+              category: 'airflow',
+              confidence: 0.8,
+              center: Vec3(x: 0.2, y: 1.8, z: 1.5),
+              sizeMeters: Vec3(x: 0.3, y: 0.3, z: 0.1),
+              yawDegrees: 0,
+              source: 'scan-fusion',
+            ),
+          ],
+          detections: const [],
+          updatedAt: DateTime.now().toUtc(),
+          scanSource: 'test',
+        ),
+        gridCols: 6,
+        gridRows: 6,
+      ).first.iconName,
+      'exhaust',
+    );
   });
 }
