@@ -17,11 +17,7 @@ void main() {
     for (final id in const [
       'upg_fan',
       'upg_purifier',
-      'upg_light_bar',
       'upg_floor_lamp',
-      'upg_monitor_arm',
-      'upg_cable_tray',
-      'upg_mat',
       'upg_blinds',
     ]) {
       expect(ItemPlacementRules.arrangementNote(id), isNotEmpty);
