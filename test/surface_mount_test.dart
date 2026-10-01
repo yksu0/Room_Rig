@@ -57,8 +57,8 @@ void main() {
       for (final f in [
         _item(id: 'rack', name: 'Storage Rack', icon: 'shelf'),
         _item(id: 'chair2', name: 'Backrest Chair', icon: 'chair'),
-        _item(id: 'mat', name: 'Anti-Fatigue Mat', icon: 'mat'),
-        _item(id: 'tray', name: 'Cable Tray', icon: 'cableTray'),
+        _item(id: 'plant', name: 'Plant', icon: 'plant'),
+        _item(id: 'lamp', name: 'Lamp', icon: 'lamp'),
       ]) {
         expect(SurfaceMounts.isVent(f), isFalse, reason: '${f.name} is not a vent');
       }
