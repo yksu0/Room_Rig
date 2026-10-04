@@ -105,7 +105,11 @@ class _ScannerScreenState extends State<ScannerScreen>
   DateTime? _scanEndedAt;
   String? _lastExportFolder;
   String _detectorLabel = 'Approximate / luma heuristics';
-  String _honestySummary = 'Approximate / luma heuristics · preset room size · visual tracking (not SLAM)';
+  String _honestySummary = 'Approximate / luma heuristics · preset room size · tracking unknown';
+  bool _preferArCore = false;
+  String _trackingSource = 'visual';
+  String _roomSizeSource = 'preset';
+  RoomDimensions? _pendingManualDimensions;
 
   @override
   void initState() {
@@ -307,7 +311,10 @@ class _ScannerScreenState extends State<ScannerScreen>
           heightMeters: 2.7,
         );
     return ScanPipeline(
-      trackingProvider: CompositeTrackingProvider(roomBounds: dims),
+      trackingProvider: CompositeTrackingProvider(
+        roomBounds: dims,
+        preferNativePose: _preferArCore,
+      ),
       qualityAnalyzer: BasicFrameQualityAnalyzer(),
       objectDetector: HybridObjectDetector(
         primary: TfliteObjectDetector(modelAssetPath: 'assets/models/yolo_roomrig.tflite'),
@@ -317,13 +324,16 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  Future<void> _refreshDetectorLabel() async {
+  Future<void> _refreshDetectorLabel({String? trackingSource}) async {
+    ScanModelAvailability.clearCache();
     final bundled = await ScanModelAvailability.isProductionModelBundled();
     final label = await ScanModelAvailability.detectorLabel(
       usingHeuristicFallback: !bundled,
     );
     final honesty = await ScanModelAvailability.honestySummary(
       usingHeuristicFallback: !bundled,
+      roomSizeSource: _roomSizeSource,
+      trackingSource: trackingSource ?? _trackingSource,
     );
     if (!mounted) return;
     setState(() {
@@ -349,11 +359,28 @@ class _ScannerScreenState extends State<ScannerScreen>
     }
     await _refreshDetectorLabel();
     if (!mounted) return;
-    final go = await showScanPreCoachSheet(
+    final initial = state.activeRoomLayout?.dimensions ??
+        RoomDimensions(
+          lengthMeters: state.currentRoomData.gridCols * 0.6,
+          widthMeters: state.currentRoomData.gridRows * 0.6,
+          heightMeters: 2.7,
+        );
+    final coach = await showScanPreCoachSheet(
       context,
       detectorLabel: _detectorLabel,
+      initialDimensions: initial,
     );
-    if (!go || !mounted) return;
+    if (coach == null || !mounted) return;
+    _preferArCore = coach.preferArCore;
+    _pendingManualDimensions = coach.manualDimensions;
+    if (coach.manualDimensions != null) {
+      _roomSizeSource = 'manual';
+    } else {
+      _roomSizeSource = 'preset';
+    }
+    await _refreshDetectorLabel(
+      trackingSource: _preferArCore ? 'arcore' : 'visual',
+    );
     await _startScan();
   }
 
@@ -371,6 +398,12 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     await _stopInputProvider();
     await _scanPipeline?.dispose();
+    // If ARCore is requested, drop any leftover Flutter camera first so
+    // pipeline.initialize → ARCore Session does not fight CameraX.
+    if (_preferArCore) {
+      await _releaseFlutterCamera();
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+    }
     final pipeline = _createPipeline();
     _scanPipeline = pipeline;
 
@@ -380,6 +413,14 @@ class _ScannerScreenState extends State<ScannerScreen>
     state.applyScannedRoomLayout(seedLayout, persist: false);
 
     _setup.reset();
+    final pending = _pendingManualDimensions;
+    if (pending != null) {
+      _setup.setManualDimensions(pending);
+      _roomSizeSource = 'manual';
+      // Skip walk-to-measure when size is already known.
+      _setup.skipToCapture();
+    }
+    _pendingManualDimensions = null;
 
     setState(() {
       _isScanning = true;
@@ -429,8 +470,21 @@ class _ScannerScreenState extends State<ScannerScreen>
     _scheduleLogAutoScroll();
 
     await _startInputSource();
-    if (!_arCoreOwnsCamera) {
-      _skipSetupToPresetCapture(reason: 'no ARCore — using preset room size');
+    // Live camera (no ARCore session) cannot walk-measure reliably — use preset
+    // or the manual size from the pre-scan sheet. ARCore pose mode keeps setup steps.
+    if (_arCoreOwnsCamera && _setup.roomSizeSource != 'manual') {
+      // lock → size → capture via observe()
+    } else {
+      if (_setup.roomSizeSource != 'manual') {
+        _skipSetupToPresetCapture(
+          reason: _preferArCore
+              ? 'ARCore not ready — preset room size'
+              : 'live camera — preset room size (enter size manually for better maps)',
+        );
+      } else if (_setup.phase != ScanSessionPhase.capture) {
+        _setup.skipToCapture();
+      }
+      _beginMeasuredCapture();
     }
   }
 
@@ -472,25 +526,64 @@ class _ScannerScreenState extends State<ScannerScreen>
     }
     state.applyScannedRoomLayout(seed, persist: false);
     _liveLayout = seed;
+    _roomSizeSource = _setup.roomSizeSource;
     _latestCamX = seed.dimensions.lengthMeters * 0.5;
     _latestCamZ = seed.dimensions.widthMeters * 0.5;
     _appendLog(
-      '> Room sized ${seed.dimensions.lengthMeters.toStringAsFixed(1)}×${seed.dimensions.widthMeters.toStringAsFixed(1)} m. Capture started.',
+      '> Room sized ${seed.dimensions.lengthMeters.toStringAsFixed(1)}×${seed.dimensions.widthMeters.toStringAsFixed(1)} m '
+      '(${_setup.roomSizeSource}). Capture started.',
       key: 'setup-capture',
     );
+    unawaited(_refreshDetectorLabel());
     HapticFeedback.mediumImpact();
   }
 
   Future<void> _startInputSource() async {
     final tracking = _scanPipeline?.trackingProvider;
 
-    // Always prefer the Flutter camera viewfinder on Android.
-    // ARCore-owned luma frames look like TV static and hide the room.
+    // Opt-in: ARCore owns camera for pose (+ grainy luma preview).
+    if (Platform.isAndroid &&
+        _preferArCore &&
+        tracking is CompositeTrackingProvider) {
+      // Always free the Flutter camera BEFORE (re)touching ARCore — two
+      // owners on the same lens hard-crash native ARCore on S10+.
+      await _releaseFlutterCamera();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      // pipeline.initialize() may already have opened ARCore — do not create
+      // a second Session (native abort). Only init if not ready yet.
+      if (!tracking.isNativeReady) {
+        await tracking.initialize();
+      }
+      if (tracking.isNativeReady) {
+        final ar = ArCoreOwnedScanInputProvider();
+        _inputProvider = ar;
+        _inputProviderId = ar.id;
+        _arCoreOwnsCamera = true;
+        await ar.initialize();
+        await ar.start(_ingestFrame);
+        _trackingSource = tracking.nativeBackend;
+        _appendLog(
+          '> Input: ARCore pose mode (preview may look grainy).',
+          key: 'input-arcore',
+        );
+        unawaited(_refreshDetectorLabel(trackingSource: _trackingSource));
+        if (mounted) setState(() {});
+        return;
+      }
+      _appendLog(
+        '> ARCore unavailable (${tracking.nativeInitReason ?? 'unknown'}) — '
+        'falling back to live camera + visual tracking.',
+        severity: ScanLogSeverity.warning,
+        key: 'arcore-fallback',
+      );
+      _preferArCore = false;
+    }
+
+    // Default Android path: Flutter camera + visual odometry (clear preview).
     if (Platform.isAndroid && tracking is CompositeTrackingProvider && tracking.isNativeReady) {
       await tracking.releaseNativeSession(
         reason: 'prefer_live_camera_preview',
       );
-      // Give the camera HAL a beat to release after ARCore dispose.
       await Future<void>.delayed(const Duration(milliseconds: 350));
       _appendLog(
         '> Using live device camera (ARCore pose paused so preview stays clear).',
@@ -510,7 +603,9 @@ class _ScannerScreenState extends State<ScannerScreen>
       await relay.initialize();
       await _startCameraStream();
       await relay.start(_ingestFrame);
+      _trackingSource = 'visual';
       _appendLog('> Input provider: live camera + visual tracking.', key: 'input-camera');
+      unawaited(_refreshDetectorLabel(trackingSource: 'visual'));
       if (mounted) setState(() {});
       return;
     }
@@ -521,11 +616,13 @@ class _ScannerScreenState extends State<ScannerScreen>
     _inputProviderId = simulated.id;
     await simulated.initialize();
     await simulated.start(_ingestFrame);
+    _trackingSource = 'simulated';
     _appendLog(
       '> Input provider: simulated (no camera).',
       severity: ScanLogSeverity.warning,
       key: 'input-simulated',
     );
+    unawaited(_refreshDetectorLabel(trackingSource: 'simulated'));
     if (mounted) setState(() {});
   }
 
@@ -707,6 +804,8 @@ class _ScannerScreenState extends State<ScannerScreen>
       );
       _latestCamX = tracking.cameraPosition.x;
       _latestCamZ = tracking.cameraPosition.z;
+      _trackingSource = tracking.source;
+      _roomSizeSource = _setup.roomSizeSource;
       _coachBanner = ScanGuidance.coachBanner(
         issues: quality.issues,
         trackingStable: tracking.trackingStable,
@@ -720,6 +819,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       _previewWidth = previewW;
       _previewHeight = previewH;
     });
+    unawaited(_refreshDetectorLabel(trackingSource: tracking.source));
   }
 
   Future<void> _ingestFrame(ScanFrameInput frame) async {
@@ -864,12 +964,16 @@ class _ScannerScreenState extends State<ScannerScreen>
         _latestYawDegrees = heading;
         _latestCamX = tracking.cameraPosition.x;
         _latestCamZ = tracking.cameraPosition.z;
+        _trackingSource = tracking.source;
         _coachBanner = coach;
         _previewBytes = previewBytes;
         _previewWidth = previewW;
         _previewHeight = previewH;
         _qualityLogCooldown++;
       });
+      if (_qualityLogCooldown % 10 == 0) {
+        unawaited(_refreshDetectorLabel(trackingSource: tracking.source));
+      }
     } catch (e) {
       _appendLog(
         '> Frame ingest error: $e',
@@ -1172,6 +1276,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                 _beginMeasuredCapture();
                 setState(() {});
               },
+              onEnterManualSize: () => unawaited(_promptManualRoomSize()),
               onFinishScan: _finishScan,
               onCancelScan: _cancelScan,
               onOpenRig: () => context.read<AppState>().setTab(2),
@@ -1319,6 +1424,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 
   Widget _buildSetupHud() {
     final snap = _setup.snapshot();
+    final track = ScanModelAvailability.trackingLabel(_trackingSource);
     return Positioned(
       left: 12,
       right: 12,
@@ -1334,14 +1440,36 @@ class _ScannerScreenState extends State<ScannerScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              snap.stepLabel,
-              style: const TextStyle(
-                color: AppColors.cyan,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.2,
-              ),
+            Row(
+              children: [
+                Text(
+                  snap.stepLabel,
+                  style: const TextStyle(
+                    color: AppColors.cyan,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(99),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Text(
+                    track.toUpperCase(),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             Text(
@@ -1374,6 +1502,76 @@ class _ScannerScreenState extends State<ScannerScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _promptManualRoomSize() async {
+    final state = context.read<AppState>();
+    final seed = state.activeRoomLayout?.dimensions ??
+        RoomDimensions(
+          lengthMeters: state.currentRoomData.gridCols * 0.6,
+          widthMeters: state.currentRoomData.gridRows * 0.6,
+          heightMeters: 2.7,
+        );
+    final lengthCtrl = TextEditingController(text: seed.lengthMeters.toStringAsFixed(1));
+    final widthCtrl = TextEditingController(text: seed.widthMeters.toStringAsFixed(1));
+    final heightCtrl = TextEditingController(text: seed.heightMeters.toStringAsFixed(1));
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Room size (meters)', style: TextStyle(color: AppColors.textPrimary)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: lengthCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Length'),
+            ),
+            TextField(
+              controller: widthCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Width'),
+            ),
+            TextField(
+              controller: heightCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'Height'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Apply')),
+        ],
+      ),
+    );
+
+    if (ok == true && mounted) {
+      final L = double.tryParse(lengthCtrl.text.trim());
+      final W = double.tryParse(widthCtrl.text.trim());
+      final H = double.tryParse(heightCtrl.text.trim()) ?? 2.7;
+      if (L != null && W != null) {
+        _setup.setManualDimensions(
+          RoomDimensions(
+            lengthMeters: L,
+            widthMeters: W,
+            heightMeters: H,
+          ),
+        );
+        _roomSizeSource = 'manual';
+        _appendLog(
+          '> Manual room size ${L.toStringAsFixed(1)}×${W.toStringAsFixed(1)} m.',
+          key: 'manual-size',
+        );
+        unawaited(_refreshDetectorLabel());
+        setState(() {});
+      }
+    }
+    lengthCtrl.dispose();
+    widthCtrl.dispose();
+    heightCtrl.dispose();
   }
 
   Widget _buildScanHud(AppState state) {
