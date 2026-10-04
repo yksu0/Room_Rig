@@ -165,6 +165,9 @@ class CompositeTrackingProvider implements TrackingProvider {
   final VisualOdometryEstimator visual;
   RoomDimensions? roomBounds;
 
+  /// When true on Android, initialize ARCore instead of forcing visual-only.
+  bool preferNativePose;
+
   bool _nativeReady = false;
   String _nativeBackend = 'none';
   String? _nativeInitReason;
@@ -175,6 +178,7 @@ class CompositeTrackingProvider implements TrackingProvider {
     MethodChannel? channel,
     VisualOdometryEstimator? visual,
     this.roomBounds,
+    this.preferNativePose = false,
   })  : channel = channel ?? const MethodChannel('room_rig/arcore'),
         visual = visual ?? VisualOdometryEstimator();
 
@@ -210,6 +214,19 @@ class CompositeTrackingProvider implements TrackingProvider {
   @override
   Future<void> initialize() async {
     _simFrame = 0;
+    // Keep an existing live ARCore session; recreating it mid-scan aborts native.
+    if (_nativeReady && preferNativePose) {
+      visual.reset(
+        seedPosition: roomBounds == null
+            ? null
+            : Vec3(
+                x: roomBounds!.lengthMeters * 0.35,
+                y: 1.5,
+                z: roomBounds!.widthMeters * 0.35,
+              ),
+      );
+      return;
+    }
     _nativeReady = false;
     _nativeBackend = 'none';
     _nativeInitReason = null;
@@ -227,9 +244,9 @@ class CompositeTrackingProvider implements TrackingProvider {
     final isMobile = platform == TargetPlatform.android || platform == TargetPlatform.iOS;
     if (!isMobile) return;
 
-    // Android: skip exclusive ARCore session so Flutter keeps a real color preview.
-    // Visual odometry drives the minimap you-marker instead.
-    if (platform == TargetPlatform.android) {
+    // Android default: skip exclusive ARCore so Flutter keeps a real color preview.
+    // Opt in via [preferNativePose] for stronger map accuracy (grainy luma preview).
+    if (platform == TargetPlatform.android && !preferNativePose) {
       _nativeReady = false;
       _nativeBackend = 'none';
       _nativeInitReason = 'prefer_live_camera_preview';
