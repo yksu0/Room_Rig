@@ -34,9 +34,9 @@ class ArCoreSessionManager(
 ) : GLSurfaceView.Renderer {
 	companion object {
 		private const val TAG = "ArCoreSessionManager"
-		private const val FRAME_MAX_SIDE = 160
+		private const val FRAME_MAX_SIDE = 96
 		private const val REQUEST_CAMERA = 9910
-		private const val LUMA_MIN_INTERVAL_MS = 180L
+		private const val LUMA_MIN_INTERVAL_MS = 450L
 	}
 
 	private var session: Session? = null
