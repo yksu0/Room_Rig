@@ -26,6 +26,8 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
   required String detectorLabel,
   RoomDimensions? initialDimensions,
   String initialRemoteHost = '127.0.0.1:8787',
+  bool initialUseRemoteDetect = false,
+  bool initialPreferArCore = false,
 }) async {
   final lengthCtrl = TextEditingController(
     text: (initialDimensions?.lengthMeters ?? 4.2).toStringAsFixed(1),
@@ -37,9 +39,9 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
     text: (initialDimensions?.heightMeters ?? 2.7).toStringAsFixed(1),
   );
   final remoteHostCtrl = TextEditingController(text: initialRemoteHost);
-  var preferArCore = false;
+  var preferArCore = initialPreferArCore;
   var useManualSize = false;
-  var useRemoteDetect = false;
+  var useRemoteDetect = initialUseRemoteDetect;
 
   final result = await showModalBottomSheet<ScanPreCoachResult>(
     context: context,

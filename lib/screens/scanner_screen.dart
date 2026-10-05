@@ -110,7 +110,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   String _detectorLabel = 'Approximate / luma heuristics';
   String _honestySummary = 'Approximate / luma heuristics · preset room size · tracking unknown';
   bool _preferArCore = false;
-  bool _useRemoteDetect = false;
+  bool _useRemoteDetect = true;
   String _remoteHostPort = '127.0.0.1:8787';
   String _trackingSource = 'visual';
   String _roomSizeSource = 'preset';
@@ -386,6 +386,8 @@ class _ScannerScreenState extends State<ScannerScreen>
       detectorLabel: _detectorLabel,
       initialDimensions: initial,
       initialRemoteHost: _remoteHostPort,
+      initialUseRemoteDetect: _useRemoteDetect,
+      initialPreferArCore: _preferArCore,
     );
     if (coach == null || !mounted) return;
     _preferArCore = coach.preferArCore;
@@ -1823,10 +1825,19 @@ class _ScannerScreenState extends State<ScannerScreen>
       if (!mounted) return;
       setState(() {
         if (host != null && host.trim().isNotEmpty) {
-          _remoteHostPort = host.trim();
+          // Prefer USB adb-reverse loopback for this prototype; old LAN IPs
+          // often hit a closed firewall and silently fall back to TFLite.
+          final trimmed = host.trim();
+          if (trimmed.startsWith('192.168.') && !trimmed.startsWith('127.')) {
+            _remoteHostPort = '127.0.0.1:8787';
+          } else {
+            _remoteHostPort = trimmed;
+          }
         }
-        if (enabled != null) {
-          _useRemoteDetect = enabled;
+        // Prototype branch defaults ON. Older builds always opened the coach
+        // with the toggle off and then persisted false — ignore that false.
+        if (enabled == true) {
+          _useRemoteDetect = true;
         }
       });
     } catch (_) {}

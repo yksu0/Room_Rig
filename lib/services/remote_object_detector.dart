@@ -127,6 +127,10 @@ class RemoteObjectDetector implements ObjectDetector {
           ),
         );
       }
+      debugPrint(
+        'RemoteObjectDetector: ok ${res.bodyBytes.length}b '
+        'boxes=${out.length} @ $hostPort',
+      );
       _lastResults = out;
       _lastOk = true;
       _lastError = null;
@@ -134,7 +138,7 @@ class RemoteObjectDetector implements ObjectDetector {
     } catch (e) {
       _lastOk = false;
       _lastError = e.toString();
-      debugPrint('RemoteObjectDetector: $e');
+      debugPrint('RemoteObjectDetector: FAIL $hostPort → $e');
       return const [];
     }
   }
