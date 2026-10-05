@@ -1,7 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
-    <uses-feature android:name="android.hardware.camera.ar" android:required="true" />
+    <!-- Optional: visual Scan works without ARCore; pose mode opts in at runtime. -->
+    <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 
     <application
@@ -10,7 +11,7 @@
         android:icon="@mipmap/ic_launcher">
         <meta-data
             android:name="com.google.ar.core"
-            android:value="required" />
+            android:value="optional" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
