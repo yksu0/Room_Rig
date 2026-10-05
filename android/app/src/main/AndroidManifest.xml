@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Needed for PC remote YOLO (release builds; debug/profile already declare this). -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <!-- Optional: visual Scan works without ARCore; pose mode opts in at runtime. -->
     <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
@@ -8,7 +10,8 @@
     <application
         android:label="room_rig"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
         <meta-data
             android:name="com.google.ar.core"
             android:value="optional" />
