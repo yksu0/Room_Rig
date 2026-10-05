@@ -18,6 +18,7 @@ import '../services/scan_readiness.dart';
 import '../services/scan_pipeline_stubs.dart';
 import '../services/scan_model_availability.dart';
 import '../services/tflite_object_detector.dart';
+import '../services/remote_object_detector.dart';
 import '../services/scan_guidance.dart';
 import '../services/scan_setup.dart';
 import '../theme/app_theme.dart';
@@ -42,6 +43,8 @@ class ScannerScreen extends StatefulWidget {
 class _ScannerScreenState extends State<ScannerScreen>
     with TickerProviderStateMixin {
   static const String _logFilterPrefKey = 'room_rig.scanner.log_filter';
+  static const String _remoteDetectHostPrefKey = 'room_rig.scanner.remote_host';
+  static const String _remoteDetectEnabledPrefKey = 'room_rig.scanner.remote_enabled';
   static const String _readinessHintsExpandedPrefKey = 'room_rig.scanner.readiness_hints_expanded';
   static const String _logPanelCollapsedPrefKey = 'room_rig.scanner.log_panel_collapsed';
   static const String _logAutoScrollPrefKey = 'room_rig.scanner.log_auto_scroll';
@@ -107,6 +110,8 @@ class _ScannerScreenState extends State<ScannerScreen>
   String _detectorLabel = 'Approximate / luma heuristics';
   String _honestySummary = 'Approximate / luma heuristics · preset room size · tracking unknown';
   bool _preferArCore = false;
+  bool _useRemoteDetect = false;
+  String _remoteHostPort = '192.168.254.100:8787';
   String _trackingSource = 'visual';
   String _roomSizeSource = 'preset';
   RoomDimensions? _pendingManualDimensions;
@@ -129,6 +134,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     unawaited(_restoreLogFilterPreference());
     unawaited(_restoreReadinessHintsPreference());
     unawaited(_restoreLogPanelPreferences());
+    unawaited(_restoreRemoteDetectPrefs());
     unawaited(_refreshDetectorLabel());
     // On Android, ARCore owns the camera during scan (S10+). Defer Flutter
     // camera until AR is unavailable so the two never fight for the lens.
@@ -310,16 +316,26 @@ class _ScannerScreenState extends State<ScannerScreen>
           widthMeters: state.currentRoomData.gridRows * 0.6,
           heightMeters: 2.7,
         );
+    final onDevice = HybridObjectDetector(
+      primary: TfliteObjectDetector(modelAssetPath: 'assets/models/yolo_roomrig.tflite'),
+      fallback: HeuristicObjectDetector(),
+    );
+    final ObjectDetector detector;
+    if (_useRemoteDetect && _remoteHostPort.trim().isNotEmpty) {
+      detector = HybridObjectDetector(
+        primary: RemoteObjectDetector(hostPort: _remoteHostPort.trim()),
+        fallback: onDevice,
+      );
+    } else {
+      detector = onDevice;
+    }
     return ScanPipeline(
       trackingProvider: CompositeTrackingProvider(
         roomBounds: dims,
         preferNativePose: _preferArCore,
       ),
       qualityAnalyzer: BasicFrameQualityAnalyzer(),
-      objectDetector: HybridObjectDetector(
-        primary: TfliteObjectDetector(modelAssetPath: 'assets/models/yolo_roomrig.tflite'),
-        fallback: HeuristicObjectDetector(),
-      ),
+      objectDetector: detector,
       fusionEngine: GridCoverageFusionEngine(),
     );
   }
@@ -369,14 +385,31 @@ class _ScannerScreenState extends State<ScannerScreen>
       context,
       detectorLabel: _detectorLabel,
       initialDimensions: initial,
+      initialRemoteHost: _remoteHostPort,
     );
     if (coach == null || !mounted) return;
     _preferArCore = coach.preferArCore;
+    _useRemoteDetect = coach.useRemoteDetect;
+    if (coach.remoteHostPort.isNotEmpty) {
+      _remoteHostPort = coach.remoteHostPort;
+    }
     _pendingManualDimensions = coach.manualDimensions;
     if (coach.manualDimensions != null) {
       _roomSizeSource = 'manual';
     } else {
       _roomSizeSource = 'preset';
+    }
+    unawaited(_persistRemoteDetectPrefs());
+    if (_useRemoteDetect) {
+      final remote = RemoteObjectDetector(hostPort: _remoteHostPort);
+      final ok = await remote.ping();
+      _appendLog(
+        ok
+            ? '> Remote PC detect ready @ $_remoteHostPort'
+            : '> Remote PC unreachable (${remote.lastError}) — TFLite fallback',
+        severity: ok ? ScanLogSeverity.info : ScanLogSeverity.warning,
+        key: 'remote-ping',
+      );
     }
     await _refreshDetectorLabel(
       trackingSource: _preferArCore ? 'arcore' : 'visual',
@@ -1780,6 +1813,31 @@ class _ScannerScreenState extends State<ScannerScreen>
     if (_logFilter == filter) return;
     setState(() => _logFilter = filter);
     unawaited(_persistLogFilterPreference(filter));
+  }
+
+  Future<void> _restoreRemoteDetectPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final host = prefs.getString(_remoteDetectHostPrefKey);
+      final enabled = prefs.getBool(_remoteDetectEnabledPrefKey);
+      if (!mounted) return;
+      setState(() {
+        if (host != null && host.trim().isNotEmpty) {
+          _remoteHostPort = host.trim();
+        }
+        if (enabled != null) {
+          _useRemoteDetect = enabled;
+        }
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _persistRemoteDetectPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_remoteDetectHostPrefKey, _remoteHostPort.trim());
+      await prefs.setBool(_remoteDetectEnabledPrefKey, _useRemoteDetect);
+    } catch (_) {}
   }
 
   Future<void> _restoreLogFilterPreference() async {
