@@ -407,11 +407,15 @@ class _ScannerScreenState extends State<ScannerScreen>
       final ok = await remote.ping();
       _appendLog(
         ok
-            ? '> Remote PC detect ready @ $_remoteHostPort'
+            ? '> Remote PC detect ready @ $_remoteHostPort (downscaled 640)'
             : '> Remote PC unreachable (${remote.lastError}) — TFLite fallback',
         severity: ok ? ScanLogSeverity.info : ScanLogSeverity.warning,
         key: 'remote-ping',
       );
+      if (!ok) {
+        // Keep toggle state for retry, but avoid paying remote timeouts every frame.
+        _useRemoteDetect = false;
+      }
     }
     await _refreshDetectorLabel(
       trackingSource: _preferArCore ? 'arcore' : 'visual',
@@ -901,9 +905,11 @@ class _ScannerScreenState extends State<ScannerScreen>
     if (!_isScanning || _processingFrame || _scanPipeline == null) return;
 
     final now = DateTime.now();
-    // Keep ingest light — YOLO itself is also throttled inside the detector.
-    // ARCore sizing polls are lighter; still avoid stacking UI work.
-    final minGapMs = _arCoreOwnsCamera ? 280 : 400;
+    // Remote path ships a downscaled frame — keep ingest snappy. Local TFLite
+    // stays heavier so we leave a wider gap when remote is off.
+    final minGapMs = _arCoreOwnsCamera
+        ? 280
+        : (_useRemoteDetect ? 160 : 400);
     if (now.difference(_lastFrameAt).inMilliseconds < minGapMs) return;
 
     _processingFrame = true;

@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -13,6 +15,7 @@ class RemoteObjectDetector implements ObjectDetector {
   final String hostPort;
   final Duration timeout;
   final Duration minInterval;
+  final int maxSide;
 
   DateTime? _lastAttempt;
   List<Detection2D> _lastResults = const [];
@@ -21,8 +24,9 @@ class RemoteObjectDetector implements ObjectDetector {
 
   RemoteObjectDetector({
     required this.hostPort,
-    this.timeout = const Duration(milliseconds: 700),
-    this.minInterval = const Duration(milliseconds: 450),
+    this.timeout = const Duration(milliseconds: 1200),
+    this.minInterval = const Duration(milliseconds: 180),
+    this.maxSide = 640,
   });
 
   bool get lastOk => _lastOk;
@@ -57,6 +61,38 @@ class RemoteObjectDetector implements ObjectDetector {
     }
   }
 
+  /// Nearest-neighbor downscale so USB/Wi‑Fi does not ship megabyte luma frames.
+  static (Uint8List, int, int) downscaleLuma(
+    List<int> src,
+    int sw,
+    int sh, {
+    int maxSide = 640,
+  }) {
+    if (sw <= 0 || sh <= 0 || src.isEmpty) {
+      return (Uint8List(0), 0, 0);
+    }
+    final long = math.max(sw, sh);
+    if (long <= maxSide && src.length >= sw * sh) {
+      final bytes = src is Uint8List
+          ? (src.length == sw * sh ? src : Uint8List.sublistView(src, 0, sw * sh))
+          : Uint8List.fromList(src.take(sw * sh).toList());
+      return (bytes, sw, sh);
+    }
+    final scale = maxSide / long;
+    final dw = math.max(1, (sw * scale).round());
+    final dh = math.max(1, (sh * scale).round());
+    final out = Uint8List(dw * dh);
+    for (int y = 0; y < dh; y++) {
+      final sy = math.min(sh - 1, (y / scale).floor());
+      for (int x = 0; x < dw; x++) {
+        final sx = math.min(sw - 1, (x / scale).floor());
+        final si = sy * sw + sx;
+        out[y * dw + x] = si < src.length ? src[si] : 0;
+      }
+    }
+    return (out, dw, dh);
+  }
+
   @override
   Future<List<Detection2D>> detect(ScanFrameInput frame) async {
     if (hostPort.trim().isEmpty ||
@@ -74,17 +110,27 @@ class RemoteObjectDetector implements ObjectDetector {
     _lastAttempt = now;
 
     try {
-      final payload = frame.bytes is Uint8List
-          ? frame.bytes as Uint8List
-          : Uint8List.fromList(List<int>.from(frame.bytes));
+      final scaled = downscaleLuma(
+        frame.bytes,
+        frame.width,
+        frame.height,
+        maxSide: maxSide,
+      );
+      final payload = scaled.$1;
+      final width = scaled.$2;
+      final height = scaled.$3;
+      if (payload.isEmpty || width <= 0 || height <= 0) {
+        return const [];
+      }
 
+      final t0 = DateTime.now();
       final res = await http
           .post(
             _detectUri,
             headers: {
               'Content-Type': 'application/octet-stream',
-              'X-Frame-Width': '${frame.width}',
-              'X-Frame-Height': '${frame.height}',
+              'X-Frame-Width': '$width',
+              'X-Frame-Height': '$height',
               'X-Frame-Format': 'luma8',
             },
             body: payload,
@@ -127,9 +173,10 @@ class RemoteObjectDetector implements ObjectDetector {
           ),
         );
       }
+      final ms = DateTime.now().difference(t0).inMilliseconds;
       debugPrint(
-        'RemoteObjectDetector: ok ${res.bodyBytes.length}b '
-        'boxes=${out.length} @ $hostPort',
+        'RemoteObjectDetector: ${width}x$height ${payload.length}b '
+        'rtt=${ms}ms boxes=${out.length} @ $hostPort',
       );
       _lastResults = out;
       _lastOk = true;
