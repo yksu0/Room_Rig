@@ -8,10 +8,14 @@ import 'room_icons.dart';
 class ScanPreCoachResult {
   final RoomDimensions? manualDimensions;
   final bool preferArCore;
+  final bool useRemoteDetect;
+  final String remoteHostPort;
 
   const ScanPreCoachResult({
     this.manualDimensions,
     this.preferArCore = false,
+    this.useRemoteDetect = false,
+    this.remoteHostPort = '',
   });
 }
 
@@ -21,6 +25,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
   BuildContext context, {
   required String detectorLabel,
   RoomDimensions? initialDimensions,
+  String initialRemoteHost = '192.168.254.100:8787',
 }) async {
   final lengthCtrl = TextEditingController(
     text: (initialDimensions?.lengthMeters ?? 4.2).toStringAsFixed(1),
@@ -31,8 +36,10 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
   final heightCtrl = TextEditingController(
     text: (initialDimensions?.heightMeters ?? 2.7).toStringAsFixed(1),
   );
+  final remoteHostCtrl = TextEditingController(text: initialRemoteHost);
   var preferArCore = false;
   var useManualSize = false;
+  var useRemoteDetect = false;
 
   final result = await showModalBottomSheet<ScanPreCoachResult>(
     context: context,
@@ -163,6 +170,43 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                       activeTrackColor: AppColors.cyan,
                       onChanged: (v) => setModal(() => preferArCore = v),
                     ),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Use PC remote detect',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Offload YOLO to ml/remote_infer_server.py on your PC (same Wi‑Fi). Falls back to on-device TFLite.',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                      ),
+                      value: useRemoteDetect,
+                      activeTrackColor: AppColors.cyan,
+                      onChanged: (v) => setModal(() => useRemoteDetect = v),
+                    ),
+                    if (useRemoteDetect) ...[
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: remoteHostCtrl,
+                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                        decoration: InputDecoration(
+                          labelText: 'PC host:port',
+                          hintText: '192.168.x.x:8787',
+                          labelStyle: TextStyle(color: AppColors.textSecondary),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(color: AppColors.border),
+                          ),
+                          focusedBorder: const OutlineInputBorder(
+                            borderSide: BorderSide(color: AppColors.cyan),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     const SizedBox(height: 8),
                     ...ScanModelAvailability.honestyBullets.map(
                       (b) => Padding(
@@ -235,6 +279,8 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                                 ScanPreCoachResult(
                                   manualDimensions: dims,
                                   preferArCore: preferArCore,
+                                  useRemoteDetect: useRemoteDetect,
+                                  remoteHostPort: remoteHostCtrl.text.trim(),
                                 ),
                               );
                             },
