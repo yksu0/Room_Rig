@@ -156,7 +156,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                         ),
                       ),
                       subtitle: Text(
-                        'Stronger map accuracy; preview may look grainy / luma-only',
+                        'Uses ARCore only while sizing the room, then live camera for detection (less lag)',
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
                       ),
                       value: preferArCore,
