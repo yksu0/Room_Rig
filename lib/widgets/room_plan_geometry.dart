@@ -19,8 +19,11 @@ class RoomPlanGeometry {
     if (gridCols <= 0 || gridRows <= 0) {
       return Rect.fromLTWH(pad, pad, size.width - pad * 2, size.height - pad * 2);
     }
-    final availW = (size.width - horizontalReserve - pad * 2).clamp(40.0, size.width);
-    final availH = (size.height - pad * 2).clamp(40.0, size.height);
+    // Web `num.clamp` requires lower <= upper; short LayoutBuilder passes can be < 40.
+    final minW = math.min(40.0, size.width);
+    final minH = math.min(40.0, size.height);
+    final availW = (size.width - horizontalReserve - pad * 2).clamp(minW, size.width);
+    final availH = (size.height - pad * 2).clamp(minH, size.height);
     final aspect = gridCols / gridRows;
     late final double roomW;
     late final double roomH;

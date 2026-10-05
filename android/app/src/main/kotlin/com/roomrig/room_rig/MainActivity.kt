@@ -21,56 +21,60 @@ class MainActivity : FlutterActivity() {
 
 		MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
 			.setMethodCallHandler { call, result ->
-				when (call.method) {
-					"initializeTracking" -> {
-						val manager = ensureSession()
-						val init = manager.initialize()
-						val ready = (init["ready"] as? Boolean) == true
-						if (ready) {
-							manager.resume()
+				try {
+					when (call.method) {
+						"initializeTracking" -> {
+							val manager = ensureSession()
+							val init = manager.initialize()
+							val ready = (init["ready"] as? Boolean) == true
+							if (ready) {
+								manager.resume()
+							}
+							result.success(init)
 						}
-						result.success(init)
-					}
 
-					"updateTracking" -> {
-						val manager = arSession
-						if (manager == null) {
+						"updateTracking" -> {
+							val manager = arSession
+							if (manager == null) {
+								result.success(
+									mapOf(
+										"trackingStable" to false,
+										"confidence" to 0.0,
+										"backend" to "arcore",
+										"reason" to "not_initialized",
+									),
+								)
+								return@setMethodCallHandler
+							}
+							val timestampMs = (call.argument<Number>("timestampMs"))?.toLong() ?: System.currentTimeMillis()
+							result.success(manager.updateTracking(timestampMs))
+						}
+
+						"disposeTracking" -> {
+							arSession?.dispose()
+							arSession = null
+							removeHiddenGlView()
+							result.success(null)
+						}
+
+						"getCapabilities" -> {
 							result.success(
-								mapOf(
-									"trackingStable" to false,
-									"confidence" to 0.0,
-									"backend" to "arcore",
-									"reason" to "not_initialized",
-								),
+								arSession?.capabilities()
+									?: mapOf(
+										"backend" to "arcore-s10",
+										"supportsDepthHint" to true,
+										"supportsConfidence" to true,
+										"supportsVisualFallback" to true,
+										"ownsCamera" to true,
+										"deviceNotes" to "Galaxy S10+: install Play Services for AR; world tracking + optional depth",
+									),
 							)
-							return@setMethodCallHandler
 						}
-						val timestampMs = (call.argument<Number>("timestampMs"))?.toLong() ?: System.currentTimeMillis()
-						result.success(manager.updateTracking(timestampMs))
-					}
 
-					"disposeTracking" -> {
-						arSession?.dispose()
-						arSession = null
-						removeHiddenGlView()
-						result.success(null)
+						else -> result.notImplemented()
 					}
-
-					"getCapabilities" -> {
-						result.success(
-							arSession?.capabilities()
-								?: mapOf(
-									"backend" to "arcore-s10",
-									"supportsDepthHint" to true,
-									"supportsConfidence" to true,
-									"supportsVisualFallback" to true,
-									"ownsCamera" to true,
-									"deviceNotes" to "Galaxy S10+: install Play Services for AR; world tracking + optional depth",
-								),
-						)
-					}
-
-					else -> result.notImplemented()
+				} catch (e: Exception) {
+					result.error("arcore_channel", e.message ?: "arcore_failure", null)
 				}
 			}
 	}

@@ -214,10 +214,10 @@ class LightingSimulator {
   }
 
   static bool _isTaskLamp(FurnitureItem f, String hay) {
-    if (f.iconName == 'lamp' || f.iconName == 'floorLamp' || f.iconName == 'lightBar') {
+    if (f.iconName == 'lamp' || f.iconName == 'floorLamp') {
       return true;
     }
-    if (hay.contains('lamp') || hay.contains('bulb') || hay.contains('light bar')) {
+    if (hay.contains('lamp') || hay.contains('bulb')) {
       return true;
     }
     // Avoid matching every item with "light" in the name (e.g. ceiling fixture
@@ -420,6 +420,17 @@ class LightingSimulator {
     if (windowItem != null) {
       // OSHA: displays at right angles to windows — fold into glare + exposure.
       glare = (glare * 0.7 + (1.0 - sideLight) * 0.3).clamp(0.0, 1.0);
+    }
+
+    // Smart blinds / curtains cut window glare when present in the layout.
+    final hasBlinds = furniture.any((f) {
+      final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
+      return f.iconName == 'smartBlinds' ||
+          hay.contains('blind') ||
+          hay.contains('curtain');
+    });
+    if (hasBlinds && glare > 0) {
+      glare = (glare * 0.45).clamp(0.0, 1.0);
     }
 
     final exposure = (

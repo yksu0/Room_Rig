@@ -77,15 +77,9 @@ void main() {
       'monitor',
       'pc',
       'lamp',
-      'upg_light_bar',
-      'upg_monitor_arm',
-      'upg_cable_tray',
     };
     for (final e in RigCatalog.items.where((e) => deskTops.contains(e.baseId))) {
       expect(SurfaceMounts.isDeskTopItem(catalogPiece(e)), isTrue, reason: e.baseId);
-    }
-    for (final u in upgradeSpecs.where((u) => deskTops.contains(u.id))) {
-      expect(SurfaceMounts.isDeskTopItem(upgradePiece(u)), isTrue, reason: u.id);
     }
   });
 
@@ -214,14 +208,11 @@ void main() {
           c.kind == LayoutConflictKind.overlap ||
           c.kind == LayoutConflictKind.blockedOpening,
     );
-    expect(hard, isEmpty, reason: '$hard');
+    expect(hard, isEmpty, reason: hard.map((c) => '${c.kind.name}:${c.message} ids=${c.itemIds}').join(' | '));
   });
 
   test('each desk-top SKU alone mounts on the gaming desk after Auto-Rig', () {
     final catalogTops = RigCatalog.items.where((e) => {'monitor', 'pc', 'lamp'}.contains(e.baseId));
-    final upgradeTops = upgradeSpecs.where(
-      (u) => {'upg_light_bar', 'upg_monitor_arm', 'upg_cable_tray'}.contains(u.id),
-    );
     for (final e in catalogTops) {
       final furniture = [
         ...room.furniture.map((f) => f.copyWith()),
@@ -241,24 +232,6 @@ void main() {
         reason: '${e.baseId} alone should mount on the desk',
       );
     }
-    for (final u in upgradeTops) {
-      final furniture = [
-        ...room.furniture.map((f) => f.copyWith()),
-        upgradePiece(u),
-      ];
-      final result = MultiObjectiveOptimizer.optimize(
-        furniture: furniture,
-        gridCols: room.gridCols,
-        gridRows: room.gridRows,
-        weights: const MultiObjectiveWeights(airflow: 0.2, lighting: 0.2, ergonomics: 1),
-      );
-      final after = result.furniture.firstWhere((f) => f.id == u.id);
-      expect(
-        SurfaceMounts.hostUnder(after, result.furniture),
-        isNotNull,
-        reason: '${u.id} alone should mount on the desk',
-      );
-    }
   });
 
   test('Hub upgrade catalog furnitureIds are all covered by upgradeSpecs', () {
@@ -266,11 +239,7 @@ void main() {
     final expected = {
       'upg_fan',
       'upg_purifier',
-      'upg_light_bar',
       'upg_floor_lamp',
-      'upg_monitor_arm',
-      'upg_cable_tray',
-      'upg_mat',
       'upg_blinds',
     };
     expect(upgradeSpecs.map((u) => u.id).toSet(), expected);

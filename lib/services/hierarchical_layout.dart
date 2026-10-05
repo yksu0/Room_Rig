@@ -270,8 +270,8 @@ class HierarchicalLayout {
       if (f.locked) continue;
       final spec = PlacementCatalog.of(f);
       if (spec.wall != WallRequirement.preferred) continue;
-      if (spec.id == 'bed' || spec.id == 'sofa') continue;
-      if (ItemPlacementRules.isSofa(f)) continue;
+      if (spec.id == 'bed' || spec.id == 'sofa' || spec.id == 'tv') continue;
+      if (ItemPlacementRules.isSofa(f) || ItemPlacementRules.isTv(f)) continue;
       if (touchesWall(f, cols, rows)) continue;
       if (SurfaceMounts.isDeskHost(f) || ItemPlacementRules.hay(f).contains('desk')) {
         // Desk side-wall flush is owned by relinkPairedLayout.
@@ -326,6 +326,7 @@ class HierarchicalLayout {
   }
 
   /// Portable AC: near window with hose path — mid-room scores poorly.
+  /// Stay clear of the window footprint (openings skip floor collision).
   static List<FurnitureItem> _placePortableAcNearWindow(
     List<FurnitureItem> items,
     int cols,
@@ -347,16 +348,23 @@ class HierarchicalLayout {
         continue;
       }
       if (f.locked) continue;
-      final wx = window.gridX.clamp(0.0, cols - f.width);
-      final wy = (window.gridY + window.height * 0.15).clamp(0.0, rows - f.height);
-      // Prefer just inside the window wall.
+      // Just inside the glass — never on the opening cells.
+      final inwardY = (window.gridY + window.height + 0.35).clamp(0.0, rows - f.height);
       final candidates = <({double x, double y})>[
-        (x: wx, y: wy),
-        (x: (window.gridX + 0.15).clamp(0.0, cols - f.width), y: wy),
-        (x: wx, y: (window.gridY + 1.0).clamp(0.0, rows - f.height)),
+        (x: window.gridX.clamp(0.0, cols - f.width), y: inwardY),
+        (
+          x: (window.gridX + window.width * 0.5 - f.width * 0.5).clamp(0.0, cols - f.width),
+          y: inwardY,
+        ),
+        (x: (cols * 0.35).clamp(0.0, cols - f.width), y: inwardY),
+        (
+          x: (cols * 0.35).clamp(0.0, cols - f.width),
+          y: (rows * 0.45).clamp(0.0, rows - f.height),
+        ),
       ];
       for (final cand in candidates) {
         final trial = f.copyWith(gridX: cand.x, gridY: cand.y);
+        if (LayoutCollision.overlaps(trial, window)) continue;
         if (!LayoutCollision.itemCollides(trial, next)) {
           next[i] = trial;
           break;
@@ -399,21 +407,6 @@ class HierarchicalLayout {
       if (!onDesk) continue;
       if (ItemPlacementRules.hay(f).contains('chair')) continue;
       next[i] = SurfaceMounts.snapOntoHost(f, next);
-    }
-    for (var i = 0; i < next.length; i++) {
-      final f = next[i];
-      if (!ItemPlacementRules.hay(f).contains('mat')) continue;
-      if (f.locked) continue;
-      final chair = next.where((o) => ItemPlacementRules.hay(o).contains('chair')).firstOrNull;
-      final desk = _findByKind(next, 'desk');
-      if (chair != null) {
-        next[i] = f.copyWith(gridX: chair.gridX, gridY: chair.gridY);
-      } else if (desk != null) {
-        next[i] = f.copyWith(
-          gridX: desk.gridX,
-          gridY: (desk.gridY + desk.height).clamp(0.0, rows - f.height),
-        );
-      }
     }
     return next;
   }
@@ -482,13 +475,5 @@ class HierarchicalLayout {
       if (ItemPlacementRules.hay(f).contains(kind)) return f;
     }
     return null;
-  }
-}
-
-extension _FirstOrNull<E> on Iterable<E> {
-  E? get firstOrNull {
-    final it = iterator;
-    if (!it.moveNext()) return null;
-    return it.current;
   }
 }

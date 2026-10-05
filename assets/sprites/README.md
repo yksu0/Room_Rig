@@ -32,10 +32,6 @@ assets/sprites/
   intake.svg
   exhaust.svg
   purifier.svg
-  lightBar.svg
-  monitorArm.svg
-  cableTray.svg
-  mat.svg
   smartBlinds.svg
   …
 ```

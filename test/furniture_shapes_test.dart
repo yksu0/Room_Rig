@@ -81,24 +81,8 @@ void main() {
       FurnitureKind.purifier,
     );
     expect(
-      FurnitureShapes.kindFrom(id: 'upg_monitor_arm', name: 'Monitor Arm', iconName: 'monitorArm'),
-      FurnitureKind.monitorArm,
-    );
-    expect(
-      FurnitureShapes.kindFrom(id: 'upg_cable_tray', name: 'Cable Tray', iconName: 'cableTray'),
-      FurnitureKind.cableTray,
-    );
-    expect(
-      FurnitureShapes.kindFrom(id: 'upg_mat', name: 'Anti-Fatigue Mat', iconName: 'mat'),
-      FurnitureKind.mat,
-    );
-    expect(
       FurnitureShapes.kindFrom(id: 'upg_blinds', name: 'Smart Blinds', iconName: 'smartBlinds'),
       FurnitureKind.smartBlinds,
-    );
-    expect(
-      FurnitureShapes.kindFrom(id: 'upg_light_bar', name: 'Smart Light Bar', iconName: 'lightBar'),
-      FurnitureKind.lightBar,
     );
 
     final boxes = FurnitureShapes.boxes(

@@ -191,8 +191,21 @@ class LayoutOrientation {
           );
 
         case FurnitureKind.monitor:
-        case FurnitureKind.monitorArm:
-        case FurnitureKind.lightBar:
+          final chair = _first(
+            furniture,
+            (f) => f.iconName == 'chair' || '${f.id} ${f.name}'.toLowerCase().contains('chair'),
+          );
+          if (chair != null) {
+            final ch = _center(chair);
+            return item.copyWith(
+              yawDegrees: yawToward(
+                fromX: c.x,
+                fromZ: c.z,
+                toX: ch.x,
+                toZ: ch.z,
+              ),
+            );
+          }
           if (workYaw != null) {
             return item.copyWith(yawDegrees: workYaw);
           }

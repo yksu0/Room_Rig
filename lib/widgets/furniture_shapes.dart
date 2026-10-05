@@ -28,11 +28,7 @@ enum FurnitureKind {
   floorLamp,
   ceilingLight,
   purifier,
-  monitorArm,
-  cableTray,
-  mat,
   smartBlinds,
-  lightBar,
   generic,
 }
 
@@ -71,18 +67,9 @@ class FurnitureShapes {
     if ((hay.contains('floor') && hay.contains('lamp')) || iconName == 'floorLamp') {
       return FurnitureKind.floorLamp;
     }
-    if (hay.contains('light bar') || iconName == 'lightBar') return FurnitureKind.lightBar;
     if (hay.contains('lamp')) return FurnitureKind.taskLamp;
-    // Upgrade SKUs before generic monitor / shelf matches.
-    if (hay.contains('monitor arm') || iconName == 'monitorArm') {
-      return FurnitureKind.monitorArm;
-    }
     if (hay.contains('purifier') || iconName == 'purifier' || hay.contains('evaporative')) {
       return FurnitureKind.purifier;
-    }
-    if (hay.contains('cable') || iconName == 'cableTray') return FurnitureKind.cableTray;
-    if (iconName == 'mat' || hay.contains('fatigue') || hay.contains('standing mat')) {
-      return FurnitureKind.mat;
     }
     if (hay.contains('blind') || iconName == 'smartBlinds') return FurnitureKind.smartBlinds;
     if (iconName == 'monitor' || hay.contains('monitor')) return FurnitureKind.monitor;
@@ -114,7 +101,6 @@ class FurnitureShapes {
         kind == FurnitureKind.chair ||
         kind == FurnitureKind.sofa ||
         kind == FurnitureKind.monitor ||
-        kind == FurnitureKind.monitorArm ||
         kind == FurnitureKind.tv;
   }
 
@@ -225,16 +211,8 @@ class FurnitureShapes {
         return 0.14;
       case FurnitureKind.purifier:
         return 0.72;
-      case FurnitureKind.monitorArm:
-        return 0.52;
-      case FurnitureKind.cableTray:
-        return 0.18;
-      case FurnitureKind.mat:
-        return 0.04;
       case FurnitureKind.smartBlinds:
         return 1.45;
-      case FurnitureKind.lightBar:
-        return 0.22;
       case FurnitureKind.generic:
         return 0.9;
     }
@@ -447,21 +425,6 @@ class FurnitureShapes {
           ...box(x + width * 0.28, 0.48, z + depth * 0.10, x1 - width * 0.28, 0.58, z + depth * 0.22, 0.4),
           ...box(x + width * 0.30, 0.62, z + depth * 0.28, x1 - width * 0.30, 0.70, z1 - depth * 0.28, 0.72),
         ];
-      case FurnitureKind.monitorArm:
-        return [
-          ...box(x + width * 0.40, y, z + depth * 0.36, x1 - width * 0.40, y + 0.06, z1 - depth * 0.20, 0.45),
-          ...box(x + width * 0.46, y + 0.06, z + depth * 0.42, x1 - width * 0.46, y + 0.28, z1 - depth * 0.30, 0.5),
-          ...box(x + width * 0.08, y + 0.22, z + depth * 0.55, x1 - width * 0.08, y + 0.50, z1 - depth * 0.08, 0.82),
-        ];
-      case FurnitureKind.cableTray:
-        return [
-          ...box(x + width * 0.06, y, z + depth * 0.20, x1 - width * 0.06, y + 0.10, z1 - depth * 0.20, 0.5),
-          ...box(x + width * 0.10, y + 0.02, z + depth * 0.28, x1 - width * 0.10, y + 0.16, z1 - depth * 0.28, 0.35),
-        ];
-      case FurnitureKind.mat:
-        return [
-          ...box(x + width * 0.04, y, z + depth * 0.04, x1 - width * 0.04, y + 0.03, z1 - depth * 0.04, 0.55),
-        ];
       case FurnitureKind.smartBlinds:
         return [
           ...box(x + width * 0.06, 0.2, z + depth * 0.02, x1 - width * 0.06, 1.40, z + depth * 0.18, 0.5),
@@ -469,11 +432,6 @@ class FurnitureShapes {
           ...box(x + width * 0.10, 0.55, z + depth * 0.06, x1 - width * 0.10, 0.63, z + depth * 0.16, 0.75),
           ...box(x + width * 0.10, 0.82, z + depth * 0.06, x1 - width * 0.10, 0.90, z + depth * 0.16, 0.75),
           ...box(x + width * 0.10, 1.09, z + depth * 0.06, x1 - width * 0.10, 1.17, z + depth * 0.16, 0.75),
-        ];
-      case FurnitureKind.lightBar:
-        return [
-          ...box(x + width * 0.06, y + 0.10, z + depth * 0.35, x1 - width * 0.06, y + 0.18, z1 - depth * 0.20, 0.7),
-          ...box(x + width * 0.42, y, z + depth * 0.42, x1 - width * 0.42, y + 0.10, z1 - depth * 0.28, 0.4),
         ];
       case FurnitureKind.generic:
         return box(x + width * 0.08, y, z + depth * 0.08, x1 - width * 0.08, y + 0.9, z1 - depth * 0.08, 0.5);
@@ -700,24 +658,6 @@ class FurnitureShapes {
             stroke,
           );
         }
-      case FurnitureKind.monitorArm:
-        rrect(inset(0.38, 0.70, 0.62, 0.92));
-        canvas.drawLine(
-          Offset(size.width * 0.5, size.height * 0.70),
-          Offset(size.width * 0.5, size.height * 0.48),
-          stroke,
-        );
-        rrect(inset(0.08, 0.18, 0.92, 0.50), heavy);
-      case FurnitureKind.cableTray:
-        rrect(inset(0.08, 0.30, 0.92, 0.70), heavy);
-        canvas.drawLine(
-          Offset(size.width * 0.18, size.height * 0.50),
-          Offset(size.width * 0.82, size.height * 0.50),
-          stroke,
-        );
-      case FurnitureKind.mat:
-        rrect(inset(0.08, 0.12, 0.92, 0.88), heavy);
-        rrect(inset(0.18, 0.24, 0.82, 0.76));
       case FurnitureKind.smartBlinds:
         rrect(inset(0.12, 0.08, 0.88, 0.92));
         for (final t in const [0.28, 0.44, 0.60, 0.76]) {
@@ -727,13 +667,6 @@ class FurnitureShapes {
             stroke,
           );
         }
-      case FurnitureKind.lightBar:
-        rrect(inset(0.06, 0.38, 0.94, 0.62), heavy);
-        canvas.drawLine(
-          Offset(size.width * 0.5, size.height * 0.62),
-          Offset(size.width * 0.5, size.height * 0.78),
-          stroke,
-        );
       case FurnitureKind.generic:
         rrect(inset(0.1, 0.1, 0.9, 0.9));
     }

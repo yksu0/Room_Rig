@@ -14,9 +14,5 @@ shelf
 wardrobe
 plant
 purifier
-heater
+vent
 blinds
-mat
-cable_tray
-light_bar
-monitor_arm

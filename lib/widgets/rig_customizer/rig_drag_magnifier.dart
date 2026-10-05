@@ -23,11 +23,11 @@ class RigDragMagnifier extends StatelessWidget {
     required this.scene,
   });
 
-  static const diameter = 124.0;
+  static const diameter = 108.0;
   /// Mild zoom — enough to place precisely without feeling glued to the item.
-  static const scale = 1.35;
+  static const scale = 1.22;
   /// Keep the bubble clearly above the finger.
-  static const lift = 140.0;
+  static const lift = 158.0;
   static const edgePad = 6.0;
 
   /// Maps [focal] to the bubble center after magnification.

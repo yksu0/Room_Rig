@@ -58,16 +58,26 @@ class LayoutCollision {
   /// it as a thin wall device rather than a solid block.
   static bool _skipsCollision(FurnitureItem f) => skipsFloorOccupancy(f);
 
-  /// Openings, vents and ceiling fixtures do not take floor cells. A monitor
-  /// on a desk is handled separately so it still clashes with another lamp
-  /// on the same top.
+  /// Openings, vents, window-wall attachments, and ceiling fixtures do not take
+  /// floor cells. A monitor on a desk is handled separately so it still clashes
+  /// with another lamp on the same top.
   static bool skipsFloorOccupancy(FurnitureItem f) =>
       nonColliding.contains(f.id) ||
       _isOpening(f) ||
+      _isWindowAttachment(f) ||
       SurfaceMounts.isVent(f) ||
       SurfaceMounts.isIntake(f) ||
       SurfaceMounts.isExhaust(f) ||
       SurfaceMounts.isCeilingFixture(f);
+
+  /// Blinds / curtains sit on the window plane — they must not report as
+  /// blocking the opening or fighting floor pieces in 2D.
+  static bool _isWindowAttachment(FurnitureItem f) {
+    final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
+    return f.iconName == 'smartBlinds' ||
+        hay.contains('blind') ||
+        hay.contains('curtain');
+  }
 
   static bool itemCollides(FurnitureItem candidate, List<FurnitureItem> furniture) =>
       _collidesWithOthers(candidate, furniture);

@@ -59,6 +59,8 @@ PAGE_DIAGNOSTICS*.md
 # Local ML export workspace (weights / venv / TFLite outs — regenerate via script)
 /ml/.venv/
 /ml/out/
+/ml/datasets/
+/ml/runs/
 /ml/**/*.pt
 /ml/**/*.onnx
 /ml/**/*_saved_model/

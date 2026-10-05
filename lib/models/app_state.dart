@@ -1780,7 +1780,8 @@ class AppState extends ChangeNotifier {
         setOptimizeWeights(airflow: 0.35, lighting: 0.35, ergonomics: 0.45, spatial: 0.95);
         break;
       default:
-        setOptimizeWeights(airflow: 0.75, lighting: 0.75, ergonomics: 0.75, spatial: 0.7);
+        // Match Bench "Improved" balanced mix (0.7 / 0.7 / 0.7).
+        setOptimizeWeights(airflow: 0.7, lighting: 0.7, ergonomics: 0.7, spatial: 0.55);
     }
   }
 
@@ -2027,7 +2028,7 @@ class AppState extends ChangeNotifier {
   ///
   /// Searches from the original compare snapshot when present, applies the
   /// best first, then cycles ranked alternates on later taps.
-  void runOptimization({String? goal}) {
+  void runOptimization({String? goal, bool tryAlternate = false}) {
     _abandonInFlightHydrate();
     // Drop unfinished Place ghosts so Auto-Rig does not treat them as real.
     cancelPendingPlacement(notify: false);
@@ -2059,8 +2060,10 @@ class AppState extends ChangeNotifier {
       );
       _autoRigCacheKey = cacheKey;
       _autoRigCursor = 0;
-    } else {
+    } else if (tryAlternate && _autoRigCandidates!.length > 1) {
       _autoRigCursor = (_autoRigCursor + 1) % _autoRigCandidates!.length;
+    } else {
+      _autoRigCursor = 0;
     }
 
     final result = _autoRigCandidates![_autoRigCursor];
@@ -2075,6 +2078,11 @@ class AppState extends ChangeNotifier {
     _isOptimized = true;
     // Single persist via checkpoint.
     checkpointActiveRoom(goal == null ? 'Auto-Rig' : 'Auto-Rig ($goal)');
+  }
+
+  /// Apply the next ranked Auto-Rig layout (keeps the same weight mix).
+  void cycleAutoRigAlternate() {
+    runOptimization(tryAlternate: true);
   }
 
   void applyAirflowOptimizedLayout() {

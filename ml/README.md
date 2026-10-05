@@ -1,36 +1,72 @@
 # Room Rig — local YOLO → TFLite workspace
 
-Scripts here are tracked; heavy outputs are gitignored (`ml/.venv/`, `ml/out/`, `assets/models/*.tflite`).
+Scripts here are tracked; heavy outputs are gitignored (`ml/.venv/`, `ml/out/`, `ml/datasets/`, `ml/runs/`, `assets/models/*.tflite`).
 
-## One-shot setup (Windows PowerShell)
+**Windows TFLite export fails** (onnx2tf). Convert with WSL Ubuntu — see **[TFLITE_EXPORT_WSL.md](TFLITE_EXPORT_WSL.md)** for install + convert steps and paths.
+
+## Train a Room Rig detector (recommended)
+
+Uses **Ultralytics HomeObjects-3K** (~2.7k indoor photos), remapped into
+`yolo_roomrig_target_labels.txt` class ids, then fine-tunes **YOLOv8n** on GPU.
 
 ```powershell
 python -m venv ml\.venv
 ml\.venv\Scripts\pip install -r ml\requirements.txt
+ml\.venv\Scripts\pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+
+# One-shot: wait for dataset zip if still downloading, remap, train, install assets
+ml\.venv\Scripts\python ml\wait_build_train.py
+```
+
+Or step-by-step:
+
+```powershell
+# 1) Download + remap labels → ml/datasets/roomrig_yolo/
+ml\.venv\Scripts\python ml\build_roomrig_dataset.py
+
+# 2) Train + export TFLite into assets/models/
+ml\.venv\Scripts\python ml\train_roomrig_yolo.py --epochs 35 --batch 16
+```
+
+Outputs:
+
+- `assets/models/yolo_roomrig.tflite` — custom Room Rig head (when TFLite export works)
+- `assets/models/yolo_roomrig_labels.txt` — **same order as target labels** (18 classes)
+- `ml/out/yolo_roomrig_best.pt` — PyTorch checkpoint
+- `ml/datasets/roomrig_yolo/coverage.txt` — which classes have training boxes
+
+After extras are merged:
+
+```powershell
+ml\.venv\Scripts\python ml\merge_extra_datasets.py
+ml\.venv\Scripts\python ml\train_roomrig_yolo.py --model ml\out\yolo_roomrig_homeobjects_best.pt --epochs 25 --batch 16 --lr0 0.001
+ml\.venv\Scripts\python ml\smoke_test_detect.py
+ml\.venv\Scripts\python ml\install_roomrig_model.py
+```
+
+### Class coverage honesty
+
+HomeObjects covers a strong subset (door, window, desk←table, chair, bed, sofa, tv,
+pc←laptop, lamp, wardrobe, plant). Classes that still need more labeled photos after
+merge are mainly **vent / fan / ac / blinds**. See `ml/MISSING_CLASSES_DATASETS.md`
+and `ml/fetch_weak_classes.py`. (Heaters stay Rig-manual — no detector class slot.)
+
+## Smoke-test only (COCO-80, not Room Rig)
+
+```powershell
 ml\.venv\Scripts\python ml\export_yolo_tflite.py
 ```
 
-What the script does:
+That path writes COCO labels — do **not** mix with a Room Rig-trained head.
 
-1. Tries Ultralytics TFLite/LiteRT export (works on **Linux/macOS**; recent Ultralytics blocks LiteRT export on Windows).
-2. If export fails, downloads a public YOLOv8 COCO TFLite (~3.3 MB) from  
-   [surendramaran/YOLOv8-TfLite-Object-Detector](https://github.com/surendramaran/YOLOv8-TfLite-Object-Detector).
-3. Writes:
-   - `assets/models/yolo_roomrig.tflite` (gitignored) — **COCO-80 smoke weights**
-   - `assets/models/yolo_roomrig_labels.txt` — COCO-80 (must match the smoke head)
-   - `assets/models/yolo_roomrig_target_labels.txt` — aspirational Room Rig classes for a **future** custom train
+## Windows TFLite note
 
-Then rebuild/install the Flutter app. Scan should report **COCO YOLO (smoke test)** when the asset loads.
+Ultralytics TFLite/LiteRT export is unreliable on Windows. Training still saves
+`best.pt` + ONNX under `ml/out/`. If `.tflite` is missing after train, export on
+Linux/WSL:
 
-## Note on classes
+```bash
+yolo export model=ml/out/yolo_roomrig_best.pt format=tflite imgsz=640
+```
 
-Smoke-test weights are **COCO-80** (chair, couch, bed, tv, …). The Flutter app remaps those labels into Rig icons (`scan_layout_converter.dart`). They are **not** a custom furniture set (no dedicated `desk` / `ac` / `fan` head).
-
-### Training a custom Room Rig head (not done in-repo)
-
-1. Collect / label images with `yolo_roomrig_target_labels.txt` classes.
-2. Train YOLOv8 (or similar) on that dataset (GPU recommended).
-3. Export TFLite and replace `yolo_roomrig.tflite` + swap labels file to the Room Rig list.
-4. Keep honesty copy updated when the detector is no longer COCO smoke.
-
-Until that lands, COCO + remap + luma heuristics is the honest Scan path.
+Then copy the `.tflite` to `assets/models/yolo_roomrig.tflite` and rebuild the app.

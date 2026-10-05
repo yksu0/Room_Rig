@@ -188,11 +188,11 @@ class RoomPresets {
             FurnitureItem(id: 'chair', name: 'Ergonomic Chair', iconName: 'chair', category: 'ergonomics', gridX: 0, gridY: 2, yawDegrees: 180, ergonomicsImpact: 0.9, cost: 699, description: 'High-back mesh design, optimal comfort and posture alignment.'),
             // Beside the desk rather than on top of it — at (1, 1) it was
             // fully inside the desk footprint, so it could never be dragged.
-            FurnitureItem(id: 'monitor', name: 'Monitor Arm', iconName: 'monitor', category: 'ergonomics', gridX: 2, gridY: 1, ergonomicsImpact: 0.7, cost: 129, description: 'Frees up desk real estate and positions screen at eye level.'),
+            FurnitureItem(id: 'monitor', name: 'Monitor', iconName: 'monitor', category: 'ergonomics', gridX: 2, gridY: 1, ergonomicsImpact: 0.7, cost: 129, description: 'Positions the screen at eye level on the desk.'),
             FurnitureItem(id: 'window', name: 'Large Window', iconName: 'window', category: 'lighting', gridX: 3, gridY: 0, width: 2, lightingImpact: 0.9, airflowImpact: 0.7, cost: 400, description: 'Wide exterior window for maximum natural light spread.'),
             FurnitureItem(id: 'door', name: 'Office Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, height: 1, airflowImpact: 0.3, ergonomicsImpact: 0.25, cost: 180, description: 'Entry door — leave a clear approach aisle.'),
             FurnitureItem(id: 'plant', name: 'Plant', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 2, airflowImpact: 0.3, ergonomicsImpact: 0.2, cost: 39, description: 'Breathes life into the office and purifies ambient air.'),
-            FurnitureItem(id: 'bookshelf', name: 'Bookshelf', iconName: 'bookshelf', category: 'neutral', gridX: 4, gridY: 3, width: 2, airflowImpact: -0.3, cost: 179, description: 'Heavy storage shelving; obstructs direct ventilation lines.'),
+            FurnitureItem(id: 'bookshelf', name: 'Bookshelf', iconName: 'shelf', category: 'neutral', gridX: 4, gridY: 3, width: 2, airflowImpact: -0.3, cost: 179, description: 'Heavy storage shelving; obstructs direct ventilation lines.'),
             FurnitureItem(id: 'lamp', name: 'Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: 2, gridY: 2, lightingImpact: 0.6, cost: 59, description: 'Focused task lighting to avoid screen glare.'),
             FurnitureItem(id: 'sofa', name: 'Sofa', iconName: 'sofa', category: 'neutral', gridX: 1, gridY: 5, width: 2, airflowImpact: -0.3, ergonomicsImpact: 0.2, cost: 499, description: 'Secondary comfortable seating area for relaxation breaks.'),
           ],

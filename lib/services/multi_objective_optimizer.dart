@@ -165,6 +165,12 @@ class MultiObjectiveOptimizer {
     if (validation.hasHardLayoutConflicts) {
       composite -= 25;
     }
+    final cluster = LayoutOptimizerCommon.workClusterIntegrityScore(
+      furniture,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    composite -= (100.0 - cluster) * 0.38;
     return composite.clamp(0.0, 100.0);
   }
 
@@ -487,8 +493,18 @@ class MultiObjectiveOptimizer {
       gridCols: gridCols,
       gridRows: gridRows,
     );
+    mounted = LayoutOptimizerCommon.resolveLayoutConflicts(
+      items: mounted,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
     mounted = LayoutOrientation.apply(
       furniture: mounted,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    mounted = LayoutOptimizerCommon.clampItemsToRoomBounds(
+      items: mounted,
       gridCols: gridCols,
       gridRows: gridRows,
     );
@@ -567,7 +583,12 @@ class MultiObjectiveOptimizer {
       );
     }
 
-    return _resolveOverlaps(blended, gridCols: gridCols, gridRows: gridRows);
+    final resolved = _resolveOverlaps(blended, gridCols: gridCols, gridRows: gridRows);
+    return LayoutOptimizerCommon.relinkPairedLayout(
+      items: resolved,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
   }
 
   static List<FurnitureItem> _resolveOverlaps(

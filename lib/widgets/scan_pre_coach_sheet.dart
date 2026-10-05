@@ -1,15 +1,40 @@
 import 'package:flutter/material.dart';
 
+import '../models/scan_layout_model.dart';
 import '../services/scan_model_availability.dart';
 import '../theme/app_theme.dart';
 import 'room_icons.dart';
 
+class ScanPreCoachResult {
+  final RoomDimensions? manualDimensions;
+  final bool preferArCore;
+
+  const ScanPreCoachResult({
+    this.manualDimensions,
+    this.preferArCore = false,
+  });
+}
+
 /// Short pre-scan tips — honest about approximate Scan vs Rig/Bench core loop.
-Future<bool> showScanPreCoachSheet(
+/// Returns null if cancelled.
+Future<ScanPreCoachResult?> showScanPreCoachSheet(
   BuildContext context, {
   required String detectorLabel,
+  RoomDimensions? initialDimensions,
 }) async {
-  final result = await showModalBottomSheet<bool>(
+  final lengthCtrl = TextEditingController(
+    text: (initialDimensions?.lengthMeters ?? 4.2).toStringAsFixed(1),
+  );
+  final widthCtrl = TextEditingController(
+    text: (initialDimensions?.widthMeters ?? 3.6).toStringAsFixed(1),
+  );
+  final heightCtrl = TextEditingController(
+    text: (initialDimensions?.heightMeters ?? 2.7).toStringAsFixed(1),
+  );
+  var preferArCore = false;
+  var useManualSize = false;
+
+  final result = await showModalBottomSheet<ScanPreCoachResult>(
     context: context,
     backgroundColor: AppColors.surface,
     isScrollControlled: true,
@@ -17,152 +42,261 @@ Future<bool> showScanPreCoachSheet(
       borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
     ),
     builder: (context) {
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.border,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                ),
+      return StatefulBuilder(
+        builder: (context, setModal) {
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                12,
+                20,
+                24 + MediaQuery.viewInsetsOf(context).bottom,
               ),
-              const SizedBox(height: 16),
-              Text(
-                'BEFORE YOU SCAN',
-                style: TextStyle(
-                  color: AppColors.cyan,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Optional layout seed',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.amber.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
-                ),
-                child: Row(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.info_outline_rounded, size: 16, color: AppColors.amber),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Detector: $detectorLabel\n'
-                        'Room size: preset · Tracking: visual estimate',
-                        style: TextStyle(
-                          color: AppColors.amber,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          height: 1.35,
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.border,
+                          borderRadius: BorderRadius.circular(99),
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              ...ScanModelAvailability.honestyBullets.map(
-                (b) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(Icons.check_rounded, size: 14, color: AppColors.cyan),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          b,
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            height: 1.3,
-                          ),
-                        ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'BEFORE YOU SCAN',
+                      style: TextStyle(
+                        color: AppColors.cyan,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2,
                       ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const _TipRow(
-                icon: Icons.smartphone_rounded,
-                title: 'Hold chest-high, move slowly',
-                detail: 'Good light helps. Fast spins confuse visual tracking.',
-              ),
-              const _TipRow(
-                icon: Icons.chair_alt_outlined,
-                title: 'Point at furniture',
-                detail: 'Chairs, beds, TVs work best with the smoke YOLO path.',
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.textSecondary,
-                        side: const BorderSide(color: AppColors.border),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      child: const Text('NOT NOW'),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.cyan,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        elevation: 0,
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Optional layout seed',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.amber.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
                       ),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SvgIcon(RoomSvg.camera, size: 18, color: Colors.black),
+                          Icon(Icons.info_outline_rounded, size: 16, color: AppColors.amber),
                           const SizedBox(width: 8),
-                          const Text(
-                            'START SCAN',
-                            style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1),
+                          Expanded(
+                            child: Text(
+                              'Detector: $detectorLabel\n'
+                              'Set size below if you know it. Tracking defaults to visual odometry on Android.',
+                              style: TextStyle(
+                                color: AppColors.amber,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                height: 1.35,
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Enter room size (meters)',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Length × width × height',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                      ),
+                      value: useManualSize,
+                      activeTrackColor: AppColors.cyan,
+                      onChanged: (v) => setModal(() => useManualSize = v),
+                    ),
+                    if (useManualSize) ...[
+                      Row(
+                        children: [
+                          Expanded(child: _MeterField(controller: lengthCtrl, label: 'Length')),
+                          const SizedBox(width: 8),
+                          Expanded(child: _MeterField(controller: widthCtrl, label: 'Width')),
+                          const SizedBox(width: 8),
+                          Expanded(child: _MeterField(controller: heightCtrl, label: 'Height')),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Prefer ARCore pose',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Stronger map accuracy; preview may look grainy / luma-only',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                      ),
+                      value: preferArCore,
+                      activeTrackColor: AppColors.cyan,
+                      onChanged: (v) => setModal(() => preferArCore = v),
+                    ),
+                    const SizedBox(height: 8),
+                    ...ScanModelAvailability.honestyBullets.map(
+                      (b) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.check_rounded, size: 14, color: AppColors.cyan),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                b,
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const _TipRow(
+                      icon: Icons.smartphone_rounded,
+                      title: 'Hold chest-high, move slowly',
+                      detail: 'Good light helps. Fast spins confuse tracking.',
+                    ),
+                    const _TipRow(
+                      icon: Icons.chair_alt_outlined,
+                      title: 'Point at furniture',
+                      detail: 'Desk, chair, bed, fan, window — Room Rig YOLO classes.',
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.textSecondary,
+                              side: const BorderSide(color: AppColors.border),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            child: const Text('NOT NOW'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              RoomDimensions? dims;
+                              if (useManualSize) {
+                                final L = double.tryParse(lengthCtrl.text.trim());
+                                final W = double.tryParse(widthCtrl.text.trim());
+                                final H = double.tryParse(heightCtrl.text.trim()) ?? 2.7;
+                                if (L != null && W != null && L >= 2.0 && W >= 2.0) {
+                                  dims = RoomDimensions(
+                                    lengthMeters: L.clamp(2.6, 8.5),
+                                    widthMeters: W.clamp(2.6, 8.5),
+                                    heightMeters: H.clamp(2.2, 3.5),
+                                  );
+                                }
+                              }
+                              Navigator.pop(
+                                context,
+                                ScanPreCoachResult(
+                                  manualDimensions: dims,
+                                  preferArCore: preferArCore,
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.cyan,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              elevation: 0,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                SvgIcon(RoomSvg.camera, size: 18, color: Colors.black),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'START SCAN',
+                                  style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       );
     },
   );
-  return result == true;
+
+  lengthCtrl.dispose();
+  widthCtrl.dispose();
+  heightCtrl.dispose();
+  return result;
+}
+
+class _MeterField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+
+  const _MeterField({required this.controller, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+        isDense: true,
+        filled: true,
+        fillColor: AppColors.card,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
 }
 
 class _TipRow extends StatelessWidget {
@@ -179,39 +313,29 @@ class _TipRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: AppColors.cyan.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: AppColors.cyan, size: 20),
-          ),
-          const SizedBox(width: 12),
+          Icon(icon, size: 18, color: AppColors.cyan),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: AppColors.textPrimary,
-                    fontSize: 14,
                     fontWeight: FontWeight.w700,
+                    fontSize: 13,
                   ),
                 ),
-                const SizedBox(height: 2),
                 Text(
                   detail,
                   style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
                     height: 1.3,
                   ),
                 ),
