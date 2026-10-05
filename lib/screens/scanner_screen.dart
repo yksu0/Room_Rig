@@ -398,19 +398,6 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     await _stopInputProvider();
     await _scanPipeline?.dispose();
-    // If ARCore is requested, drop any leftover Flutter camera first so
-    // pipeline.initialize → ARCore Session does not fight CameraX.
-    if (_preferArCore) {
-      await _releaseFlutterCamera();
-      await Future<void>.delayed(const Duration(milliseconds: 350));
-    }
-    final pipeline = _createPipeline();
-    _scanPipeline = pipeline;
-
-    final seedLayout = RoomLayoutModel.emptyFromRoom(state.currentRoomData);
-    await pipeline.initialize(seedLayout);
-    // Seed layout only — do not stash/persist into My Rooms mid-scan.
-    state.applyScannedRoomLayout(seedLayout, persist: false);
 
     _setup.reset();
     final pending = _pendingManualDimensions;
@@ -421,6 +408,24 @@ class _ScannerScreenState extends State<ScannerScreen>
       _setup.skipToCapture();
     }
     _pendingManualDimensions = null;
+
+    // ARCore only when we still need the lock→walk sizing steps.
+    final arCoreSizing = _preferArCore && _setup.phase != ScanSessionPhase.capture;
+    if (arCoreSizing) {
+      await _releaseFlutterCamera();
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+    }
+    final pipeline = _createPipeline();
+    final tracking = pipeline.trackingProvider;
+    if (tracking is CompositeTrackingProvider) {
+      tracking.preferNativePose = arCoreSizing;
+    }
+    _scanPipeline = pipeline;
+
+    final seedLayout = RoomLayoutModel.emptyFromRoom(state.currentRoomData);
+    await pipeline.initialize(seedLayout);
+    // Seed layout only — do not stash/persist into My Rooms mid-scan.
+    state.applyScannedRoomLayout(seedLayout, persist: false);
 
     setState(() {
       _isScanning = true;
@@ -536,15 +541,40 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
     unawaited(_refreshDetectorLabel());
     HapticFeedback.mediumImpact();
+    // ARCore + YOLO together is too heavy on S10+ — size with ARCore, detect on live camera.
+    if (_arCoreOwnsCamera) {
+      unawaited(_handoffArCoreToLiveCapture());
+    }
+  }
+
+  /// Drop exclusive ARCore after room sizing so YOLO/capture stays responsive.
+  Future<void> _handoffArCoreToLiveCapture() async {
+    if (!_arCoreOwnsCamera || !mounted) return;
+    _appendLog(
+      '> ARCore sizing done — live camera for detection (smoother).',
+      key: 'arcore-handoff',
+    );
+    final tracking = _scanPipeline?.trackingProvider;
+    await _stopInputProvider();
+    if (tracking is CompositeTrackingProvider) {
+      await tracking.releaseNativeSession(reason: 'capture_live_camera');
+    }
+    _arCoreOwnsCamera = false;
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (!mounted || !_isScanning) return;
+    await _startLiveCameraInput();
   }
 
   Future<void> _startInputSource() async {
     final tracking = _scanPipeline?.trackingProvider;
 
-    // Opt-in: ARCore owns camera for pose (+ grainy luma preview).
-    if (Platform.isAndroid &&
+    // ARCore only while sizing the room. Capture (YOLO) always uses live camera.
+    final arCoreForSetupOnly = Platform.isAndroid &&
         _preferArCore &&
-        tracking is CompositeTrackingProvider) {
+        tracking is CompositeTrackingProvider &&
+        _setup.phase != ScanSessionPhase.capture;
+
+    if (arCoreForSetupOnly) {
       // Always free the Flutter camera BEFORE (re)touching ARCore — two
       // owners on the same lens hard-crash native ARCore on S10+.
       await _releaseFlutterCamera();
@@ -555,7 +585,9 @@ class _ScannerScreenState extends State<ScannerScreen>
         await tracking.initialize();
       }
       if (tracking.isNativeReady) {
-        final ar = ArCoreOwnedScanInputProvider();
+        final ar = ArCoreOwnedScanInputProvider(
+          interval: const Duration(milliseconds: 320),
+        );
         _inputProvider = ar;
         _inputProviderId = ar.id;
         _arCoreOwnsCamera = true;
@@ -563,7 +595,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         await ar.start(_ingestFrame);
         _trackingSource = tracking.nativeBackend;
         _appendLog(
-          '> Input: ARCore pose mode (preview may look grainy).',
+          '> Input: ARCore for room sizing only (then live camera for detect).',
           key: 'input-arcore',
         );
         unawaited(_refreshDetectorLabel(trackingSource: _trackingSource));
@@ -579,8 +611,16 @@ class _ScannerScreenState extends State<ScannerScreen>
       _preferArCore = false;
     }
 
+    await _startLiveCameraInput();
+  }
+
+  Future<void> _startLiveCameraInput() async {
+    final tracking = _scanPipeline?.trackingProvider;
+
     // Default Android path: Flutter camera + visual odometry (clear preview).
-    if (Platform.isAndroid && tracking is CompositeTrackingProvider && tracking.isNativeReady) {
+    if (Platform.isAndroid &&
+        tracking is CompositeTrackingProvider &&
+        tracking.isNativeReady) {
       await tracking.releaseNativeSession(
         reason: 'prefer_live_camera_preview',
       );
@@ -827,7 +867,9 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     final now = DateTime.now();
     // Keep ingest light — YOLO itself is also throttled inside the detector.
-    if (now.difference(_lastFrameAt).inMilliseconds < 400) return;
+    // ARCore sizing polls are lighter; still avoid stacking UI work.
+    final minGapMs = _arCoreOwnsCamera ? 280 : 400;
+    if (now.difference(_lastFrameAt).inMilliseconds < minGapMs) return;
 
     _processingFrame = true;
     _lastFrameAt = now;
