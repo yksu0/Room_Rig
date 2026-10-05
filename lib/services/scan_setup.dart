@@ -4,7 +4,9 @@ import '../models/scan_layout_model.dart';
 import 'scan_guidance.dart';
 import 'scan_pipeline.dart';
 
-enum ScanSessionPhase { lockTracking, sizeRoom, capture }
+/// Staged Scan: lock tracking → mark footprint → confirm size → Rig.
+/// [capture] is retained for optional future furniture pass; default path never enters it.
+enum ScanSessionPhase { lockTracking, markFootprint, confirmSize, capture }
 
 class ScanSetupSnapshot {
   final ScanSessionPhase phase;
@@ -24,7 +26,7 @@ class ScanSetupSnapshot {
   });
 }
 
-/// ARCore warmup + one-walk room sizing. No furniture is recorded here.
+/// ARCore warmup + floor-mark room sizing. No furniture is recorded here.
 class ScanSetupController {
   static const int requiredStableFrames = 10;
   static const double requiredYawSpanDegrees = 45;
@@ -34,6 +36,8 @@ class ScanSetupController {
   static const double minRoomMeters = 2.6;
   static const double maxRoomMeters = 8.5;
   static const double cellMeters = 0.6;
+  static const int minMarks = 3;
+  static const int maxMarks = 8;
 
   ScanSessionPhase phase = ScanSessionPhase.lockTracking;
 
@@ -46,15 +50,37 @@ class ScanSetupController {
   double? _minZ;
   double? _maxZ;
   int _extentSamples = 0;
-  int _readyExtentHold = 0;
+
+  final List<Vec3> _marks = [];
+  bool walkEstimateEnabled = false;
 
   RoomDimensions? _manualDimensions;
+  RoomDimensions? _confirmedOverride;
 
   /// `preset` | `measured` | `manual`
   String roomSizeSource = 'preset';
 
+  List<Vec3> get marks => List.unmodifiable(_marks);
+
+  int get markCount => _marks.length;
+
   Vec3? get origin {
-    if (_minX == null || _maxX == null || _minZ == null || _maxZ == null) return null;
+    final dims = measuredDimensions();
+    if (dims == null) return null;
+    if (_marks.length >= minMarks) {
+      double minX = _marks.first.x, maxX = _marks.first.x;
+      double minZ = _marks.first.z, maxZ = _marks.first.z;
+      for (final m in _marks) {
+        minX = math.min(minX, m.x);
+        maxX = math.max(maxX, m.x);
+        minZ = math.min(minZ, m.z);
+        maxZ = math.max(maxZ, m.z);
+      }
+      return Vec3(x: (minX + maxX) * 0.5, y: 1.5, z: (minZ + maxZ) * 0.5);
+    }
+    if (_minX == null || _maxX == null || _minZ == null || _maxZ == null) {
+      return Vec3(x: dims.lengthMeters * 0.5, y: 1.5, z: dims.widthMeters * 0.5);
+    }
     return Vec3(
       x: (_minX! + _maxX!) * 0.5,
       y: 1.5,
@@ -67,6 +93,15 @@ class ScanSetupController {
     return math.max(_maxX! - _minX!, _maxZ! - _minZ!);
   }
 
+  bool get isSizingPhase =>
+      phase == ScanSessionPhase.lockTracking ||
+      phase == ScanSessionPhase.markFootprint ||
+      phase == ScanSessionPhase.confirmSize;
+
+  bool get needsArCoreSession =>
+      phase == ScanSessionPhase.lockTracking ||
+      phase == ScanSessionPhase.markFootprint;
+
   void reset() {
     phase = ScanSessionPhase.lockTracking;
     _stableStreak = 0;
@@ -77,8 +112,10 @@ class ScanSetupController {
     _minZ = null;
     _maxZ = null;
     _extentSamples = 0;
-    _readyExtentHold = 0;
+    _marks.clear();
+    walkEstimateEnabled = false;
     _manualDimensions = null;
+    _confirmedOverride = null;
     roomSizeSource = 'preset';
   }
 
@@ -91,8 +128,52 @@ class ScanSetupController {
     roomSizeSource = 'manual';
   }
 
+  void setConfirmedDimensions(RoomDimensions dims) {
+    _confirmedOverride = RoomDimensions(
+      lengthMeters: dims.lengthMeters.clamp(minRoomMeters, maxRoomMeters),
+      widthMeters: dims.widthMeters.clamp(minRoomMeters, maxRoomMeters),
+      heightMeters: dims.heightMeters.clamp(2.2, 3.5),
+    );
+    if (roomSizeSource == 'preset' && _manualDimensions == null && _marks.isEmpty) {
+      roomSizeSource = 'manual';
+    }
+  }
+
+  /// Drop a floor mark (world XZ). Returns false if not accepting marks.
+  bool addMark(Vec3 point) {
+    if (phase != ScanSessionPhase.markFootprint) return false;
+    if (_marks.length >= maxMarks) return false;
+    _marks.add(point);
+    if (_marks.length >= minMarks) {
+      roomSizeSource = 'measured';
+    }
+    return true;
+  }
+
+  bool undoMark() {
+    if (_marks.isEmpty) return false;
+    _marks.removeLast();
+    if (_marks.length < minMarks &&
+        _manualDimensions == null &&
+        !walkEstimateEnabled) {
+      roomSizeSource = 'preset';
+    }
+    return true;
+  }
+
+  void clearMarks() {
+    _marks.clear();
+  }
+
+  void enableWalkEstimate() {
+    walkEstimateEnabled = true;
+  }
+
   void observe(TrackingSample tracking) {
-    if (phase == ScanSessionPhase.capture) return;
+    if (phase == ScanSessionPhase.confirmSize ||
+        phase == ScanSessionPhase.capture) {
+      return;
+    }
 
     final stable = tracking.trackingStable && tracking.confidence >= 0.4;
     if (!stable) {
@@ -108,26 +189,15 @@ class ScanSetupController {
 
     if (phase == ScanSessionPhase.lockTracking) {
       if (_lockReady) {
-        phase = ScanSessionPhase.sizeRoom;
+        phase = ScanSessionPhase.markFootprint;
         _stableStreak = 0;
       }
       return;
     }
 
-    if (_manualDimensions != null) {
-      phase = ScanSessionPhase.capture;
-      return;
-    }
-
-    _noteExtent(tracking.cameraPosition);
-    if (extentMeters >= requiredExtentMeters) {
-      _readyExtentHold += 1;
-      if (_readyExtentHold >= 4) {
-        phase = ScanSessionPhase.capture;
-        roomSizeSource = 'measured';
-      }
-    } else {
-      _readyExtentHold = 0;
+    // markFootprint: optional walk-extent samples (user must still review).
+    if (walkEstimateEnabled || _marks.isEmpty) {
+      _noteExtent(tracking.cameraPosition);
     }
   }
 
@@ -136,39 +206,85 @@ class ScanSetupController {
 
   bool get canAdvanceLock => _lockReady || _stableStreak >= requiredStableFrames * 2;
 
-  bool get canAdvanceSize =>
+  bool get canAdvanceMark =>
       _manualDimensions != null ||
-      (extentMeters >= skipExtentMeters && _extentSamples >= 4);
+      _marks.length >= minMarks ||
+      (walkEstimateEnabled &&
+          extentMeters >= skipExtentMeters &&
+          _extentSamples >= 4);
 
   void advanceFromLock() {
     if (phase == ScanSessionPhase.lockTracking) {
-      phase = ScanSessionPhase.sizeRoom;
+      phase = ScanSessionPhase.markFootprint;
       _stableStreak = 0;
     }
   }
 
-  void advanceFromSize() {
-    if (phase == ScanSessionPhase.sizeRoom &&
-        (canAdvanceSize || origin != null || _manualDimensions != null)) {
-      if (_manualDimensions == null && measuredDimensions() != null) {
+  /// Move from mark footprint → confirm size (does not start YOLO capture).
+  void advanceFromMark() {
+    if (phase != ScanSessionPhase.markFootprint) return;
+    if (!canAdvanceMark && origin == null && _manualDimensions == null) return;
+    if (_manualDimensions == null && measuredDimensions() != null) {
+      if (_marks.length >= minMarks || walkEstimateEnabled) {
         roomSizeSource = 'measured';
       }
-      phase = ScanSessionPhase.capture;
     }
+    phase = ScanSessionPhase.confirmSize;
   }
 
-  void skipToCapture() {
-    phase = ScanSessionPhase.capture;
-    if (_manualDimensions == null && measuredDimensions() == null) {
+  /// @deprecated Use [advanceFromMark]; kept for call-site compatibility.
+  void advanceFromSize() => advanceFromMark();
+
+  void skipToConfirmSize({bool asPreset = false}) {
+    phase = ScanSessionPhase.confirmSize;
+    if (asPreset && _manualDimensions == null && measuredDimensions() == null) {
+      roomSizeSource = 'preset';
+    } else if (_manualDimensions == null && measuredDimensions() == null) {
       roomSizeSource = 'preset';
     }
   }
 
+  void returnToMarkFootprint() {
+    if (phase == ScanSessionPhase.confirmSize) {
+      phase = ScanSessionPhase.markFootprint;
+      _confirmedOverride = null;
+    }
+  }
+
+  /// @deprecated Prefer [skipToConfirmSize] — capture is no longer the default end.
+  void skipToCapture() => skipToConfirmSize(asPreset: true);
+
   RoomDimensions? measuredDimensions() {
+    if (_confirmedOverride != null) return _confirmedOverride;
     if (_manualDimensions != null) return _manualDimensions;
-    if (_minX == null || _maxX == null || _minZ == null || _maxZ == null) return null;
-    final length = ((_maxX! - _minX!) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
-    final width = ((_maxZ! - _minZ!) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
+
+    if (_marks.length >= minMarks) {
+      double minX = _marks.first.x, maxX = _marks.first.x;
+      double minZ = _marks.first.z, maxZ = _marks.first.z;
+      for (final m in _marks) {
+        minX = math.min(minX, m.x);
+        maxX = math.max(maxX, m.x);
+        minZ = math.min(minZ, m.z);
+        maxZ = math.max(maxZ, m.z);
+      }
+      final length =
+          ((maxX - minX) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
+      final width =
+          ((maxZ - minZ) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
+      return RoomDimensions(
+        lengthMeters: length.toDouble(),
+        widthMeters: width.toDouble(),
+        heightMeters: 2.7,
+      );
+    }
+
+    if (_minX == null || _maxX == null || _minZ == null || _maxZ == null) {
+      return null;
+    }
+    final length =
+        ((_maxX! - _minX!) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
+    final width =
+        ((_maxZ! - _minZ!) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
     return RoomDimensions(
       lengthMeters: length.toDouble(),
       widthMeters: width.toDouble(),
@@ -181,11 +297,18 @@ class ScanSetupController {
     final dims = measured ??
         fallback ??
         const RoomDimensions(lengthMeters: 4.2, widthMeters: 3.6, heightMeters: 2.7);
-    if (_manualDimensions == null && measured == null) {
+    if (_manualDimensions == null &&
+        _confirmedOverride == null &&
+        measured == null) {
       roomSizeSource = 'preset';
     }
     final cols = (dims.lengthMeters / cellMeters).round().clamp(5, 16);
     final rows = (dims.widthMeters / cellMeters).round().clamp(5, 16);
+    final source = switch (roomSizeSource) {
+      'manual' => 'manual',
+      'measured' => 'ar-measure',
+      _ => 'scan-seed',
+    };
     return RoomLayoutModel(
       roomName: roomName,
       dimensions: dims,
@@ -193,7 +316,7 @@ class ScanSetupController {
       objects: const [],
       detections: const [],
       updatedAt: DateTime.now().toUtc(),
-      scanSource: 'scan-seed',
+      scanSource: source,
     );
   }
 
@@ -207,36 +330,40 @@ class ScanSetupController {
           phase: phase,
           progress: p,
           canAdvance: canAdvanceLock,
-          stepLabel: '1 / 2  LOCK TRACKING',
+          stepLabel: '1 / 3  LOCK TRACKING',
           headline: _stableStreak == 0 ? 'Find the floor and a corner' : 'Keep panning slowly',
           detail: _stableStreak == 0
-              ? 'Stand by the door. Point at the floor, then sweep toward furniture or a corner — not a blank wall.'
-              : 'Hold the phone chest-high and turn your body left and right until this fills up.',
+              ? 'Stand by the door. Point at the floor, then sweep toward a wall or corner.'
+              : 'Hold the phone chest-high and turn slowly until this fills up.',
         );
-      case ScanSessionPhase.sizeRoom:
-        if (_manualDimensions != null) {
-          final d = _manualDimensions!;
-          return ScanSetupSnapshot(
-            phase: phase,
-            progress: 1,
-            canAdvance: true,
-            stepLabel: '2 / 2  SIZE THE ROOM',
-            headline: 'Manual size set',
-            detail:
-                '${d.lengthMeters.toStringAsFixed(1)} × ${d.widthMeters.toStringAsFixed(1)} m '
-                '(${d.heightMeters.toStringAsFixed(1)} m high). Continue to capture.',
-          );
-        }
-        final p = (extentMeters / requiredExtentMeters).clamp(0.0, 1.0);
+      case ScanSessionPhase.markFootprint:
+        final p = (_marks.length / minMarks).clamp(0.0, 1.0);
         return ScanSetupSnapshot(
           phase: phase,
-          progress: p,
-          canAdvance: canAdvanceSize,
-          stepLabel: '2 / 2  SIZE THE ROOM',
-          headline: p < 0.35 ? 'Walk toward the far wall' : 'A bit farther…',
-          detail: p < 1
-              ? 'Take a few slow steps across the room — or enter length × width manually.'
-              : 'Size locked. Capturing starts automatically.',
+          progress: walkEstimateEnabled
+              ? (extentMeters / requiredExtentMeters).clamp(0.0, 1.0)
+              : p,
+          canAdvance: canAdvanceMark,
+          stepLabel: '2 / 3  MARK CORNERS',
+          headline: _marks.isEmpty
+              ? 'Aim at a corner or wall base — Drop mark'
+              : 'Marks ${_marks.length} / $maxMarks'
+                  '${_marks.length >= minMarks ? ' — ready to review' : ''}',
+          detail: _marks.length < minMarks
+              ? 'Tap Drop mark on visible corners. If a corner is blocked, mark the nearest wall point instead (need $minMarks+).'
+              : 'Add more corners if you can, or Review size. Blocked corners: edit L×W on the next screen.',
+        );
+      case ScanSessionPhase.confirmSize:
+        final d = measuredDimensions();
+        return ScanSetupSnapshot(
+          phase: phase,
+          progress: 1,
+          canAdvance: true,
+          stepLabel: '3 / 3  CONFIRM SIZE',
+          headline: 'Confirm room size',
+          detail: d == null
+              ? 'Enter length × width, then continue to Rig.'
+              : 'Approx ${d.lengthMeters.toStringAsFixed(1)} × ${d.widthMeters.toStringAsFixed(1)} m — edit if a corner was blocked, then open Rig.',
         );
       case ScanSessionPhase.capture:
         return const ScanSetupSnapshot(
@@ -244,8 +371,8 @@ class ScanSetupController {
           progress: 1,
           canAdvance: true,
           stepLabel: 'SCAN',
-          headline: 'Scan the room',
-          detail: 'Follow the map. Cyan is done, amber is next.',
+          headline: 'Optional capture',
+          detail: 'Furniture capture is optional — default path goes to Rig after size.',
         );
     }
   }

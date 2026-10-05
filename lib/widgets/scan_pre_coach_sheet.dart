@@ -21,6 +21,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
   BuildContext context, {
   required String detectorLabel,
   RoomDimensions? initialDimensions,
+  bool initialPreferArCore = true,
 }) async {
   final lengthCtrl = TextEditingController(
     text: (initialDimensions?.lengthMeters ?? 4.2).toStringAsFixed(1),
@@ -31,7 +32,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
   final heightCtrl = TextEditingController(
     text: (initialDimensions?.heightMeters ?? 2.7).toStringAsFixed(1),
   );
-  var preferArCore = false;
+  var preferArCore = initialPreferArCore;
   var useManualSize = false;
 
   final result = await showModalBottomSheet<ScanPreCoachResult>(
@@ -79,7 +80,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Optional layout seed',
+                      'Measure room size',
                       style: TextStyle(
                         color: AppColors.textPrimary,
                         fontSize: 20,
@@ -101,8 +102,8 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Detector: $detectorLabel\n'
-                              'Set size below if you know it. Tracking defaults to visual odometry on Android.',
+                              'Stage 1: lock tracking, mark corners, confirm L×W, then open Rig.\n'
+                              'Furniture detection is optional later — this pass only sizes the room.',
                               style: TextStyle(
                                 color: AppColors.amber,
                                 fontSize: 11,
@@ -148,7 +149,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                     SwitchListTile.adaptive(
                       contentPadding: EdgeInsets.zero,
                       title: const Text(
-                        'Prefer ARCore pose',
+                        'Use ARCore to measure',
                         style: TextStyle(
                           color: AppColors.textPrimary,
                           fontWeight: FontWeight.w700,
@@ -156,7 +157,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                         ),
                       ),
                       subtitle: Text(
-                        'Uses ARCore only while sizing the room, then live camera for detection (less lag)',
+                        'Mark floor corners with AR, confirm size, then open Rig (no live YOLO)',
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
                       ),
                       value: preferArCore,
@@ -194,9 +195,9 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                       detail: 'Good light helps. Fast spins confuse tracking.',
                     ),
                     const _TipRow(
-                      icon: Icons.chair_alt_outlined,
-                      title: 'Point at furniture',
-                      detail: 'Desk, chair, bed, fan, window — Room Rig YOLO classes.',
+                      icon: Icons.crop_square_rounded,
+                      title: 'Mark visible corners',
+                      detail: 'If furniture blocks a corner, mark the nearest wall base — edit L×W after.',
                     ),
                     const SizedBox(height: 12),
                     Row(

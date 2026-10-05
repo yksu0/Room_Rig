@@ -5,64 +5,199 @@ import '../../widgets/room_icons.dart';
 
 class ScanSetupActionsBar extends StatelessWidget {
   final ScanSetupSnapshot snap;
-  final bool isLockPhase;
+  final ScanSessionPhase phase;
+  final int markCount;
   final VoidCallback? onAdvance;
+  final VoidCallback? onDropMark;
+  final VoidCallback? onUndoMark;
+  final VoidCallback? onEnableWalkEstimate;
   final VoidCallback onSkipToPreset;
   final VoidCallback? onEnterManualSize;
+  final VoidCallback? onConfirmContinue;
 
   const ScanSetupActionsBar({
     super.key,
     required this.snap,
-    required this.isLockPhase,
+    required this.phase,
+    this.markCount = 0,
     required this.onAdvance,
+    this.onDropMark,
+    this.onUndoMark,
+    this.onEnableWalkEstimate,
     required this.onSkipToPreset,
     this.onEnterManualSize,
+    this.onConfirmContinue,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isLock = phase == ScanSessionPhase.lockTracking;
+    final isMark = phase == ScanSessionPhase.markFootprint;
+    final isConfirm = phase == ScanSessionPhase.confirmSize;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        GestureDetector(
-          onTap: snap.canAdvance ? onAdvance : null,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              gradient: snap.canAdvance ? AppColors.accentGradient : null,
-              color: snap.canAdvance ? null : AppColors.card,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: snap.canAdvance ? Colors.transparent : AppColors.border),
-            ),
-            child: Text(
-              isLockPhase
-                  ? (snap.canAdvance ? 'TRACKING LOCKED — CONTINUE' : 'PAN SLOWLY TO LOCK')
-                  : (snap.canAdvance ? 'SIZE LOOKS GOOD — START SCAN' : 'WALK TOWARD THE FAR WALL'),
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: snap.canAdvance ? Colors.white : AppColors.textMuted,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
-                fontSize: 12,
+        if (isMark) ...[
+          GestureDetector(
+            onTap: onDropMark,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                gradient: onDropMark != null ? AppColors.accentGradient : null,
+                color: onDropMark != null ? null : AppColors.card,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: onDropMark != null ? Colors.transparent : AppColors.border,
+                ),
+              ),
+              child: Text(
+                onDropMark != null
+                    ? 'DROP MARK  ($markCount/${ScanSetupController.maxMarks})'
+                    : 'POINT AT FLOOR / CORNER TO MARK',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: onDropMark != null ? Colors.white : AppColors.textMuted,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  fontSize: 12,
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        TextButton(
-          onPressed: onSkipToPreset,
-          child: Text(
-            'Skip and use preset room size',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (onUndoMark != null)
+                Expanded(
+                  child: TextButton(
+                    onPressed: onUndoMark,
+                    child: Text(
+                      'Undo mark',
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: snap.canAdvance ? onAdvance : null,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: snap.canAdvance
+                          ? AppColors.cyan.withValues(alpha: 0.15)
+                          : AppColors.card,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: snap.canAdvance ? AppColors.cyan : AppColors.border,
+                      ),
+                    ),
+                    child: Text(
+                      snap.canAdvance ? 'REVIEW SIZE' : 'NEED ${ScanSetupController.minMarks}+ MARKS',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: snap.canAdvance ? AppColors.cyan : AppColors.textMuted,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ),
-        if (onEnterManualSize != null)
+          if (onEnableWalkEstimate != null)
+            TextButton(
+              onPressed: onEnableWalkEstimate,
+              child: Text(
+                'Estimate from walk instead',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ] else if (isConfirm) ...[
+          GestureDetector(
+            onTap: onConfirmContinue,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                gradient: AppColors.accentGradient,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Text(
+                'CONFIRM SIZE — OPEN RIG',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ] else ...[
+          GestureDetector(
+            onTap: snap.canAdvance ? onAdvance : null,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                gradient: snap.canAdvance ? AppColors.accentGradient : null,
+                color: snap.canAdvance ? null : AppColors.card,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: snap.canAdvance ? Colors.transparent : AppColors.border,
+                ),
+              ),
+              child: Text(
+                isLock
+                    ? (snap.canAdvance ? 'TRACKING LOCKED — CONTINUE' : 'PAN SLOWLY TO LOCK')
+                    : (snap.canAdvance ? 'CONTINUE' : 'KEEP GOING'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: snap.canAdvance ? Colors.white : AppColors.textMuted,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 8),
+        if (!isConfirm)
+          TextButton(
+            onPressed: onSkipToPreset,
+            child: Text(
+              'Skip and use preset room size',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        if (onEnterManualSize != null && (isMark || isLock))
           TextButton(
             onPressed: onEnterManualSize,
             child: Text(
               'Enter length × width manually',
-              style: TextStyle(color: AppColors.cyan, fontSize: 12, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                color: AppColors.cyan,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
       ],
@@ -102,7 +237,11 @@ class ScanFinishBlockersStrip extends StatelessWidget {
                 ),
                 child: Text(
                   text,
-                  style: TextStyle(color: AppColors.amber, fontSize: 10, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: AppColors.amber,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             )
@@ -143,10 +282,14 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
               gradient: canFinishScan ? AppColors.accentGradient : null,
               color: canFinishScan ? null : AppColors.card,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: canFinishScan ? Colors.transparent : AppColors.border),
+              border: Border.all(
+                color: canFinishScan ? Colors.transparent : AppColors.border,
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: canFinishScan ? AppColors.cyan.withValues(alpha: 0.35) : Colors.black.withValues(alpha: 0.12),
+                  color: canFinishScan
+                      ? AppColors.cyan.withValues(alpha: 0.35)
+                      : Colors.black.withValues(alpha: 0.12),
                   blurRadius: 20,
                 )
               ],
@@ -180,7 +323,10 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
           onPressed: onCancel,
           child: Text(
             'Cancel scan',
-            style: TextStyle(color: AppColors.red.withValues(alpha: 0.9), fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: AppColors.red.withValues(alpha: 0.9),
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ],
@@ -221,7 +367,7 @@ class ScanCompleteBottomBar extends StatelessWidget {
                 SvgIcon(RoomSvg.camera, size: 20, color: AppColors.cyan),
                 const SizedBox(width: 10),
                 const Text(
-                  'SCAN AGAIN',
+                  'MEASURE ROOM AGAIN',
                   style: TextStyle(
                     color: AppColors.cyan,
                     fontWeight: FontWeight.w800,
@@ -251,7 +397,11 @@ class ScanCompleteBottomBar extends StatelessWidget {
                 const SizedBox(width: 8),
                 const Text(
                   'OPEN RIG',
-                  style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w800, letterSpacing: 2),
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                  ),
                 ),
               ],
             ),
@@ -273,6 +423,7 @@ class ScanBottomBar extends StatelessWidget {
   final bool isScanning;
   final ScanSessionPhase setupPhase;
   final ScanSetupSnapshot setupSnap;
+  final int markCount;
   final bool scanComplete;
   final bool canFinishScan;
   final double requiredCoverageToFinish;
@@ -280,8 +431,12 @@ class ScanBottomBar extends StatelessWidget {
   final Animation<double> pulseAnimation;
   final VoidCallback onRequestStartScan;
   final VoidCallback? onSetupAdvance;
+  final VoidCallback? onDropMark;
+  final VoidCallback? onUndoMark;
+  final VoidCallback? onEnableWalkEstimate;
   final VoidCallback onSetupSkipToPreset;
   final VoidCallback? onEnterManualSize;
+  final VoidCallback? onConfirmContinue;
   final VoidCallback? onFinishScan;
   final VoidCallback onCancelScan;
   final VoidCallback onOpenRig;
@@ -292,6 +447,7 @@ class ScanBottomBar extends StatelessWidget {
     required this.isScanning,
     required this.setupPhase,
     required this.setupSnap,
+    this.markCount = 0,
     required this.scanComplete,
     required this.canFinishScan,
     required this.requiredCoverageToFinish,
@@ -299,8 +455,12 @@ class ScanBottomBar extends StatelessWidget {
     required this.pulseAnimation,
     required this.onRequestStartScan,
     required this.onSetupAdvance,
+    this.onDropMark,
+    this.onUndoMark,
+    this.onEnableWalkEstimate,
     required this.onSetupSkipToPreset,
     this.onEnterManualSize,
+    this.onConfirmContinue,
     required this.onFinishScan,
     required this.onCancelScan,
     required this.onOpenRig,
@@ -309,16 +469,25 @@ class ScanBottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final inSetup = isScanning &&
+        setupPhase != ScanSessionPhase.capture;
+
     return Container(
       padding: const EdgeInsets.all(20),
-      child: isScanning && setupPhase != ScanSessionPhase.capture
+      child: inSetup
           ? ScanSetupActionsBar(
               snap: setupSnap,
-              isLockPhase: setupPhase == ScanSessionPhase.lockTracking,
-              onAdvance: setupSnap.canAdvance ? onSetupAdvance : null,
+              phase: setupPhase,
+              markCount: markCount,
+              onAdvance: setupSnap.canAdvance || setupPhase == ScanSessionPhase.lockTracking
+                  ? onSetupAdvance
+                  : null,
+              onDropMark: onDropMark,
+              onUndoMark: markCount > 0 ? onUndoMark : null,
+              onEnableWalkEstimate: onEnableWalkEstimate,
               onSkipToPreset: onSetupSkipToPreset,
-              onEnterManualSize:
-                  setupPhase == ScanSessionPhase.sizeRoom ? onEnterManualSize : null,
+              onEnterManualSize: onEnterManualSize,
+              onConfirmContinue: onConfirmContinue,
             )
           : isScanning
           ? ScanActiveCaptureBottomBar(
@@ -365,7 +534,7 @@ class ScanBottomBar extends StatelessWidget {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'TAP TO SCAN ROOM',
+                        'TAP TO MEASURE ROOM',
                         style: TextStyle(
                           color: AppColors.cyan,
                           fontWeight: FontWeight.w800,
