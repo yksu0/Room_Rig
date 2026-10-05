@@ -25,7 +25,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
   BuildContext context, {
   required String detectorLabel,
   RoomDimensions? initialDimensions,
-  String initialRemoteHost = '192.168.254.100:8787',
+  String initialRemoteHost = '127.0.0.1:8787',
 }) async {
   final lengthCtrl = TextEditingController(
     text: (initialDimensions?.lengthMeters ?? 4.2).toStringAsFixed(1),

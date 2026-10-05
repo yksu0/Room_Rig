@@ -27,7 +27,7 @@ Same Wi‑Fi as the PC (or USB + `adb reverse tcp:8787 tcp:8787` then host `127.
 Before Scan, open the pre-scan sheet:
 
 - Enable **Use PC remote detect**
-- Set host to your PC LAN IP, e.g. `192.168.254.10:8787` (no `http://`)
+- Set host to `127.0.0.1:8787` when using `adb reverse`, or your PC LAN IP e.g. `192.168.254.102:8787` (no `http://`)
 
 ## 3. What success looks like
 

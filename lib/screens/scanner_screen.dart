@@ -111,7 +111,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   String _honestySummary = 'Approximate / luma heuristics · preset room size · tracking unknown';
   bool _preferArCore = false;
   bool _useRemoteDetect = false;
-  String _remoteHostPort = '192.168.254.100:8787';
+  String _remoteHostPort = '127.0.0.1:8787';
   String _trackingSource = 'visual';
   String _roomSizeSource = 'preset';
   RoomDimensions? _pendingManualDimensions;
