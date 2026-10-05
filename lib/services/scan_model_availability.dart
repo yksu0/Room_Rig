@@ -79,6 +79,7 @@ class ScanModelAvailability {
   static const honestyBullets = <String>[
     'Set room length × width before scanning when you know them — better than a wrong preset.',
     'On Android, live color preview uses visual odometry by default. Opt in to ARCore for room sizing only — capture/detection switches back to the live camera so Scan stays smoother.',
+    'Optional: Use PC remote detect to run YOLO on your desktop GPU (same Wi‑Fi). Falls back to on-device TFLite if the PC is offline.',
     'Object-scale can nudge dimensions from known pieces (bed/sofa/chair) when confidence is high — still approximate.',
     'Detection uses the bundled Room Rig YOLO when present; otherwise luma heuristics.',
     'Detector class “vent” seeds an intake grille — add Exhaust Fan in Rig for extract outlets.',
