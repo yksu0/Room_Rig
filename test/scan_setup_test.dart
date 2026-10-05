@@ -137,13 +137,29 @@ void main() {
     expect(setup.measuredDimensions()!.lengthMeters, closeTo(3 + 1.5, 0.05));
   });
 
-  test('max eight marks', () {
+  test('max twenty-four marks for odd rooms', () {
     final setup = ScanSetupController();
     setup.advanceFromLock();
-    for (int i = 0; i < 8; i++) {
-      expect(setup.addMark(Vec3(x: i * 0.3, y: 0, z: i * 0.1)), isTrue);
+    for (int i = 0; i < 24; i++) {
+      expect(setup.addMark(Vec3(x: i * 0.15, y: i.isEven ? 0.0 : 2.6, z: i * 0.05)), isTrue);
     }
     expect(setup.addMark(const Vec3(x: 9, y: 0, z: 9)), isFalse);
-    expect(setup.markCount, 8);
+    expect(setup.markCount, 24);
+  });
+
+  test('floor plus ceiling marks set height from Y span', () {
+    final setup = ScanSetupController();
+    setup.advanceFromLock();
+    setup.addMark(const Vec3(x: 0, y: 0.0, z: 0));
+    setup.addMark(const Vec3(x: 3, y: 0.0, z: 0));
+    setup.addMark(const Vec3(x: 3, y: 0.0, z: 2));
+    setup.addMark(const Vec3(x: 0, y: 0.0, z: 2));
+    setup.addMark(const Vec3(x: 0, y: 2.7, z: 0));
+    setup.addMark(const Vec3(x: 3, y: 2.7, z: 0));
+    setup.addMark(const Vec3(x: 3, y: 2.7, z: 2));
+    setup.addMark(const Vec3(x: 0, y: 2.7, z: 2));
+    expect(setup.markCount, ScanSetupController.recommendedMarks);
+    final dims = setup.measuredDimensions()!;
+    expect(dims.heightMeters, closeTo(2.7, 0.05));
   });
 }

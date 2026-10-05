@@ -511,9 +511,9 @@ class _ScannerScreenState extends State<ScannerScreen>
       return;
     }
     final hit = tracking.lookAtPosition;
-    if (hit == null || !tracking.hasFloorHit) {
+    if (hit == null || !tracking.hasSurfaceHit) {
       _appendLog(
-        '> Aim at the floor or wall base until the reticle hits, then Drop mark.',
+        '> Aim at a floor or ceiling corner until the reticle hits, then Drop mark.',
         severity: ScanLogSeverity.warning,
         key: 'mark-no-hit',
       );
@@ -530,9 +530,10 @@ class _ScannerScreenState extends State<ScannerScreen>
       return;
     }
     HapticFeedback.mediumImpact();
+    final kind = tracking.lookAtKind ?? (tracking.hasCeilingHit ? 'ceiling' : 'floor');
     _appendLog(
-      '> Mark ${_setup.markCount}: '
-      '(${hit.x.toStringAsFixed(2)}, ${hit.z.toStringAsFixed(2)})',
+      '> Mark ${_setup.markCount} ($kind): '
+      '(${hit.x.toStringAsFixed(2)}, ${hit.y.toStringAsFixed(2)}, ${hit.z.toStringAsFixed(2)})',
       key: 'mark-${_setup.markCount}',
     );
     setState(() {});

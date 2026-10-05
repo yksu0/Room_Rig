@@ -351,8 +351,10 @@ class ArCoreSessionManager(
 			else -> 0.15
 		}
 
-		val hit = if (stable) raycastFloor(tx, ty, tz, forward) else null
-		val depthHint = hit?.get(3)
+		val surface = if (stable) raycastSurface(tx, ty, tz, forward) else null
+		val hit = surface?.xyz
+		val kind = surface?.kind
+		val depthHint = surface?.t
 
 		return mapOf(
 			"x" to tx,
@@ -368,35 +370,86 @@ class ArCoreSessionManager(
 			"lookAtX" to hit?.get(0),
 			"lookAtY" to hit?.get(1),
 			"lookAtZ" to hit?.get(2),
-			"hasFloorHit" to (hit != null),
+			"hasFloorHit" to (kind == "floor"),
+			"hasCeilingHit" to (kind == "ceiling"),
+			"hasSurfaceHit" to (hit != null),
+			"lookAtKind" to kind,
 			"backend" to "arcore-s10",
 			"trackingState" to state.name,
 		)
 	}
 
-	/** Intersect camera forward with the lowest tracked horizontal plane (or a 1.5m floor guess). */
-	private fun raycastFloor(tx: Double, ty: Double, tz: Double, forward: FloatArray): DoubleArray? {
+	private data class SurfaceHit(val xyz: DoubleArray, val t: Double, val kind: String)
+
+	/** Prefer closer camera-forward hit against floor or ceiling planes. */
+	private fun raycastSurface(
+		tx: Double,
+		ty: Double,
+		tz: Double,
+		forward: FloatArray,
+	): SurfaceHit? {
+		val floor = raycastHorizontal(
+			tx, ty, tz, forward,
+			upwardFacing = true,
+			kind = "floor",
+			fallbackY = ty - 1.45,
+		)
+		val ceiling = raycastHorizontal(
+			tx, ty, tz, forward,
+			upwardFacing = false,
+			kind = "ceiling",
+			fallbackY = ty + 1.25,
+		)
+		if (floor == null) return ceiling
+		if (ceiling == null) return floor
+		return if (floor.t <= ceiling.t) floor else ceiling
+	}
+
+	/** Intersect camera forward with a horizontal plane (floor or ceiling). */
+	private fun raycastHorizontal(
+		tx: Double,
+		ty: Double,
+		tz: Double,
+		forward: FloatArray,
+		upwardFacing: Boolean,
+		kind: String,
+		fallbackY: Double,
+	): SurfaceHit? {
 		val s = session
-		var floorY = ty - 1.45
+		var planeY = fallbackY
 		if (s != null) {
-			val floors = s.getAllTrackables(Plane::class.java).filter {
-				it.trackingState == TrackingState.TRACKING &&
-					it.type == Plane.Type.HORIZONTAL_UPWARD_FACING
+			val want = if (upwardFacing) {
+				Plane.Type.HORIZONTAL_UPWARD_FACING
+			} else {
+				Plane.Type.HORIZONTAL_DOWNWARD_FACING
 			}
-			if (floors.isNotEmpty()) {
-				floorY = floors.minOf { it.centerPose.ty().toDouble() }
+			val planes = s.getAllTrackables(Plane::class.java).filter {
+				it.trackingState == TrackingState.TRACKING && it.type == want
+			}
+			if (planes.isNotEmpty()) {
+				planeY = if (upwardFacing) {
+					planes.minOf { it.centerPose.ty().toDouble() }
+				} else {
+					planes.maxOf { it.centerPose.ty().toDouble() }
+				}
 			}
 		}
 
 		val fy = forward[1].toDouble()
 		if (kotlin.math.abs(fy) < 0.04) return null
-		val t = (floorY - ty) / fy
-		if (t < 0.45 || t > 7.0) return null
-		return doubleArrayOf(
-			tx + forward[0] * t,
-			floorY,
-			tz + forward[2] * t,
-			t,
+		val t = (planeY - ty) / fy
+		if (t < 0.35 || t > 8.0) return null
+		// Floor should be below camera; ceiling above (with a little slack).
+		if (upwardFacing && planeY > ty + 0.15) return null
+		if (!upwardFacing && planeY < ty - 0.15) return null
+		return SurfaceHit(
+			xyz = doubleArrayOf(
+				tx + forward[0] * t,
+				planeY,
+				tz + forward[2] * t,
+			),
+			t = t,
+			kind = kind,
 		)
 	}
 

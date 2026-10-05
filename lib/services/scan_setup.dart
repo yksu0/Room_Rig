@@ -26,7 +26,7 @@ class ScanSetupSnapshot {
   });
 }
 
-/// ARCore warmup + floor-mark room sizing. No furniture is recorded here.
+/// ARCore warmup + floor/ceiling corner marks for room sizing. No furniture here.
 class ScanSetupController {
   static const int requiredStableFrames = 10;
   static const double requiredYawSpanDegrees = 45;
@@ -36,8 +36,14 @@ class ScanSetupController {
   static const double minRoomMeters = 2.6;
   static const double maxRoomMeters = 8.5;
   static const double cellMeters = 0.6;
+  static const double minHeightMeters = 2.2;
+  static const double maxHeightMeters = 3.5;
+  static const double defaultHeightMeters = 2.7;
+  /// Enough to review a quick footprint; a full box is 8 (4 floor + 4 ceiling).
   static const int minMarks = 3;
-  static const int maxMarks = 8;
+  /// Rectangular room = 8 corners; L-shapes / odd plans need more — allow plenty.
+  static const int recommendedMarks = 8;
+  static const int maxMarks = 24;
 
   ScanSessionPhase phase = ScanSessionPhase.lockTracking;
 
@@ -260,10 +266,13 @@ class ScanSetupController {
 
     if (_marks.length >= minMarks) {
       double minX = _marks.first.x, maxX = _marks.first.x;
+      double minY = _marks.first.y, maxY = _marks.first.y;
       double minZ = _marks.first.z, maxZ = _marks.first.z;
       for (final m in _marks) {
         minX = math.min(minX, m.x);
         maxX = math.max(maxX, m.x);
+        minY = math.min(minY, m.y);
+        maxY = math.max(maxY, m.y);
         minZ = math.min(minZ, m.z);
         maxZ = math.max(maxZ, m.z);
       }
@@ -271,10 +280,14 @@ class ScanSetupController {
           ((maxX - minX) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
       final width =
           ((maxZ - minZ) + wallPadMeters * 2).clamp(minRoomMeters, maxRoomMeters);
+      final spanY = maxY - minY;
+      final height = spanY >= 0.8
+          ? spanY.clamp(minHeightMeters, maxHeightMeters)
+          : defaultHeightMeters;
       return RoomDimensions(
         lengthMeters: length.toDouble(),
         widthMeters: width.toDouble(),
-        heightMeters: 2.7,
+        heightMeters: height.toDouble(),
       );
     }
 
@@ -337,7 +350,10 @@ class ScanSetupController {
               : 'Hold the phone chest-high and turn slowly until this fills up.',
         );
       case ScanSessionPhase.markFootprint:
-        final p = (_marks.length / minMarks).clamp(0.0, 1.0);
+        final p = (_marks.length / recommendedMarks).clamp(0.0, 1.0);
+        final boxHint = _marks.length >= recommendedMarks
+            ? ' — box-ready'
+            : (_marks.length >= minMarks ? ' — can review early' : '');
         return ScanSetupSnapshot(
           phase: phase,
           progress: walkEstimateEnabled
@@ -346,12 +362,13 @@ class ScanSetupController {
           canAdvance: canAdvanceMark,
           stepLabel: '2 / 3  MARK CORNERS',
           headline: _marks.isEmpty
-              ? 'Aim at a corner or wall base — Drop mark'
-              : 'Marks ${_marks.length} / $maxMarks'
-                  '${_marks.length >= minMarks ? ' — ready to review' : ''}',
+              ? 'Aim at floor or ceiling corners — Drop mark'
+              : 'Marks ${_marks.length} / $maxMarks$boxHint',
           detail: _marks.length < minMarks
-              ? 'Tap Drop mark on visible corners. If a corner is blocked, mark the nearest wall point instead (need $minMarks+).'
-              : 'Add more corners if you can, or Review size. Blocked corners: edit L×W on the next screen.',
+              ? 'A rectangular room has 8 corners (4 floor + 4 ceiling). Mark at least $minMarks to continue; aim for $recommendedMarks+. Odd/L-shapes: add more wall corners.'
+              : _marks.length < recommendedMarks
+                  ? 'Good start. Tip the phone up for ceiling corners to improve height, or Review size now.'
+                  : 'Nice — enough for a full box (or more for L-shapes). Review size, then edit if a corner was blocked.',
         );
       case ScanSessionPhase.confirmSize:
         final d = measuredDimensions();

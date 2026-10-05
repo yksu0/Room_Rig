@@ -79,8 +79,9 @@ class ScanModelAvailability {
   /// Longer bullets for the pre-scan sheet.
   static const honestyBullets = <String>[
     'Scan measures the room footprint (AR corner marks or manual L×W), then opens Rig empty.',
+    'A rectangular room has 8 corners (4 floor + 4 ceiling). Aim for those; L-shapes: mark extra wall corners.',
     'On Android, Prefer ARCore for lock + corner marks. Furniture comes from Rig — not live YOLO on this path.',
-    'Blocked corners: mark the nearest visible wall base, then edit length × width on Confirm.',
+    'Blocked corners: mark the nearest visible wall/ceiling point, then edit length × width × height on Confirm.',
     'Primary product loop is Hub → Rig → Bench → Upgrades; Scan only seeds room size.',
   ];
 }

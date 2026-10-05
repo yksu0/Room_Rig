@@ -318,6 +318,8 @@ class CompositeTrackingProvider implements TrackingProvider {
               depthHintMeters: visualSample.depthHintMeters,
               lookAtPosition: nativeSample.lookAtPosition,
               hasFloorHit: nativeSample.hasFloorHit,
+              hasCeilingHit: nativeSample.hasCeilingHit,
+              lookAtKind: nativeSample.lookAtKind,
             )
           : nativeSample;
       _last = fused;
@@ -359,6 +361,8 @@ class CompositeTrackingProvider implements TrackingProvider {
         depthHintMeters: nativeSample.depthHintMeters ?? visualSample.depthHintMeters,
         lookAtPosition: nativeSample.lookAtPosition,
         hasFloorHit: nativeSample.hasFloorHit,
+        hasCeilingHit: nativeSample.hasCeilingHit,
+        lookAtKind: nativeSample.lookAtKind,
       );
       _last = fused;
       return fused;
@@ -400,6 +404,8 @@ TrackingSample trackingSampleFromNativeMap(Map<Object?, Object?> result) {
   final lookY = (result['lookAtY'] as num?)?.toDouble();
   final lookZ = (result['lookAtZ'] as num?)?.toDouble();
   final hasFloorHit = (result['hasFloorHit'] as bool?) ?? false;
+  final hasCeilingHit = (result['hasCeilingHit'] as bool?) ?? false;
+  final lookAtKind = result['lookAtKind'] as String?;
   return TrackingSample(
     cameraPosition: Vec3(
       x: (result['x'] as num?)?.toDouble() ?? 0,
@@ -420,6 +426,9 @@ TrackingSample trackingSampleFromNativeMap(Map<Object?, Object?> result) {
         ? null
         : Vec3(x: lookX, y: lookY ?? 0, z: lookZ),
     hasFloorHit: hasFloorHit,
+    hasCeilingHit: hasCeilingHit,
+    lookAtKind: lookAtKind ??
+        (hasCeilingHit ? 'ceiling' : (hasFloorHit ? 'floor' : null)),
   );
 }
 

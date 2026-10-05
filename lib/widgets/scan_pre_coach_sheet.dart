@@ -196,8 +196,9 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                     ),
                     const _TipRow(
                       icon: Icons.crop_square_rounded,
-                      title: 'Mark visible corners',
-                      detail: 'If furniture blocks a corner, mark the nearest wall base — edit L×W after.',
+                      title: 'Mark floor + ceiling corners',
+                      detail:
+                          'A box room has 8 corners. Odd/L-shapes need more. Blocked? Mark nearest wall — edit L×W×H after.',
                     ),
                     const SizedBox(height: 12),
                     Row(
