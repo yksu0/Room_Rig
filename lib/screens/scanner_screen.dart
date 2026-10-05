@@ -26,6 +26,7 @@ import '../widgets/scan_luma_preview.dart';
 import '../widgets/scan_minimap.dart';
 import '../widgets/scan_pre_coach_sheet.dart';
 import '../widgets/scan_confirm_size_sheet.dart';
+import '../widgets/scan_measure_reticle.dart';
 import '../widgets/confirm_dialogs.dart';
 import 'scanner/scan_bottom_bar.dart';
 import '../widgets/scanner/scan_detection_overlay.dart';
@@ -1325,6 +1326,11 @@ class _ScannerScreenState extends State<ScannerScreen>
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final measuring = _isScanning &&
+        (_setup.phase == ScanSessionPhase.lockTracking ||
+            _setup.phase == ScanSessionPhase.markFootprint);
+    final marking = _isScanning && _setup.phase == ScanSessionPhase.markFootprint;
+    final surfaceReady = _latestTracking?.hasSurfaceHit ?? false;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -1336,37 +1342,48 @@ class _ScannerScreenState extends State<ScannerScreen>
                 fit: StackFit.expand,
                 children: [
                   _buildCameraViewfinder(),
-                  if (_isScanning) _buildCoachBannerOverlay(),
+                  if (marking)
+                    ScanMeasureReticle(
+                      lockedOnSurface: surfaceReady,
+                      surfaceKind: _latestTracking?.lookAtKind,
+                      markCount: _setup.markCount,
+                      recommendedMarks: ScanSetupController.recommendedMarks,
+                    ),
+                  if (_isScanning && !measuring) _buildCoachBannerOverlay(),
                   if (_isScanning && _detectorFallbackFrames > 0)
                     _buildFallbackBadge(),
                   if (_isScanning && _setup.phase == ScanSessionPhase.capture)
                     _buildScanHud(state),
-                  if (_isScanning && _setup.phase != ScanSessionPhase.capture)
+                  if (_isScanning &&
+                      _setup.phase == ScanSessionPhase.lockTracking)
                     _buildSetupHud(),
                   if (!_isScanning) _buildIdleHeader(state),
-                  if (_isScanning) ScanDetectionOverlay(boxes: _detectedBoxes),
+                  if (_isScanning && _setup.phase == ScanSessionPhase.capture)
+                    ScanDetectionOverlay(boxes: _detectedBoxes),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: ScanHonestyBanner(
-                summary: _honestySummary,
-                compact: true,
+            if (!measuring)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: ScanHonestyBanner(
+                  summary: _honestySummary,
+                  compact: true,
+                ),
               ),
-            ),
-            ScanLogPanel(
-              logs: _logs,
-              logFilter: _logFilter,
-              logPanelCollapsed: _logPanelCollapsed,
-              logAutoScroll: _logAutoScroll,
-              logScrollController: _logScrollController,
-              compact: _isScanning,
-              onToggleCollapsed: _toggleLogPanelCollapsed,
-              onSetFilter: _setLogFilter,
-              onToggleAutoScroll: _toggleLogAutoScroll,
-              onClearLogs: _clearLogs,
-            ),
+            if (!measuring)
+              ScanLogPanel(
+                logs: _logs,
+                logFilter: _logFilter,
+                logPanelCollapsed: _logPanelCollapsed,
+                logAutoScroll: _logAutoScroll,
+                logScrollController: _logScrollController,
+                compact: _isScanning,
+                onToggleCollapsed: _toggleLogPanelCollapsed,
+                onSetFilter: _setLogFilter,
+                onToggleAutoScroll: _toggleLogAutoScroll,
+                onClearLogs: _clearLogs,
+              ),
             ScanBottomBar(
               isScanning: _isScanning,
               setupPhase: _setup.phase,

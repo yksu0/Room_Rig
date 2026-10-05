@@ -39,51 +39,80 @@ class ScanSetupActionsBar extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (isMark) ...[
-          GestureDetector(
-            onTap: onDropMark,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                gradient: onDropMark != null ? AppColors.accentGradient : null,
-                color: onDropMark != null ? null : AppColors.card,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: onDropMark != null ? Colors.transparent : AppColors.border,
+          // Measure-app primary action: add the corner under the center reticle.
+          Center(
+            child: GestureDetector(
+              onTap: onDropMark,
+              child: Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: onDropMark != null ? AppColors.accentGradient : null,
+                  color: onDropMark != null ? null : AppColors.card,
+                  border: Border.all(
+                    color: onDropMark != null
+                        ? Colors.white.withValues(alpha: 0.35)
+                        : AppColors.border,
+                    width: 3,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.cyan.withValues(alpha: onDropMark != null ? 0.35 : 0.08),
+                      blurRadius: 18,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add,
+                      color: onDropMark != null ? Colors.white : AppColors.textMuted,
+                      size: 28,
+                    ),
+                    Text(
+                      'CORNER',
+                      style: TextStyle(
+                        color: onDropMark != null ? Colors.white : AppColors.textMuted,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.6,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Text(
-                onDropMark != null
-                    ? 'DROP MARK  ($markCount/${ScanSetupController.maxMarks})'
-                    : 'POINT AT FLOOR / CORNER TO MARK',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: onDropMark != null ? Colors.white : AppColors.textMuted,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
-                  fontSize: 12,
-                ),
-              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '$markCount corners marked',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              if (onUndoMark != null)
-                Expanded(
-                  child: TextButton(
-                    onPressed: onUndoMark,
-                    child: Text(
-                      'Undo mark',
-                      style: TextStyle(
-                        color: AppColors.textMuted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+              Expanded(
+                child: TextButton(
+                  onPressed: onUndoMark,
+                  child: Text(
+                    'Undo',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
+              ),
               Expanded(
+                flex: 2,
                 child: GestureDetector(
                   onTap: snap.canAdvance ? onAdvance : null,
                   child: Container(
@@ -98,12 +127,12 @@ class ScanSetupActionsBar extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      snap.canAdvance ? 'REVIEW SIZE' : 'NEED ${ScanSetupController.minMarks}+ MARKS',
+                      snap.canAdvance ? 'DONE — REVIEW SIZE' : 'MARK ${ScanSetupController.minMarks}+ TO CONTINUE',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: snap.canAdvance ? AppColors.cyan : AppColors.textMuted,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
+                        letterSpacing: 0.5,
                         fontSize: 11,
                       ),
                     ),
@@ -119,7 +148,7 @@ class ScanSetupActionsBar extends StatelessWidget {
                 'Estimate from walk instead',
                 style: TextStyle(
                   color: AppColors.textMuted,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),
