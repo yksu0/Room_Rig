@@ -75,143 +75,174 @@ class ArCoreSessionManager(
 	}
 
 	fun initialize(): Map<String, Any?> {
-		return try {
-			if (activity.checkSelfPermission(Manifest.permission.CAMERA)
-				!= PackageManager.PERMISSION_GRANTED
-			) {
-				activity.requestPermissions(
-					arrayOf(Manifest.permission.CAMERA),
-					REQUEST_CAMERA,
-				)
+		synchronized(this) {
+			// Idempotent — a second Flutter initialize must not create a second Session
+			// (native abort / camera fight on S10+).
+			session?.let { existing ->
+				val depthEnabled = try {
+					existing.isDepthModeSupported(Config.DepthMode.AUTOMATIC)
+				} catch (_: Exception) {
+					false
+				}
 				return mapOf(
-					"ready" to false,
-					"backend" to "arcore",
-					"reason" to "camera_permission_required",
-					"supportsDepthHint" to true,
+					"ready" to true,
+					"backend" to "arcore-s10",
+					"supportsDepthHint" to depthEnabled,
 					"supportsConfidence" to true,
+					"depthMode" to if (depthEnabled) "automatic" else "disabled",
+					"deviceClass" to "galaxy_s10_plus_capable",
+					"reason" to "already_initialized",
 				)
 			}
 
-			val availability = ArCoreApk.getInstance().checkAvailability(activity)
-			if (availability.isTransient) {
-				return mapOf(
+			return try {
+				if (activity.checkSelfPermission(Manifest.permission.CAMERA)
+					!= PackageManager.PERMISSION_GRANTED
+				) {
+					activity.requestPermissions(
+						arrayOf(Manifest.permission.CAMERA),
+						REQUEST_CAMERA,
+					)
+					return mapOf(
+						"ready" to false,
+						"backend" to "arcore",
+						"reason" to "camera_permission_required",
+						"supportsDepthHint" to true,
+						"supportsConfidence" to true,
+					)
+				}
+
+				val availability = ArCoreApk.getInstance().checkAvailability(activity)
+				if (availability.isTransient) {
+					return mapOf(
+						"ready" to false,
+						"backend" to "arcore",
+						"reason" to "availability_transient",
+						"supportsDepthHint" to true,
+						"supportsConfidence" to true,
+					)
+				}
+				if (availability.isUnsupported) {
+					return mapOf(
+						"ready" to false,
+						"backend" to "arcore",
+						"reason" to "unsupported_device",
+						"supportsDepthHint" to false,
+						"supportsConfidence" to true,
+					)
+				}
+
+				val installStatus = ArCoreApk.getInstance().requestInstall(activity, !installRequested)
+				if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
+					installRequested = true
+					return mapOf(
+						"ready" to false,
+						"backend" to "arcore",
+						"reason" to "install_requested",
+						"supportsDepthHint" to true,
+						"supportsConfidence" to true,
+					)
+				}
+
+				val newSession = Session(activity)
+				val config = Config(newSession)
+				config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+				config.focusMode = Config.FocusMode.AUTO
+				config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
+
+				// S10+ : depth-from-motion / ToF when ARCore reports support.
+				if (newSession.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+					config.depthMode = Config.DepthMode.AUTOMATIC
+				} else {
+					config.depthMode = Config.DepthMode.DISABLED
+				}
+
+				newSession.configure(config)
+				session = newSession
+				running = false
+
+				val depthEnabled = config.depthMode == Config.DepthMode.AUTOMATIC
+				mapOf(
+					"ready" to true,
+					"backend" to "arcore-s10",
+					"supportsDepthHint" to depthEnabled,
+					"supportsConfidence" to true,
+					"depthMode" to if (depthEnabled) "automatic" else "disabled",
+					"deviceClass" to "galaxy_s10_plus_capable",
+				)
+			} catch (e: UnavailableException) {
+				Log.w(TAG, "ARCore unavailable", e)
+				mapOf(
 					"ready" to false,
 					"backend" to "arcore",
-					"reason" to "availability_transient",
-					"supportsDepthHint" to true,
+					"reason" to (e.message ?: "unavailable"),
+					"supportsDepthHint" to false,
 					"supportsConfidence" to true,
 				)
-			}
-			if (availability.isUnsupported) {
-				return mapOf(
+			} catch (e: Exception) {
+				Log.e(TAG, "ARCore init failed", e)
+				mapOf(
 					"ready" to false,
 					"backend" to "arcore",
-					"reason" to "unsupported_device",
+					"reason" to (e.message ?: "init_failed"),
 					"supportsDepthHint" to false,
 					"supportsConfidence" to true,
 				)
 			}
-
-			val installStatus = ArCoreApk.getInstance().requestInstall(activity, !installRequested)
-			if (installStatus == ArCoreApk.InstallStatus.INSTALL_REQUESTED) {
-				installRequested = true
-				return mapOf(
-					"ready" to false,
-					"backend" to "arcore",
-					"reason" to "install_requested",
-					"supportsDepthHint" to true,
-					"supportsConfidence" to true,
-				)
-			}
-
-			val newSession = Session(activity)
-			val config = Config(newSession)
-			config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
-			config.focusMode = Config.FocusMode.AUTO
-			config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
-
-			// S10+ : depth-from-motion / ToF when ARCore reports support.
-			if (newSession.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-				config.depthMode = Config.DepthMode.AUTOMATIC
-			} else {
-				config.depthMode = Config.DepthMode.DISABLED
-			}
-
-			newSession.configure(config)
-			session = newSession
-			running = false
-
-			val depthEnabled = config.depthMode == Config.DepthMode.AUTOMATIC
-			mapOf(
-				"ready" to true,
-				"backend" to "arcore-s10",
-				"supportsDepthHint" to depthEnabled,
-				"supportsConfidence" to true,
-				"depthMode" to if (depthEnabled) "automatic" else "disabled",
-				"deviceClass" to "galaxy_s10_plus_capable",
-			)
-		} catch (e: UnavailableException) {
-			Log.w(TAG, "ARCore unavailable", e)
-			mapOf(
-				"ready" to false,
-				"backend" to "arcore",
-				"reason" to (e.message ?: "unavailable"),
-				"supportsDepthHint" to false,
-				"supportsConfidence" to true,
-			)
-		} catch (e: Exception) {
-			Log.e(TAG, "ARCore init failed", e)
-			mapOf(
-				"ready" to false,
-				"backend" to "arcore",
-				"reason" to (e.message ?: "init_failed"),
-				"supportsDepthHint" to false,
-				"supportsConfidence" to true,
-			)
 		}
 	}
 
 	fun resume(): Boolean {
-		val s = session ?: return false
-		return try {
-			if (!glReady || glTextureId == -1) {
-				// GL texture may not be ready yet; caller can retry update shortly.
+		synchronized(this) {
+			val s = session ?: return false
+			return try {
+				if (!glReady || glTextureId == -1) {
+					// GL texture may not be ready yet; caller can retry update shortly.
+					running = true
+					return true
+				}
+				s.setCameraTextureName(glTextureId)
+				s.resume()
 				running = true
-				return true
+				true
+			} catch (e: CameraNotAvailableException) {
+				Log.w(TAG, "Camera not available for ARCore", e)
+				running = false
+				false
+			} catch (e: Exception) {
+				Log.e(TAG, "ARCore resume failed", e)
+				running = false
+				false
 			}
-			s.setCameraTextureName(glTextureId)
-			s.resume()
-			running = true
-			true
-		} catch (e: CameraNotAvailableException) {
-			Log.w(TAG, "Camera not available for ARCore", e)
-			running = false
-			false
-		} catch (e: Exception) {
-			Log.e(TAG, "ARCore resume failed", e)
-			running = false
-			false
 		}
 	}
 
 	fun pause() {
-		running = false
-		try {
-			session?.pause()
-		} catch (e: Exception) {
-			Log.w(TAG, "ARCore pause failed", e)
+		synchronized(this) {
+			running = false
+			try {
+				session?.pause()
+			} catch (e: Exception) {
+				Log.w(TAG, "ARCore pause failed", e)
+			}
 		}
 	}
 
 	fun dispose() {
-		pause()
-		try {
-			session?.close()
-		} catch (_: Exception) {
+		synchronized(this) {
+			running = false
+			try {
+				session?.pause()
+			} catch (_: Exception) {
+			}
+			try {
+				session?.close()
+			} catch (_: Exception) {
+			}
+			session = null
+			latestFrameBytes = null
+			latestPose = emptyMap()
 		}
-		session = null
-		latestFrameBytes = null
-		latestPose = emptyMap()
 	}
 
 	fun updateTracking(timestampMs: Long): Map<String, Any?> {
@@ -414,38 +445,47 @@ class ArCoreSessionManager(
 	}
 
 	override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-		val textures = IntArray(1)
-		GLES20.glGenTextures(1, textures, 0)
-		glTextureId = textures[0]
-		GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, glTextureId)
-		GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-		GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-		GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
-		GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
-		glReady = true
-		if (running) {
-			try {
-				session?.setCameraTextureName(glTextureId)
-				session?.resume()
-			} catch (e: Exception) {
-				Log.w(TAG, "resume after GL ready failed", e)
+		synchronized(this) {
+			val textures = IntArray(1)
+			GLES20.glGenTextures(1, textures, 0)
+			glTextureId = textures[0]
+			GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, glTextureId)
+			GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+			GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+			GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+			GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+			glReady = true
+			if (running) {
+				try {
+					session?.setCameraTextureName(glTextureId)
+					session?.resume()
+				} catch (e: Exception) {
+					Log.w(TAG, "resume after GL ready failed", e)
+				}
 			}
 		}
 	}
 
 	override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-		GLES20.glViewport(0, 0, width, height)
-		session?.setDisplayGeometry(activity.windowManager.defaultDisplay.rotation, width, height)
+		GLES20.glViewport(0, 0, width.coerceAtLeast(1), height.coerceAtLeast(1))
+		synchronized(this) {
+			try {
+				val rotation = activity.windowManager.defaultDisplay.rotation
+				session?.setDisplayGeometry(rotation, width.coerceAtLeast(1), height.coerceAtLeast(1))
+			} catch (e: Exception) {
+				Log.w(TAG, "setDisplayGeometry failed", e)
+			}
+		}
 	}
 
 	override fun onDrawFrame(gl: GL10?) {
-		val s = session
-		if (s == null || !running || !glReady || glTextureId == -1) {
-			GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-			return
-		}
 		try {
 			synchronized(this) {
+				val s = session
+				if (s == null || !running || !glReady || glTextureId == -1) {
+					GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+					return
+				}
 				s.setCameraTextureName(glTextureId)
 				val frame = s.update()
 				latestPose = poseFromCamera(frame.camera, frame)
