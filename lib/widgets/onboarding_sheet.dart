@@ -49,7 +49,7 @@ class OnboardingSheet extends StatelessWidget {
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        padding: const EdgeInsets.fromLTRB(AppSpace.screen, AppSpace.md, AppSpace.screen, AppSpace.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,11 +60,11 @@ class OnboardingSheet extends StatelessWidget {
                 height: 4,
                 decoration: BoxDecoration(
                   color: AppColors.border,
-                  borderRadius: BorderRadius.circular(99),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                 ),
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: AppSpace.lg),
             Text(
               'WELCOME TO ROOM RIG',
               style: TextStyle(
@@ -74,7 +74,7 @@ class OnboardingSheet extends StatelessWidget {
                 letterSpacing: 2,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpace.xs),
             const Text(
               'Four tips for a better setup',
               style: TextStyle(
@@ -83,10 +83,10 @@ class OnboardingSheet extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: AppSpace.lg),
             ...steps.map((s) {
               return Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: AppSpace.sm),
                 child: GestureDetector(
                   onTap: () {
                     // Parent pops once via onJumpTab or onDone — never both.
@@ -97,31 +97,31 @@ class OnboardingSheet extends StatelessWidget {
                     }
                   },
                   child: Container(
-                    padding: const EdgeInsets.all(14),
+                    padding: const EdgeInsets.all(AppSpace.md),
                     decoration: BoxDecoration(
                       color: AppColors.card,
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(AppRadius.lg),
                       border: Border.all(color: AppColors.border),
                     ),
                     child: Row(
                       children: [
                         Container(
-                          width: 42,
-                          height: 42,
+                          width: 46,
+                          height: 46,
                           decoration: BoxDecoration(
                             color: s.$4.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(AppRadius.md),
                           ),
                           child: Center(child: SvgIcon(s.$1, size: 20, color: s.$4)),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: AppSpace.md),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(s.$2, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 14)),
-                              const SizedBox(height: 4),
-                              Text(s.$3, style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600, height: 1.3)),
+                              const SizedBox(height: AppSpace.xxs),
+                              Text(s.$3, style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600, height: 1.4)),
                             ],
                           ),
                         ),
@@ -132,15 +132,15 @@ class OnboardingSheet extends StatelessWidget {
                 ),
               );
             }),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpace.md),
             GestureDetector(
               onTap: onDone,
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 16),
                 decoration: BoxDecoration(
                   gradient: AppColors.accentGradient,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
                 ),
                 child: const Text(
                   'GET STARTED',

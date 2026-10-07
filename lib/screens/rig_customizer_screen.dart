@@ -160,8 +160,23 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   Widget _buildHeader(BuildContext context, AppState state) {
+    final dims = state.activeRoomLayout?.dimensions;
+    final lengthMeters = dims != null && dims.lengthMeters > 0
+        ? dims.lengthMeters
+        : RoomScale.metersFromCells(state.currentRoomData.gridCols);
+    final widthMeters = dims != null && dims.widthMeters > 0
+        ? dims.widthMeters
+        : RoomScale.metersFromCells(state.currentRoomData.gridRows);
+    final heightMeters = dims != null && dims.heightMeters > 0
+        ? dims.heightMeters
+        : state.currentRoomData.heightMeters;
+    final sizeLabel =
+        '${RoomScale.formatMeters(lengthMeters)} × '
+        '${RoomScale.formatMeters(widthMeters)} × '
+        '${RoomScale.formatMeters(heightMeters)}';
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+      padding: const EdgeInsets.fromLTRB(AppSpace.screen, AppSpace.sm, AppSpace.screen, AppSpace.xs),
       child: Column(
         children: [
           Row(
@@ -172,19 +187,19 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   children: [
                     Text(
                       'RIG CUSTOMIZER',
-                      style: TextStyle(color: AppColors.cyan, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 3),
+                      style: TextStyle(color: AppColors.cyan, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2.8),
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       state.currentRoomData.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w800),
                     ),
+                    const SizedBox(height: 2),
                     Text(
-                      '${RoomScale.formatCellsAsMeters(state.currentRoomData.gridCols)} × '
-                      '${RoomScale.formatCellsAsMeters(state.currentRoomData.gridRows)} × '
-                      '${RoomScale.formatMeters(state.currentRoomData.heightMeters)}',
-                      style: const TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+                      sizeLabel,
+                      style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -195,7 +210,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 tooltip: 'Undo layout',
                 onTap: state.canUndoLayout ? state.undoLayout : null,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: AppSpace.xs),
               _HistoryButton(
                 icon: Icons.redo_rounded,
                 enabled: state.canRedoLayout,
@@ -203,7 +218,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 onTap: state.canRedoLayout ? state.redoLayout : null,
               ),
               if (state.hasCompareSnapshot) ...[
-                const SizedBox(width: 4),
+                const SizedBox(width: AppSpace.xs),
                 _HistoryButton(
                   icon: Icons.restore_rounded,
                   enabled: true,
@@ -211,14 +226,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   onTap: () => _confirmRestoreOriginal(state),
                 ),
               ],
-              const SizedBox(width: 4),
+              const SizedBox(width: AppSpace.xs),
               GestureDetector(
                 onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: AppColors.card,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
                     border: Border.all(color: AppColors.border),
                   ),
                   child: const Text(
@@ -230,16 +245,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             ],
           ),
           if (state.layoutConflicts.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpace.sm),
             _ConflictBanner(conflicts: state.layoutConflicts),
           ],
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpace.sm),
           SizedBox(
-            height: 40,
+            height: 44,
             child: Row(
               children: [
                 Expanded(flex: 5, child: _buildViewToggle()),
-                const SizedBox(width: 6),
+                const SizedBox(width: AppSpace.xs),
                 _InvasiveEditToggle(
                   invasive: state.invasiveEdit,
                   onChanged: state.setInvasiveEdit,
@@ -277,8 +292,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         backgroundColor: AppColors.surface,
         title: const Text('Run Auto-Rig?', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Auto-Rig scores several layouts and applies the best for your goal. '
-          'Use “Try alternate” to cycle other ranked layouts without changing weights.',
+          'Auto-Rig rearranges the items already on this Rig — it does not add '
+          'catalog pieces. Run best picks the top layout; Try alternate cycles '
+          'other ranked layouts for the same inventory.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [

@@ -121,9 +121,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       _simVariant = BenchLayoutKind.improved;
     });
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(
-        content: Text('Improved — your room, Auto-Rig layout (after)'),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: Text(_layouts?.improvedCaption ?? 'Improved · Auto-Rig (after)'),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -174,6 +174,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       roomFurniture: state.committedFurniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
+      weights: state.optimizeWeights,
+      alternateIndex: state.benchAlternateCursor,
     );
     _layouts = layouts;
     _myRoomSim = AirflowSimulator.build(furniture: layouts.myRoom, optimized: false);
@@ -211,7 +213,11 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
     );
-    if (_layouts != null && fp == _layouts!.fingerprint) return;
+    final same = _layouts != null &&
+        fp == _layouts!.fingerprint &&
+        state.optimizeWeights.cacheKey == _layouts!.weightsCacheKey &&
+        state.benchAlternateCursor == _layouts!.requestedAlternateIndex;
+    if (same) return;
     _recomputeLayouts(state, resetStep: false);
   }
 
@@ -265,14 +271,19 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           builder: (context, scrollLocked, _) {
             return SingleChildScrollView(
               physics: scrollLocked ? const NeverScrollableScrollPhysics() : null,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpace.screen,
+                AppSpace.lg,
+                AppSpace.screen,
+                AppSpace.xxl,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildHeader(),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppSpace.xl),
                   _buildModeSelector(state),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppSpace.xl),
                   if (isAirflow)
                     ..._buildAirflowPrototype(state)
                   else if (isLighting)
@@ -281,7 +292,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                     SpatialBenchPanel(onOrbitDraggingChanged: _setOrbitDragging)
                   else
                     ErgonomicsBenchPanel(onOrbitDraggingChanged: _setOrbitDragging),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: AppSpace.xxl),
                 ],
               ),
             );
@@ -303,11 +314,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                 'BENCH CENTER',
                 style: TextStyle(
                   color: AppColors.cyan,
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: 3,
+                  letterSpacing: 2.8,
                 ),
               ),
+              SizedBox(height: AppSpace.xxs),
               Text(
                 'Room Stress Tests',
                 style: TextStyle(
@@ -323,11 +335,11 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           onPressed: _replayBeforeAfter,
           style: TextButton.styleFrom(
             foregroundColor: AppColors.amber,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           ),
           child: const Text(
             'Before/After',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
           ),
         ),
       ],
@@ -364,9 +376,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       _simVariant = BenchLayoutKind.improved;
     });
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      const SnackBar(
-        content: Text('Improved — your room, Auto-Rig layout (after)'),
-        duration: Duration(seconds: 2),
+      SnackBar(
+        content: Text(_layouts?.improvedCaption ?? 'Improved · Auto-Rig (after)'),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -390,18 +402,18 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              margin: EdgeInsets.only(right: m.$1 == 'spatial' ? 0 : 6),
-              padding: const EdgeInsets.symmetric(vertical: 12),
+              margin: EdgeInsets.only(right: m.$1 == 'spatial' ? 0 : AppSpace.xs),
+              padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: BoxDecoration(
                 color: isSelected ? m.$4.withValues(alpha: 0.15) : AppColors.card,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(color: isSelected ? m.$4 : AppColors.border, width: isSelected ? 1.5 : 1),
                 boxShadow: isSelected ? [BoxShadow(color: m.$4.withValues(alpha: 0.2), blurRadius: 12)] : [],
               ),
               child: Column(
                 children: [
                   SvgIcon(m.$2, size: 22, color: isSelected ? m.$4 : AppColors.textMuted),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 8),
                   Text(
                     m.$3,
                     style: TextStyle(
@@ -447,8 +459,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         const SizedBox(height: 8),
         Text(
           _layouts?.fellBackToSample ?? false
-              ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-              : 'Coarse voxel airflow (not CFD) on your Rig furniture, then compares a rule-based rearrange of the same room.',
+              ? 'Rig is empty — My Room / Improved use the reference sample. Add furniture on Rig to bench your space. Improved uses your Auto-Rig weight mix.'
+              : 'Coarse voxel airflow (not CFD) on your Rig furniture, then Auto-Rig Improved under your Rig weight mix.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
         ),
       ],
@@ -669,6 +681,13 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             }),
           ],
         ),
+        BenchAutoRigMixBar(
+          layouts: _layouts,
+          onTryAlternate: () {
+            context.read<AppState>().cycleBenchAlternate();
+            setState(() => _layoutVariant = BenchLayoutKind.improved);
+          },
+        ),
         const SizedBox(height: 12),
         GlassCard(
           child: Column(
@@ -682,9 +701,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                     child: Text(
                       switch (_layoutVariant) {
                         BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
-                            ? 'Reference room — your Rig is empty'
+                            ? 'Reference sample — Rig is empty (not your room)'
                             : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                        BenchLayoutKind.improved => 'Improved — your room, Auto-Rig layout',
+                        BenchLayoutKind.improved =>
+                          _layouts?.improvedCaption ?? 'Improved · Auto-Rig',
                         BenchLayoutKind.sample => 'Sample room — AC in a corner, weak coverage',
                       },
                       style: const TextStyle(
@@ -811,8 +831,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       case BenchLayoutKind.myRoom:
         if (_layouts?.fellBackToSample ?? false) {
           return const [
-            'Nothing in the Rig yet — showing the reference room',
-            'Add furniture on the Rig tab and this bench follows it',
+            'Rig empty — showing the reference sample room (not yours)',
+            'Add furniture on Rig; Bench Improved will use your Auto-Rig sliders',
           ];
         }
         return const [

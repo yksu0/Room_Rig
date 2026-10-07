@@ -262,54 +262,59 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: AppColors.bg,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpace.screen,
+            AppSpace.lg,
+            AppSpace.screen,
+            AppSpace.xxl,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(context, room, state),
-              const SizedBox(height: 20),
+              const SizedBox(height: AppSpace.xl),
               if (!state.roomIsReady) ...[
                 _GettingStartedBanner(
                   onScan: () => state.setTab(1),
                   onCreate: () => _showCreateRoomSheet(context, state),
                   onDemo: () => _startProfessorDemo(state),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpace.xl),
               ] else if (state.scanComplete && state.lastScanConfidence != null) ...[
                 _ScanConfidenceBanner(metrics: state.lastScanConfidence!),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpace.md),
                 _JourneySteps(state: state),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpace.xl),
               ] else if (state.roomIsReady) ...[
                 _ManualRoomBanner(state: state),
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpace.md),
                 _JourneySteps(state: state),
-                const SizedBox(height: 10),
+                const SizedBox(height: AppSpace.xs),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
                     onPressed: () => _startProfessorDemo(state),
-                    icon: Icon(Icons.school_outlined, size: 16, color: AppColors.green),
+                    icon: Icon(Icons.school_outlined, size: 18, color: AppColors.green),
                     label: Text(
                       'Replay professor demo path',
                       style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpace.xl),
               ],
               _buildScoreSection(context, state),
               if (state.roomIsReady && state.suggestedUpgrade() != null) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: AppSpace.md),
                 _UpgradeSuggestionBanner(suggestion: state.suggestedUpgrade()!),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpace.section),
               _buildMyRooms(context, state),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpace.section),
               _buildPresetSelector(context, state),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpace.section),
               _buildQuickActions(context, state),
-              const SizedBox(height: 24),
+              const SizedBox(height: AppSpace.section),
               _buildMetricsRow(context, state),
             ],
           ),
@@ -329,11 +334,11 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(
                 color: AppColors.cyan,
                 fontSize: 12,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 4,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 3.2,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpace.xs),
             Text(
               'Rig Hub',
               style: TextStyle(
@@ -425,12 +430,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           state.setTab(3);
                         }
                       : null,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
                       border: Border.all(
                         color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.4),
                       ),
@@ -439,7 +444,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk,
                       style: TextStyle(
                         color: simulated ? AppColors.amber : AppColors.green,
-                        fontSize: 9,
+                        fontSize: 10,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.8,
                       ),
@@ -449,10 +454,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: AppColors.cyan.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                   border: Border.all(color: AppColors.cyan.withValues(alpha: 0.4)),
                 ),
                 child: Text(
@@ -468,15 +473,15 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           if (simulated) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: AppSpace.sm),
             GestureDetector(
               onTap: () => state.setTab(3),
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: AppSpace.sm),
                 decoration: BoxDecoration(
                   color: AppColors.amber.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                   border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
                 ),
                 child: Row(
@@ -963,7 +968,7 @@ class _HomeScreenState extends State<HomeScreen> {
             final actions = [
               _ActionButton(
                 svgString: RoomSvg.scan,
-                label: 'Scan Room',
+                label: 'Measure room',
                 color: AppColors.cyan,
                 onTap: () => context.read<AppState>().setTab(1),
               ),
@@ -1242,7 +1247,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    'Fallback when the camera cannot scan. Empty rectangle plus a door and window.',
+                    'Fallback when you skip camera measure. Empty rectangle plus a door and window.',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
                   ),
                   const SizedBox(height: 14),
@@ -1324,10 +1329,10 @@ class _GettingStartedBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(AppSpace.md),
       decoration: BoxDecoration(
         color: AppColors.cyan.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
         border: Border.all(color: AppColors.cyan.withValues(alpha: 0.35)),
       ),
       child: Column(
@@ -1335,8 +1340,8 @@ class _GettingStartedBanner extends StatelessWidget {
         children: [
           Row(
             children: [
-              SvgIcon(RoomSvg.scan, size: 22, color: AppColors.cyan),
-              const SizedBox(width: 12),
+              SvgIcon(RoomSvg.scan, size: 24, color: AppColors.cyan),
+              const SizedBox(width: AppSpace.md),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1346,16 +1351,17 @@ class _GettingStartedBanner extends StatelessWidget {
                       style: TextStyle(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w800,
-                        fontSize: 13,
+                        fontSize: 15,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: AppSpace.xxs),
                     Text(
-                      'Demo path needs no camera. Scan is optional.',
+                      'Demo needs no camera. Scan measures size, then detects items, then Rig.',
                       style: TextStyle(
                         color: AppColors.textSecondary,
-                        fontSize: 12,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
+                        height: 1.4,
                       ),
                     ),
                   ],
@@ -1363,7 +1369,7 @@ class _GettingStartedBanner extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpace.md),
           Row(
             children: [
               Expanded(
@@ -1373,15 +1379,15 @@ class _GettingStartedBanner extends StatelessWidget {
                   onTap: onDemo,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpace.xs),
               Expanded(
                 child: _StartChip(
                   label: 'Create',
-                  color: AppColors.purple,
+                  color: AppColors.amber,
                   onTap: onCreate,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpace.xs),
               Expanded(
                 child: _StartChip(
                   label: 'Scan',
@@ -1413,16 +1419,16 @@ class _StartChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           border: Border.all(color: color.withValues(alpha: 0.35)),
         ),
         child: Text(
           label,
           textAlign: TextAlign.center,
-          style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12),
+          style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 13),
         ),
       ),
     );
@@ -1479,7 +1485,14 @@ class _ScanConfidenceBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pct = (metrics.overallScore * 100).round();
-    final note = metrics.notes.isNotEmpty ? metrics.notes.first : 'Ready for Rig + Bench.';
+    final sizeOnly = metrics.detectionCount == 0 &&
+        metrics.notes.any((n) => n.contains('place furniture on Rig'));
+    final title = sizeOnly
+        ? 'Last measure · room sized · open Rig'
+        : 'Last scan · $pct% confidence · ${metrics.objectCount} objects';
+    final note = metrics.notes.isNotEmpty
+        ? metrics.notes.first
+        : (sizeOnly ? 'Place furniture on Rig.' : 'Ready for Rig + Bench.');
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -1497,7 +1510,7 @@ class _ScanConfidenceBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Last scan · $pct% confidence · ${metrics.objectCount} objects',
+                  title,
                   style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 13),
                 ),
                 const SizedBox(height: 3),
@@ -1525,11 +1538,11 @@ class _JourneySteps extends StatelessWidget {
         Expanded(
           child: _JourneyChip(
             label: '1. Edit Rig',
-            color: AppColors.purple,
+            color: AppColors.cyan,
             onTap: () => state.setTab(2),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpace.xs),
         Expanded(
           child: _JourneyChip(
             label: '2. Bench',
@@ -1537,7 +1550,7 @@ class _JourneySteps extends StatelessWidget {
             onTap: () => state.setTab(3),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpace.xs),
         Expanded(
           child: _JourneyChip(
             label: '3. Upgrades',
@@ -1561,16 +1574,16 @@ class _JourneyChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
         child: Text(
           label,
           textAlign: TextAlign.center,
-          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800),
+          style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800),
         ),
       ),
     );
@@ -1590,20 +1603,20 @@ class _ActionButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        padding: const EdgeInsets.symmetric(vertical: 18),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
           boxShadow: [BoxShadow(color: color.withValues(alpha: 0.1), blurRadius: 15)],
         ),
         child: Column(
           children: [
             SvgIcon(svgString, size: 26, color: color),
-            const SizedBox(height: 6),
+            const SizedBox(height: AppSpace.xs),
             Text(
               label,
-              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+              style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
             ),
           ],
         ),

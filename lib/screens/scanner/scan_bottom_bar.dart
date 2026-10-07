@@ -127,7 +127,9 @@ class ScanSetupActionsBar extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      snap.canAdvance ? 'DONE — REVIEW SIZE' : 'MARK ${ScanSetupController.minMarks}+ TO CONTINUE',
+                      snap.canAdvance
+                          ? 'DONE — REVIEW SIZE'
+                          : 'NEED 3+ ONE PLANE + HEIGHT (4 MIN)',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: snap.canAdvance ? AppColors.cyan : AppColors.textMuted,
@@ -164,7 +166,7 @@ class ScanSetupActionsBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: const Text(
-                'CONFIRM SIZE — OPEN RIG',
+                'CONFIRM SIZE — DETECT ITEMS',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white,
@@ -245,30 +247,30 @@ class ScanFinishBlockersStrip extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      margin: const EdgeInsets.only(bottom: AppSpace.xs),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm, vertical: 10),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: Wrap(
-        spacing: 8,
-        runSpacing: 6,
+        spacing: AppSpace.xs,
+        runSpacing: AppSpace.xs,
         children: blockers
             .map(
               (text) => Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
                   color: AppColors.amber.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
                   border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
                 ),
                 child: Text(
                   text,
                   style: TextStyle(
                     color: AppColors.amber,
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -285,6 +287,7 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
   final double requiredCoverageToFinish;
   final List<String> finishBlockers;
   final VoidCallback? onFinish;
+  final VoidCallback? onSkipDetection;
   final VoidCallback onCancel;
 
   const ScanActiveCaptureBottomBar({
@@ -293,6 +296,7 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
     required this.requiredCoverageToFinish,
     required this.finishBlockers,
     required this.onFinish,
+    this.onSkipDetection,
     required this.onCancel,
   });
 
@@ -306,11 +310,11 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
           onTap: canFinishScan ? onFinish : null,
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 14),
+            padding: const EdgeInsets.symmetric(vertical: 16),
             decoration: BoxDecoration(
               gradient: canFinishScan ? AppColors.accentGradient : null,
               color: canFinishScan ? null : AppColors.card,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(AppRadius.lg),
               border: Border.all(
                 color: canFinishScan ? Colors.transparent : AppColors.border,
               ),
@@ -334,8 +338,8 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
                 const SizedBox(width: 10),
                 Text(
                   canFinishScan
-                      ? 'FINISH SCAN'
-                      : 'SCANNING... NEED ${(100 * requiredCoverageToFinish).toInt()}% + STABLE QUALITY',
+                      ? 'FINISH — OPEN RIG'
+                      : 'DETECTING... NEED ${(100 * requiredCoverageToFinish).toInt()}% + STABLE QUALITY',
                   style: TextStyle(
                     color: canFinishScan ? Colors.white : AppColors.textMuted,
                     fontWeight: FontWeight.w800,
@@ -347,7 +351,18 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        if (onSkipDetection != null)
+          TextButton(
+            onPressed: onSkipDetection,
+            child: Text(
+              'Skip items — open empty Rig',
+              style: TextStyle(
+                color: AppColors.cyan,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
         TextButton(
           onPressed: onCancel,
           child: Text(
@@ -467,6 +482,7 @@ class ScanBottomBar extends StatelessWidget {
   final VoidCallback? onEnterManualSize;
   final VoidCallback? onConfirmContinue;
   final VoidCallback? onFinishScan;
+  final VoidCallback? onSkipDetection;
   final VoidCallback onCancelScan;
   final VoidCallback onOpenRig;
   final VoidCallback onExportScanBundle;
@@ -491,6 +507,7 @@ class ScanBottomBar extends StatelessWidget {
     this.onEnterManualSize,
     this.onConfirmContinue,
     required this.onFinishScan,
+    this.onSkipDetection,
     required this.onCancelScan,
     required this.onOpenRig,
     required this.onExportScanBundle,
@@ -524,6 +541,7 @@ class ScanBottomBar extends StatelessWidget {
               requiredCoverageToFinish: requiredCoverageToFinish,
               finishBlockers: finishBlockers,
               onFinish: canFinishScan ? onFinishScan : null,
+              onSkipDetection: onSkipDetection,
               onCancel: onCancelScan,
             )
           : scanComplete
@@ -538,10 +556,10 @@ class ScanBottomBar extends StatelessWidget {
                 animation: pulseAnimation,
                 builder: (context, _) => Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(
                     color: AppColors.cyan.withValues(alpha: 0.1 + pulseAnimation.value * 0.08),
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(AppRadius.lg),
                     border: Border.all(
                       color: AppColors.cyan,
                       width: 1.5,

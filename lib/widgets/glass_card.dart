@@ -21,15 +21,16 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = borderRadius ?? AppRadius.lg;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius ?? 16),
+      borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
-          padding: padding ?? const EdgeInsets.all(16),
+          padding: padding ?? const EdgeInsets.all(AppSpace.card),
           decoration: BoxDecoration(
             gradient: gradient ?? AppColors.cardGradient,
-            borderRadius: BorderRadius.circular(borderRadius ?? 16),
+            borderRadius: BorderRadius.circular(radius),
             border: Border.all(
               color: borderColor ?? AppColors.border,
               width: 1,
@@ -58,17 +59,18 @@ class NeonBorderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = borderRadius ?? AppRadius.lg;
     return Container(
-      padding: padding ?? const EdgeInsets.all(16),
+      padding: padding ?? const EdgeInsets.all(AppSpace.card),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(borderRadius ?? 16),
-        border: Border.all(color: glowColor.withValues(alpha: 0.5), width: 1.5),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: glowColor.withValues(alpha: 0.45), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: glowColor.withValues(alpha: 0.15),
-            blurRadius: 20,
-            spreadRadius: 2,
+            color: glowColor.withValues(alpha: 0.12),
+            blurRadius: 24,
+            spreadRadius: 0,
           ),
         ],
       ),

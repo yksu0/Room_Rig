@@ -46,11 +46,11 @@ class BenchStepTabs extends StatelessWidget {
                 onStepChanged(i);
               },
               child: Container(
-                margin: EdgeInsets.only(right: isLast ? 0 : 8),
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                margin: EdgeInsets.only(right: isLast ? 0 : AppSpace.xs),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: selected ? accentColor.withValues(alpha: 0.12) : AppColors.card,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                   border: Border.all(color: selected ? accentColor : AppColors.border),
                 ),
                 child: Text(
@@ -58,7 +58,7 @@ class BenchStepTabs extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: selected ? accentColor : AppColors.textMuted,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -91,17 +91,17 @@ class BenchChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: selected ? color.withValues(alpha: 0.15) : AppColors.card,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           border: Border.all(color: selected ? color : AppColors.border),
         ),
         child: Text(
           label,
           style: TextStyle(
             color: selected ? color : AppColors.textMuted,
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -153,6 +153,58 @@ class BenchVariantChips extends StatelessWidget {
   }
 }
 
+/// Auto-Rig mix line + optional Try alternate (parity with Rig star dialog).
+class BenchAutoRigMixBar extends StatelessWidget {
+  final BenchLayouts? layouts;
+  final VoidCallback? onTryAlternate;
+
+  const BenchAutoRigMixBar({
+    super.key,
+    required this.layouts,
+    this.onTryAlternate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final L = layouts;
+    if (L == null) return const SizedBox.shrink();
+    final canAlt = onTryAlternate != null && L.canTryAlternate;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpace.sm),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              L.improvedCaption,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.4,
+              ),
+            ),
+          ),
+          if (canAlt) ...[
+            const SizedBox(width: AppSpace.xs),
+            TextButton(
+              onPressed: onTryAlternate,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.cyan,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                minimumSize: const Size(44, 40),
+              ),
+              child: const Text(
+                'Try alternate',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// Gradient primary action button (run bench, apply layout, etc.).
 class BenchPrimaryButton extends StatelessWidget {
   final String label;
@@ -177,20 +229,20 @@ class BenchPrimaryButton extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: disabled ? null : AppColors.accentGradient,
           color: disabled ? AppColors.card : null,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(color: disabled ? AppColors.border : Colors.transparent),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SvgIcon(icon, size: 18, color: disabled ? AppColors.textMuted : Colors.white),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSpace.xs),
             Text(
               label,
               style: TextStyle(
                 color: disabled ? AppColors.textMuted : Colors.white,
                 fontWeight: FontWeight.w800,
-                fontSize: 13,
+                fontSize: 14,
                 letterSpacing: 1.1,
               ),
             ),

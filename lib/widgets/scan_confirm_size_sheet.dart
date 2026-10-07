@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/scan_layout_model.dart';
 import '../theme/app_theme.dart';
 
-/// Edit L×W×H after AR marks (or manual/preset), then continue to Rig.
+/// Edit L×W×H after AR marks (or manual/preset), then continue to item detection.
 Future<RoomDimensions?> showScanConfirmSizeSheet(
   BuildContext context, {
   required RoomDimensions initial,
@@ -22,7 +22,7 @@ Future<RoomDimensions?> showScanConfirmSizeSheet(
 
   final sourceLabel = switch (roomSizeSource) {
     'measured' => markCount > 0
-        ? 'From $markCount AR floor marks (approx)'
+        ? 'From $markCount AR corner marks (approx)'
         : 'From AR walk estimate (approx)',
     'manual' => 'Manual entry',
     _ => 'Preset — edit to match your room',
@@ -36,16 +36,16 @@ Future<RoomDimensions?> showScanConfirmSizeSheet(
       isDismissible: false,
       enableDrag: false,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
       ),
       builder: (context) {
         return SafeArea(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
-              20,
-              12,
-              20,
-              24 + MediaQuery.viewInsetsOf(context).bottom,
+              AppSpace.screen,
+              AppSpace.md,
+              AppSpace.screen,
+              AppSpace.xl + MediaQuery.viewInsetsOf(context).bottom,
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -57,11 +57,11 @@ Future<RoomDimensions?> showScanConfirmSizeSheet(
                     height: 4,
                     decoration: BoxDecoration(
                       color: AppColors.border,
-                      borderRadius: BorderRadius.circular(99),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: AppSpace.md),
                 const Text(
                   'CONFIRM ROOM SIZE',
                   style: TextStyle(
@@ -71,9 +71,9 @@ Future<RoomDimensions?> showScanConfirmSizeSheet(
                     letterSpacing: 2,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpace.xs),
                 const Text(
-                  'Then open Rig empty',
+                  'Then detect items',
                   style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 20,
@@ -165,7 +165,7 @@ Future<RoomDimensions?> showScanConfirmSizeSheet(
                           padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                         child: const Text(
-                          'CONTINUE TO RIG',
+                          'CONTINUE TO DETECT',
                           style: TextStyle(fontWeight: FontWeight.w800),
                         ),
                       ),

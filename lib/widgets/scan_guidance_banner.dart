@@ -15,10 +15,10 @@ class ScanCoachBannerCard extends StatelessWidget {
       color: Colors.transparent,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: AppSpace.sm),
         decoration: BoxDecoration(
           color: AppColors.surface.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadius.md),
           border: Border.all(color: banner.accent.withValues(alpha: 0.7), width: 1.5),
           boxShadow: [
             BoxShadow(
@@ -32,15 +32,15 @@ class ScanCoachBannerCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 color: banner.accent.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
               ),
               child: Icon(banner.icon, color: banner.accent, size: 22),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpace.sm),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,14 +54,14 @@ class ScanCoachBannerCard extends StatelessWidget {
                       letterSpacing: 1.1,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpace.xxs),
                   Text(
                     banner.detail,
                     style: TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      height: 1.25,
+                      height: 1.35,
                     ),
                   ),
                 ],
@@ -98,16 +98,16 @@ class ScanDirectionCueCard extends StatelessWidget {
 
     if (compact) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpace.sm, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           border: Border.all(color: AppColors.cyan.withValues(alpha: 0.4)),
         ),
         child: Row(
           children: [
             Icon(cue.icon, color: AppColors.cyan, size: 20),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSpace.xs),
             Expanded(
               child: Text(
                 cue.headline,
@@ -123,7 +123,7 @@ class ScanDirectionCueCard extends StatelessWidget {
               cue.targetLabel,
               style: TextStyle(
                 color: AppColors.textMuted,
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -133,24 +133,24 @@ class ScanDirectionCueCard extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: AppSpace.sm),
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.82),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: AppColors.cyan.withValues(alpha: 0.45)),
       ),
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
               color: AppColors.cyan.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(AppRadius.md),
             ),
             child: Icon(cue.icon, color: AppColors.cyan, size: 26),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: AppSpace.sm),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -164,20 +164,20 @@ class ScanDirectionCueCard extends StatelessWidget {
                     letterSpacing: 1.0,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: AppSpace.xxs),
                 Text(
                   cue.detail,
                   style: TextStyle(
                     color: AppColors.textSecondary,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w500,
-                    height: 1.25,
+                    height: 1.35,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpace.xs),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -185,7 +185,7 @@ class ScanDirectionCueCard extends StatelessWidget {
                 cue.targetLabel,
                 style: TextStyle(
                   color: AppColors.textMuted,
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -196,7 +196,7 @@ class ScanDirectionCueCard extends StatelessWidget {
                     : '~$remainingPct% left',
                 style: TextStyle(
                   color: AppColors.textMuted,
-                  fontSize: 10,
+                  fontSize: 11,
                   fontWeight: FontWeight.w600,
                 ),
               ),

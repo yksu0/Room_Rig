@@ -26,6 +26,7 @@ import '../widgets/scan_luma_preview.dart';
 import '../widgets/scan_minimap.dart';
 import '../widgets/scan_pre_coach_sheet.dart';
 import '../widgets/scan_confirm_size_sheet.dart';
+import '../widgets/scan_measure_lines_overlay.dart';
 import '../widgets/scan_measure_reticle.dart';
 import '../widgets/confirm_dialogs.dart';
 import 'scanner/scan_bottom_bar.dart';
@@ -47,7 +48,8 @@ class _ScannerScreenState extends State<ScannerScreen>
   static const String _readinessHintsExpandedPrefKey = 'room_rig.scanner.readiness_hints_expanded';
   static const String _logPanelCollapsedPrefKey = 'room_rig.scanner.log_panel_collapsed';
   static const String _logAutoScrollPrefKey = 'room_rig.scanner.log_auto_scroll';
-  static const double _requiredCoverageToFinish = 0.68;
+  /// Stage-2 detect: room size already locked — lower bar than old all-in-one scan.
+  static const double _requiredCoverageToFinish = 0.40;
   static const int _requiredStableQualityFrames = 5;
   static const int _scanTabIndex = 1;
 
@@ -106,13 +108,21 @@ class _ScannerScreenState extends State<ScannerScreen>
   DateTime? _scanStartedAt;
   DateTime? _scanEndedAt;
   String? _lastExportFolder;
-  String _detectorLabel = 'Approximate / luma heuristics';
-  String _honestySummary = 'Approximate / luma heuristics · preset room size · tracking unknown';
+  String _detectorLabel = 'Measure room size · AR corners or manual L×W';
+  String _honestySummary = 'Room measure · preset room size · tracking unknown';
   bool _preferArCore = true;
   String _trackingSource = 'visual';
   String _roomSizeSource = 'preset';
   RoomDimensions? _pendingManualDimensions;
   TrackingSample? _latestTracking;
+  DateTime? _lastMeasureUiAt;
+  static const int _measureUiMinMs = 100;
+
+  bool get _measureArLightweight =>
+      _arCoreOwnsCamera &&
+      _isScanning &&
+      (_setup.phase == ScanSessionPhase.lockTracking ||
+          _setup.phase == ScanSessionPhase.markFootprint);
 
   @override
   void initState() {
@@ -141,7 +151,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         if (!mounted) return;
         unawaited(_refreshDetectorLabel());
         _appendLog(
-          '> Android: live camera + visual tracking (ARCore pose paused for clear preview).',
+          '> Android Scan: measure (ARCore) → confirm size → detect items → Rig.',
           key: 'android-live-camera',
         );
       });
@@ -305,7 +315,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     }
   }
 
-  ScanPipeline _createPipeline() {
+  ScanPipeline _createPipeline({bool measureOnly = true}) {
     final state = context.read<AppState>();
     final dims = state.activeRoomLayout?.dimensions ??
         RoomDimensions(
@@ -318,11 +328,17 @@ class _ScannerScreenState extends State<ScannerScreen>
         roomBounds: dims,
         preferNativePose: _preferArCore,
       ),
-      qualityAnalyzer: BasicFrameQualityAnalyzer(),
-      objectDetector: HybridObjectDetector(
-        primary: TfliteObjectDetector(modelAssetPath: 'assets/models/yolo_roomrig.tflite'),
-        fallback: HeuristicObjectDetector(),
-      ),
+      qualityAnalyzer: measureOnly
+          ? const MeasureModeQualityAnalyzer()
+          : BasicFrameQualityAnalyzer(),
+      objectDetector: measureOnly
+          ? const NoOpObjectDetector()
+          : HybridObjectDetector(
+              primary: TfliteObjectDetector(
+                modelAssetPath: 'assets/models/yolo_roomrig.tflite',
+              ),
+              fallback: HeuristicObjectDetector(),
+            ),
       fusionEngine: GridCoverageFusionEngine(),
     );
   }
@@ -377,10 +393,11 @@ class _ScannerScreenState extends State<ScannerScreen>
     if (coach == null || !mounted) return;
     _preferArCore = coach.preferArCore;
     _pendingManualDimensions = coach.manualDimensions;
+    // Coach forces one path: typed size or AR measure (never both-off → preset).
     if (coach.manualDimensions != null) {
       _roomSizeSource = 'manual';
     } else {
-      _roomSizeSource = 'preset';
+      _roomSizeSource = 'measured';
     }
     await _refreshDetectorLabel(
       trackingSource: _preferArCore ? 'arcore' : 'visual',
@@ -463,13 +480,15 @@ class _ScannerScreenState extends State<ScannerScreen>
       _detectedBoxes.clear();
       _logs.add(
         const ScanLogEntry(
-          message: '> Measure room: lock → mark corners → confirm size → Rig.',
+          message:
+              '> Stage 1 measure: lock → mark corners → confirm size.',
           severity: ScanLogSeverity.info,
         ),
       );
       _logs.add(
         const ScanLogEntry(
-          message: '> No live YOLO on this path — furniture comes from Rig.',
+          message:
+              '> Stage 2 detect: live camera + YOLO after size, then Rig.',
           severity: ScanLogSeverity.info,
         ),
       );
@@ -484,8 +503,20 @@ class _ScannerScreenState extends State<ScannerScreen>
     }
 
     await _startInputSource();
+    // Stay on lock → mark when ARCore owns camera, OR when live-camera fallback
+    // still has a sizing session (don't bounce straight to preset confirm).
     if (_arCoreOwnsCamera && _setup.roomSizeSource != 'manual') {
       // lock → mark via observe() + Drop mark
+    } else if (_preferArCore &&
+        _isScanning &&
+        _setup.needsArCoreSession &&
+        _setup.roomSizeSource != 'manual') {
+      // Prefer ARCore failed ownership — keep measure UI on live camera.
+      _appendLog(
+        '> Sizing UI active without ARCore pose — mark corners when ready, or Skip.',
+        severity: ScanLogSeverity.warning,
+        key: 'sizing-live-fallback',
+      );
     } else {
       _skipSetupToPresetConfirm(
         reason: _preferArCore
@@ -521,7 +552,8 @@ class _ScannerScreenState extends State<ScannerScreen>
       HapticFeedback.heavyImpact();
       return;
     }
-    final ok = _setup.addMark(hit);
+    final kind = tracking.lookAtKind ?? (tracking.hasCeilingHit ? 'ceiling' : 'floor');
+    final ok = _setup.addMark(hit, kind: kind);
     if (!ok) {
       _appendLog(
         '> Could not add mark (max ${ScanSetupController.maxMarks} or wrong phase).',
@@ -531,9 +563,9 @@ class _ScannerScreenState extends State<ScannerScreen>
       return;
     }
     HapticFeedback.mediumImpact();
-    final kind = tracking.lookAtKind ?? (tracking.hasCeilingHit ? 'ceiling' : 'floor');
     _appendLog(
-      '> Mark ${_setup.markCount} ($kind): '
+      '> Mark ${_setup.markCount} ($kind) — ${_setup.markProgressHint}'
+      '${_setup.hasValidRectangularBox ? ' · rectangle ready' : ''}: '
       '(${hit.x.toStringAsFixed(2)}, ${hit.y.toStringAsFixed(2)}, ${hit.z.toStringAsFixed(2)})',
       key: 'mark-${_setup.markCount}',
     );
@@ -576,9 +608,77 @@ class _ScannerScreenState extends State<ScannerScreen>
     }
     _setup.setConfirmedDimensions(confirmed);
     _roomSizeSource = _setup.roomSizeSource;
-    await _commitSizedRoomToRig();
+    await _enterItemDetectionPhase();
   }
 
+  /// Stage 2: drop exclusive ARCore measure, run lighter live camera + YOLO.
+  Future<void> _enterItemDetectionPhase() async {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    if (!state.scanSessionMatchesActiveRoom ||
+        state.scanSessionGeneration != _boundScanGeneration) {
+      await _teardownScanUiAfterInvalidation();
+      return;
+    }
+
+    final seed = _setup.buildLayout(
+      roomName: state.currentRoomData.name,
+      fallback: RoomDimensions(
+        lengthMeters: state.currentRoomData.gridCols * 0.6,
+        widthMeters: state.currentRoomData.gridRows * 0.6,
+        heightMeters: 2.7,
+      ),
+    );
+
+    // Free ARCore lens / measure stream before Flutter camera takes over.
+    await _stopInputProvider();
+    final oldTracking = _scanPipeline?.trackingProvider;
+    if (oldTracking is CompositeTrackingProvider) {
+      await oldTracking.releaseNativeSession(reason: 'measure_to_detect');
+    }
+    await _scanPipeline?.dispose();
+    _scanPipeline = null;
+
+    _setup.advanceToCapture();
+    final pipeline = _createPipeline(measureOnly: false);
+    _scanPipeline = pipeline;
+    await pipeline.initialize(seed);
+
+    _readiness.reset();
+    _processedFrames = 0;
+    _framesWithDetections = 0;
+    _totalDetectionBoxes = 0;
+    _detectedBoxes.clear();
+    _liveLayout = seed;
+
+    if (!mounted) return;
+    setState(() {
+      _arCoreOwnsCamera = false;
+      _roomSizeSource = _setup.roomSizeSource;
+    });
+
+    _appendLog(
+      '> Size locked ${seed.dimensions.lengthMeters.toStringAsFixed(1)}×'
+      '${seed.dimensions.widthMeters.toStringAsFixed(1)} m — stage 2: detect items.',
+      key: 'size-to-detect',
+    );
+    HapticFeedback.selectionClick();
+    await _startLiveCameraInput();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Room sized — pan slowly to detect furniture '
+          '(${seed.dimensions.lengthMeters.toStringAsFixed(1)}×'
+          '${seed.dimensions.widthMeters.toStringAsFixed(1)} m)',
+        ),
+        backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// Skip stage 2 — commit sized empty room straight to Rig.
   Future<void> _commitSizedRoomToRig() async {
     if (!mounted) return;
     final state = context.read<AppState>();
@@ -624,7 +724,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     _appendLog(
       '> Room sized ${seed.dimensions.lengthMeters.toStringAsFixed(1)}×'
       '${seed.dimensions.widthMeters.toStringAsFixed(1)} m '
-      '(${_setup.roomSizeSource}) — opening Rig.',
+      '(${_setup.roomSizeSource}) — skipped detect, opening Rig.',
       key: 'size-to-rig',
     );
     HapticFeedback.mediumImpact();
@@ -634,7 +734,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       SnackBar(
         content: Text(
           'Room ${seed.dimensions.lengthMeters.toStringAsFixed(1)}×'
-          '${seed.dimensions.widthMeters.toStringAsFixed(1)} m — place furniture on Rig',
+          '${seed.dimensions.widthMeters.toStringAsFixed(1)} m — empty Rig (detect skipped)',
         ),
         backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
         behavior: SnackBarBehavior.floating,
@@ -663,16 +763,19 @@ class _ScannerScreenState extends State<ScannerScreen>
       }
       if (tracking.isNativeReady) {
         final ar = ArCoreOwnedScanInputProvider(
-          interval: const Duration(milliseconds: 320),
+          interval: const Duration(milliseconds: 100),
+          poseOnlyMeasure: true,
         );
         _inputProvider = ar;
         _inputProviderId = ar.id;
         _arCoreOwnsCamera = true;
         await ar.initialize();
+        await setArMeasurePreviewVisible(true);
+        if (mounted) context.read<AppState>().setArMeasurePassthrough(true);
         await ar.start(_ingestFrame);
         _trackingSource = tracking.nativeBackend;
         _appendLog(
-          '> Input: ARCore for room sizing only (then live camera for detect).',
+          '> Measure mode: ARCore camera + corner marks (no object scan).',
           key: 'input-arcore',
         );
         unawaited(_refreshDetectorLabel(trackingSource: _trackingSource));
@@ -685,7 +788,8 @@ class _ScannerScreenState extends State<ScannerScreen>
         severity: ScanLogSeverity.warning,
         key: 'arcore-fallback',
       );
-      _preferArCore = false;
+      // Keep _preferArCore true so the sizing UI stays on lock/mark instead of
+      // auto-jumping to preset confirm; live camera fills in for preview.
     }
 
     await _startLiveCameraInput();
@@ -756,6 +860,12 @@ class _ScannerScreenState extends State<ScannerScreen>
   }
 
   Future<void> _stopInputProvider() async {
+    if (_arCoreOwnsCamera) {
+      await setArMeasurePreviewVisible(false);
+    }
+    if (mounted) {
+      context.read<AppState>().setArMeasurePassthrough(false);
+    }
     await _inputProvider?.stop();
     await _inputProvider?.dispose();
     _inputProvider = null;
@@ -820,21 +930,18 @@ class _ScannerScreenState extends State<ScannerScreen>
     final conf = state.lastScanConfidence;
     final confPct = conf == null ? '--' : '${(conf.overallScore * 100).round()}%';
     _appendLog(
-      '> Scan committed to Rig ($confPct confidence). Open Rig to edit placements.',
+      '> Detect pass committed ($confPct confidence). Opening Rig.',
       key: 'scan-finalized',
       minInterval: const Duration(seconds: 6),
     );
+    HapticFeedback.mediumImpact();
+    state.setTab(2);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Scan saved · $confPct confidence — edit placements on Rig'),
         backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
         behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'OPEN RIG',
-          textColor: Colors.black,
-          onPressed: () => state.setTab(2),
-        ),
       ),
     );
   }
@@ -877,13 +984,44 @@ class _ScannerScreenState extends State<ScannerScreen>
     final pipeline = _scanPipeline;
     if (pipeline == null) return;
 
-    final sample = await pipeline.sampleTrackingAndQuality(frame);
+    TrackingSample tracking;
+    if (frame.attachedTracking != null) {
+      tracking = frame.attachedTracking!;
+    } else {
+      final sample = await pipeline.sampleTrackingAndQuality(frame);
+      tracking = sample.$1;
+    }
     if (!mounted) return;
-    final tracking = sample.$1;
-    final quality = sample.$2;
+
     final previous = _setup.phase;
+    final priorTracking = _latestTracking;
     _latestTracking = tracking;
     _setup.observe(tracking);
+
+    if (previous == ScanSessionPhase.lockTracking &&
+        _setup.phase == ScanSessionPhase.markFootprint) {
+      HapticFeedback.selectionClick();
+      _appendLog('> Tracking locked. Mark corners of the room.', key: 'setup-marked');
+    }
+
+    final phaseChanged = previous != _setup.phase;
+    final aimChanged = priorTracking?.hasSurfaceHit != tracking.hasSurfaceHit ||
+        priorTracking?.lookAtKind != tracking.lookAtKind;
+    final now = DateTime.now();
+    final uiDue = phaseChanged ||
+        aimChanged ||
+        _lastMeasureUiAt == null ||
+        now.difference(_lastMeasureUiAt!).inMilliseconds >= _measureUiMinMs;
+
+    if (_measureArLightweight) {
+      if (!uiDue) return;
+      _lastMeasureUiAt = now;
+      setState(() {
+        _trackingSource = tracking.source;
+        _roomSizeSource = _setup.roomSizeSource;
+      });
+      return;
+    }
 
     Uint8List? previewBytes = _previewBytes;
     var previewW = _previewWidth;
@@ -900,42 +1038,15 @@ class _ScannerScreenState extends State<ScannerScreen>
       previewH = frame.height;
     }
 
-    if (previous == ScanSessionPhase.lockTracking &&
-        _setup.phase == ScanSessionPhase.markFootprint) {
-      HapticFeedback.selectionClick();
-      _appendLog('> Tracking locked. Mark corners of the room.', key: 'setup-marked');
-    }
-
-    // Never auto-start YOLO capture — confirm sheet is explicit.
-
+    if (!uiDue) return;
+    _lastMeasureUiAt = now;
     setState(() {
-      _latestQualityIssues = quality.issues;
-      _latestYawDegrees = ScanGuidance.headingDegrees(
-        cameraX: tracking.cameraPosition.x,
-        cameraZ: tracking.cameraPosition.z,
-        yawDegrees: tracking.cameraEulerDegrees.y,
-        lookAtX: tracking.lookAtPosition?.x,
-        lookAtZ: tracking.lookAtPosition?.z,
-        hasFloorHit: tracking.hasFloorHit,
-      );
-      _latestCamX = tracking.cameraPosition.x;
-      _latestCamZ = tracking.cameraPosition.z;
       _trackingSource = tracking.source;
       _roomSizeSource = _setup.roomSizeSource;
-      _coachBanner = ScanGuidance.coachBanner(
-        issues: quality.issues,
-        trackingStable: tracking.trackingStable,
-        trackingConfidence: tracking.confidence,
-        coverageReadyForFinish: false,
-        canFinish: false,
-        stableQualityFrames: 0,
-        requiredStableQualityFrames: 1,
-      );
       _previewBytes = previewBytes;
       _previewWidth = previewW;
       _previewHeight = previewH;
     });
-    unawaited(_refreshDetectorLabel(trackingSource: tracking.source));
   }
 
   Future<void> _ingestFrame(ScanFrameInput frame) async {
@@ -944,7 +1055,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     final now = DateTime.now();
     // Keep ingest light — YOLO itself is also throttled inside the detector.
     // ARCore sizing polls are lighter; still avoid stacking UI work.
-    final minGapMs = _arCoreOwnsCamera ? 280 : 400;
+    final minGapMs = _measureArLightweight ? 90 : (_arCoreOwnsCamera ? 280 : 400);
     if (now.difference(_lastFrameAt).inMilliseconds < minGapMs) return;
 
     _processingFrame = true;
@@ -1333,7 +1444,9 @@ class _ScannerScreenState extends State<ScannerScreen>
     final surfaceReady = _latestTracking?.hasSurfaceHit ?? false;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: (measuring && _arCoreOwnsCamera) || state.arMeasurePassthrough
+          ? Colors.transparent
+          : Colors.black,
       body: SafeArea(
         child: Column(
           children: [
@@ -1342,13 +1455,18 @@ class _ScannerScreenState extends State<ScannerScreen>
                 fit: StackFit.expand,
                 children: [
                   _buildCameraViewfinder(),
-                  if (marking)
+                  if (marking) ...[
+                    ScanMeasureLinesOverlay(
+                      marks: _setup.cornerMarks,
+                      tracking: _latestTracking,
+                    ),
                     ScanMeasureReticle(
                       lockedOnSurface: surfaceReady,
                       surfaceKind: _latestTracking?.lookAtKind,
                       markCount: _setup.markCount,
                       recommendedMarks: ScanSetupController.recommendedMarks,
                     ),
+                  ],
                   if (_isScanning && !measuring) _buildCoachBannerOverlay(),
                   if (_isScanning && _detectorFallbackFrames > 0)
                     _buildFallbackBadge(),
@@ -1365,7 +1483,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             ),
             if (!measuring)
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                padding: const EdgeInsets.fromLTRB(AppSpace.md, AppSpace.xs, AppSpace.md, 0),
                 child: ScanHonestyBanner(
                   summary: _honestySummary,
                   compact: true,
@@ -1430,6 +1548,9 @@ class _ScannerScreenState extends State<ScannerScreen>
               onEnterManualSize: () => unawaited(_promptManualRoomSize()),
               onConfirmContinue: () => unawaited(_promptConfirmAndOpenRig()),
               onFinishScan: _finishScan,
+              onSkipDetection: _setup.phase == ScanSessionPhase.capture
+                  ? () => unawaited(_commitSizedRoomToRig())
+                  : null,
               onCancelScan: _cancelScan,
               onOpenRig: () => context.read<AppState>().setTab(2),
               onExportScanBundle: () => _exportScanBundle(state),
@@ -1494,6 +1615,11 @@ class _ScannerScreenState extends State<ScannerScreen>
         controller != null &&
         controller.value.isInitialized) {
       return CameraPreview(controller);
+    }
+
+    // Measure path: live feed renders on native GL behind this transparent layer.
+    if (_measureArLightweight) {
+      return const SizedBox.expand();
     }
 
     if (_arCoreOwnsCamera || (_isScanning && _previewBytes != null)) {
@@ -1578,14 +1704,14 @@ class _ScannerScreenState extends State<ScannerScreen>
     final snap = _setup.snapshot();
     final track = ScanModelAvailability.trackingLabel(_trackingSource);
     return Positioned(
-      left: 12,
-      right: 12,
-      bottom: 12,
+      left: AppSpace.md,
+      right: AppSpace.md,
+      bottom: AppSpace.md,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        padding: const EdgeInsets.fromLTRB(AppSpace.md, AppSpace.md, AppSpace.md, AppSpace.md),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.68),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(color: AppColors.cyan.withValues(alpha: 0.35)),
         ),
         child: Column(
@@ -1598,24 +1724,24 @@ class _ScannerScreenState extends State<ScannerScreen>
                   snap.stepLabel,
                   style: const TextStyle(
                     color: AppColors.cyan,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 1.2,
                   ),
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: AppColors.card,
-                    borderRadius: BorderRadius.circular(99),
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                     border: Border.all(color: AppColors.border),
                   ),
                   child: Text(
                     track.toUpperCase(),
                     style: TextStyle(
                       color: AppColors.textSecondary,
-                      fontSize: 9,
+                      fontSize: 10,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.6,
                     ),

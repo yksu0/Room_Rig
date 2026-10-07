@@ -25,23 +25,28 @@ class UpgradesScreen extends StatelessWidget {
             _buildHeader(state),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.screen,
+                  0,
+                  AppSpace.screen,
+                  AppSpace.xxl,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildImpactPreview(state),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: AppSpace.sm),
                     Text(
                       UpgradeCatalog.honestyNote,
                       style: TextStyle(
                         color: AppColors.textMuted,
-                        fontSize: 11,
-                        height: 1.35,
+                        fontSize: 12,
+                        height: 1.4,
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: AppSpace.section),
                     _buildUpgradeList(context, state),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: AppSpace.xxl),
                   ],
                 ),
               ),
@@ -55,13 +60,14 @@ class UpgradesScreen extends StatelessWidget {
   Widget _buildHeader(AppState state) {
     final addedCount = state.upgrades.where((u) => u['added'] as bool).length;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+      padding: const EdgeInsets.fromLTRB(AppSpace.screen, AppSpace.lg, AppSpace.screen, AppSpace.md),
       child: Row(
         children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('UPGRADES', style: TextStyle(color: AppColors.cyan, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 3)),
+              Text('UPGRADES', style: TextStyle(color: AppColors.cyan, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2.8)),
+              const SizedBox(height: AppSpace.xxs),
               const Text('Component Store', style: TextStyle(color: AppColors.textPrimary, fontSize: 26, fontWeight: FontWeight.w800)),
             ],
           ),
@@ -286,10 +292,10 @@ class _UpgradeCard extends StatelessWidget {
       onTap: onToggle,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(AppSpace.md),
         decoration: BoxDecoration(
           color: isAdded ? categoryColor.withValues(alpha: 0.1) : AppColors.card,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(
             color: isAdded ? categoryColor : AppColors.border,
             width: isAdded ? 1.5 : 1,
@@ -300,18 +306,18 @@ class _UpgradeCard extends StatelessWidget {
           children: [
             // Icon box
             Container(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: categoryColor.withValues(alpha: isAdded ? 0.2 : 0.08),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
                 border: Border.all(color: categoryColor.withValues(alpha: 0.3)),
               ),
               child: Center(
                 child: SvgIcon(upgradeSvgFor(upgrade['iconName'] as String), size: 22, color: categoryColor),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: AppSpace.md),
             // Info
             Expanded(
               child: Column(
@@ -325,40 +331,40 @@ class _UpgradeCard extends StatelessWidget {
                       fontSize: 14,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: AppSpace.xxs),
                   Text(
                     upgrade['desc'] as String,
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.35),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpace.xs),
                   Row(
                     children: [
                       Text(
                         '\$${(upgrade['price'] as num?)?.toStringAsFixed(0) ?? '0'}',
-                        style: TextStyle(color: AppColors.cyan, fontSize: 12, fontWeight: FontWeight.w800),
+                        style: TextStyle(color: AppColors.cyan, fontSize: 13, fontWeight: FontWeight.w800),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppSpace.xs),
                       if (isAdded)
                         Text(
                           'Installed',
-                          style: TextStyle(color: categoryColor, fontSize: 10, fontWeight: FontWeight.w700),
+                          style: TextStyle(color: categoryColor, fontSize: 11, fontWeight: FontWeight.w700),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpace.xs),
                   Row(
                     children: [
                       if (airBoost > 0) _SmallBoost(label: 'Air', value: airBoost, color: AppColors.airflowColor),
-                      if (airBoost > 0 && (lightBoost > 0 || ergoBoost > 0)) const SizedBox(width: 4),
+                      if (airBoost > 0 && (lightBoost > 0 || ergoBoost > 0)) const SizedBox(width: 6),
                       if (lightBoost > 0) _SmallBoost(label: 'Light', value: lightBoost, color: AppColors.lightingColor),
-                      if (lightBoost > 0 && ergoBoost > 0) const SizedBox(width: 4),
+                      if (lightBoost > 0 && ergoBoost > 0) const SizedBox(width: 6),
                       if (ergoBoost > 0) _SmallBoost(label: 'Ergo', value: ergoBoost, color: AppColors.ergonomicsColor),
                     ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: AppSpace.sm),
             // Add / Remove toggle
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
