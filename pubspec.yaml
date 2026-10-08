@@ -19,6 +19,7 @@ dependencies:
   tflite_flutter: ^0.11.0
   path_provider: ^2.1.5
   share_plus: ^10.1.2
+  webview_flutter: ^4.14.1
 
 dev_dependencies:
   flutter_test:
@@ -31,3 +32,7 @@ flutter:
     - assets/models/
     - assets/sprites/
     - assets/bench/
+    - assets/gltf/
+    - assets/gltf/kenney/
+    - assets/scene/
+    - assets/scene/vendor/

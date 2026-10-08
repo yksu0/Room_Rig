@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Room Rig Model Scene</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #090B10; }
+    #c { width: 100%; height: 100%; display: block; touch-action: none; }
+    #hud {
+      position: absolute; left: 10px; bottom: 10px; z-index: 2;
+      color: #9AA3C2; font: 600 11px/1.3 Outfit, system-ui, sans-serif;
+      background: rgba(17,20,28,0.72); padding: 8px 10px; border-radius: 10px;
+      border: 1px solid #2C3348; pointer-events: none;
+    }
+    #err {
+      position: absolute; inset: 12px; z-index: 3; display: none;
+      color: #FF4D4D; font: 600 13px Outfit, system-ui, sans-serif;
+      background: rgba(17,20,28,0.9); padding: 14px; border-radius: 12px;
+      border: 1px solid rgba(255,77,77,0.4); white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="hud">Drag orbit · pinch zoom</div>
+  <div id="err"></div>
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/GLTFLoader.js"></script>
+  <script>
+(function () {
+  const canvas = document.getElementById('c');
+  const errEl = document.getElementById('err');
+  const hud = document.getElementById('hud');
+
+  function showError(msg) {
+    errEl.style.display = 'block';
+    errEl.textContent = msg;
+    console.error(msg);
+  }
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.setClearColor(0x090B10, 1);
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x090B10, 14, 42);
+
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 120);
+  let yaw = 0.85, pitch = 0.42, distance = 9;
+  let lookAt = new THREE.Vector3(2.1, 0.9, 1.8);
+  let roomW = 4.2, roomD = 3.6, roomH = 2.7;
+
+  const loader = new THREE.GLTFLoader();
+  const gltfCache = new Map();
+  const furnitureRoot = new THREE.Group();
+  furnitureRoot.name = 'furniture';
+  scene.add(furnitureRoot);
+
+  const roomRoot = new THREE.Group();
+  roomRoot.name = 'room';
+  scene.add(roomRoot);
+
+  // Lights — studio-like
+  const hemi = new THREE.HemisphereLight(0xddeeff, 0x2a2418, 0.55);
+  scene.add(hemi);
+  const key = new THREE.DirectionalLight(0xfff4e6, 1.15);
+  key.position.set(4.5, 7.5, 3.2);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.near = 0.5;
+  key.shadow.camera.far = 40;
+  key.shadow.bias = -0.00025;
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0x88c0ff, 0.35);
+  fill.position.set(-5, 3, -2);
+  scene.add(fill);
+  const ceilingGlow = new THREE.PointLight(0xfff0d8, 0.55, 18, 2);
+  ceilingGlow.position.set(0, 2.4, 0);
+  scene.add(ceilingGlow);
+
+  const texLoader = new THREE.TextureLoader();
+  let floorMap = null;
+  let wallMap = null;
+
+  function loadTex(url, repeatX, repeatY) {
+    return new Promise((resolve) => {
+      texLoader.load(url, (t) => {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(repeatX, repeatY);
+        t.encoding = THREE.sRGBEncoding;
+        resolve(t);
+      }, undefined, () => resolve(null));
+    });
+  }
+
+  function boxMat(color, rough, metal, map) {
+    return new THREE.MeshStandardMaterial({
+      color: color,
+      roughness: rough,
+      metalness: metal,
+      map: map || null,
+    });
+  }
+
+  function rebuildRoom(w, d, h) {
+    roomW = w; roomD = d; roomH = h;
+    while (roomRoot.children.length) roomRoot.remove(roomRoot.children[0]);
+    lookAt.set(w * 0.5, h * 0.32, d * 0.5);
+    ceilingGlow.position.set(w * 0.5, h - 0.15, d * 0.5);
+    key.position.set(w * 0.85, h + 4, d * 0.7);
+    key.shadow.camera.left = -Math.max(w, d);
+    key.shadow.camera.right = Math.max(w, d);
+    key.shadow.camera.top = Math.max(w, d);
+    key.shadow.camera.bottom = -Math.max(w, d);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      boxMat(0xc4a574, 0.78, 0.05, floorMap)
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(w / 2, 0, d / 2);
+    floor.receiveShadow = true;
+    roomRoot.add(floor);
+
+    // Thin rug under room center for depth
+    const rug = new THREE.Mesh(
+      new THREE.PlaneGeometry(w * 0.42, d * 0.32),
+      new THREE.MeshStandardMaterial({ color: 0x3a4a62, roughness: 0.95, metalness: 0 })
+    );
+    rug.rotation.x = -Math.PI / 2;
+    rug.position.set(w / 2, 0.002, d / 2);
+    rug.receiveShadow = true;
+    roomRoot.add(rug);
+
+    const wallMat = boxMat(0xe8e4dc, 0.92, 0.0, wallMap);
+    const wallThick = 0.08;
+    function wall(width, height, x, z, rotY) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(width, height, wallThick), wallMat.clone());
+      m.position.set(x, height / 2, z);
+      m.rotation.y = rotY || 0;
+      m.castShadow = true;
+      m.receiveShadow = true;
+      roomRoot.add(m);
+    }
+    wall(w, h, w / 2, 0, 0);           // back (-Z)
+    wall(w, h, w / 2, d, 0);           // front (+Z)
+    wall(d, h, 0, d / 2, Math.PI / 2); // left
+    wall(d, h, w, d / 2, Math.PI / 2); // right
+
+    // Baseboards
+    const baseMat = boxMat(0x2c3038, 0.55, 0.1);
+    function baseboard(len, x, z, rotY) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.08, 0.03), baseMat);
+      m.position.set(x, 0.04, z);
+      m.rotation.y = rotY || 0;
+      roomRoot.add(m);
+    }
+    baseboard(w, w / 2, 0.05, 0);
+    baseboard(w, w / 2, d - 0.05, 0);
+    baseboard(d, 0.05, d / 2, Math.PI / 2);
+    baseboard(d, w - 0.05, d / 2, Math.PI / 2);
+
+    // Ceiling
+    const ceil = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      boxMat(0xf2f0ea, 0.95, 0.0)
+    );
+    ceil.rotation.x = Math.PI / 2;
+    ceil.position.set(w / 2, h, d / 2);
+    ceil.receiveShadow = true;
+    roomRoot.add(ceil);
+
+    // Recessed ceiling lights
+    [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]].forEach(([u, v]) => {
+      const fixture = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.12, 0.04, 24),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2cc, emissiveIntensity: 0.85, roughness: 0.4 })
+      );
+      fixture.position.set(w * u, h - 0.02, d * v);
+      roomRoot.add(fixture);
+      const pl = new THREE.PointLight(0xfff1d6, 0.28, 6, 2);
+      pl.position.set(w * u, h - 0.2, d * v);
+      roomRoot.add(pl);
+    });
+
+    // Crown molding strip
+    const crownMat = boxMat(0xd9d4c8, 0.7, 0.0);
+    function crown(len, x, z, rotY) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.05, 0.04), crownMat);
+      m.position.set(x, h - 0.03, z);
+      m.rotation.y = rotY || 0;
+      roomRoot.add(m);
+    }
+    crown(w, w / 2, 0.04, 0);
+    crown(w, w / 2, d - 0.04, 0);
+    crown(d, 0.04, d / 2, Math.PI / 2);
+    crown(d, w - 0.04, d / 2, Math.PI / 2);
+  }
+
+  function loadGltf(url) {
+    if (gltfCache.has(url)) return gltfCache.get(url);
+    const p = new Promise((resolve, reject) => {
+      loader.load(url, (g) => resolve(g.scene), undefined, reject);
+    });
+    gltfCache.set(url, p);
+    return p;
+  }
+
+  function fitObject(root, targetW, targetD, targetH) {
+    const box = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    if (size.x < 1e-4 || size.y < 1e-4 || size.z < 1e-4) return;
+    const sx = targetW / size.x;
+    const sz = targetD / size.z;
+    const sy = targetH > 0 ? targetH / size.y : Math.min(sx, sz);
+    const s = Math.min(sx, sz, sy) * 0.92;
+    root.scale.setScalar(s);
+    box.setFromObject(root);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const min = box.min;
+    root.position.sub(center);
+    root.position.y -= min.y; // sit on floor after centering
+    root.position.y += -root.position.y; // reset
+    // Recompute after scale for floor sit
+    const box2 = new THREE.Box3().setFromObject(root);
+    root.position.y -= box2.min.y;
+    root.position.x -= (box2.min.x + box2.max.x) * 0.5;
+    root.position.z -= (box2.min.z + box2.max.z) * 0.5;
+  }
+
+  function enableShadows(obj) {
+    obj.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = true;
+        c.receiveShadow = true;
+        if (c.material) {
+          if (Array.isArray(c.material)) {
+            c.material = c.material.map((m) => {
+              const nm = m.clone();
+              nm.side = THREE.FrontSide;
+              return nm;
+            });
+          } else {
+            c.material = c.material.clone();
+          }
+        }
+      }
+    });
+  }
+
+  function placeholderMesh(kind, w, d, h) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(w * 0.92, h * 0.9, d * 0.92),
+      new THREE.MeshStandardMaterial({ color: 0x5a6a88, roughness: 0.65, metalness: 0.08 })
+    );
+    body.position.y = h * 0.45;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    g.add(body);
+    return g;
+  }
+
+  async function setFurniture(items) {
+    while (furnitureRoot.children.length) furnitureRoot.remove(furnitureRoot.children[0]);
+    const jobs = (items || []).map(async (it) => {
+      const w = Math.max(0.2, +it.w || 0.8);
+      const d = Math.max(0.2, +it.d || 0.8);
+      const h = Math.max(0.2, +it.h || 0.9);
+      const wrap = new THREE.Group();
+      wrap.position.set(+it.x || 0, +it.y || 0, +it.z || 0);
+      wrap.rotation.y = THREE.MathUtils.degToRad(+it.yaw || 0);
+
+      let model = null;
+      if (it.model) {
+        try {
+          const src = await loadGltf(it.model);
+          model = src.clone(true);
+          enableShadows(model);
+          fitObject(model, w, d, h);
+        } catch (e) {
+          console.warn('GLB failed', it.model, e);
+        }
+      }
+      if (!model) model = placeholderMesh(it.kind || 'box', w, d, h);
+      wrap.add(model);
+
+      if (it.selected) {
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(Math.max(w, d) * 0.55, Math.max(w, d) * 0.62, 48),
+          new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.015;
+        wrap.add(ring);
+      }
+      furnitureRoot.add(wrap);
+    });
+    await Promise.all(jobs);
+    hud.textContent = (items && items.length ? items.length + ' models · ' : '') + 'Drag orbit · pinch zoom';
+  }
+
+  function updateCamera() {
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    camera.position.set(
+      lookAt.x + distance * cp * sy,
+      lookAt.y + distance * sp,
+      lookAt.z + distance * cp * cy
+    );
+    camera.lookAt(lookAt);
+  }
+
+  function resize() {
+    const w = canvas.clientWidth || window.innerWidth;
+    const h = canvas.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / Math.max(h, 1);
+    camera.updateProjectionMatrix();
+  }
+
+  // Gestures
+  let dragging = false, lastX = 0, lastY = 0;
+  let pinchStart = 0, distStart = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    yaw -= dx * 0.008;
+    pitch = Math.max(0.12, Math.min(1.25, pitch + dy * 0.006));
+  });
+  canvas.addEventListener('pointerup', () => { dragging = false; });
+  canvas.addEventListener('pointercancel', () => { dragging = false; });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    distance = Math.max(3.5, Math.min(22, distance + e.deltaY * 0.01));
+  }, { passive: false });
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      const a = e.touches[0], b = e.touches[1];
+      pinchStart = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      distStart = distance;
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      const a = e.touches[0], b = e.touches[1];
+      const pin = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      if (pinchStart > 0) {
+        distance = Math.max(3.5, Math.min(22, distStart * (pinchStart / pin)));
+      }
+    }
+  }, { passive: true });
+
+  function applyScene(payload) {
+    try {
+      const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+      const w = +data.roomW || 4.2;
+      const d = +data.roomD || 3.6;
+      const h = +data.roomH || 2.7;
+      if (Math.abs(w - roomW) > 1e-3 || Math.abs(d - roomD) > 1e-3 || Math.abs(h - roomH) > 1e-3) {
+        rebuildRoom(w, d, h);
+      }
+      if (data.yaw != null) yaw = +data.yaw;
+      if (data.pitch != null) pitch = +data.pitch;
+      if (data.distance != null) distance = +data.distance;
+      setFurniture(data.items || []);
+    } catch (e) {
+      showError('Scene update failed: ' + e);
+    }
+  }
+
+  // Bridge for Flutter
+  window.setRoomScene = applyScene;
+  window.addEventListener('message', (ev) => {
+    if (ev && ev.data) applyScene(ev.data);
+  });
+
+  Promise.all([
+    loadTex('../gltf/wood_floor_diff.jpg', Math.max(2, roomW / 1.2), Math.max(2, roomD / 1.2)),
+    loadTex('../gltf/plaster_wall_diff.jpg', 2.2, 1.4),
+  ]).then(([f, w]) => {
+    floorMap = f;
+    wallMap = w;
+    rebuildRoom(roomW, roomD, roomH);
+    if (window.RoomRigChannel) {
+      // Flutter may push after load
+    }
+    // Notify Flutter
+    try {
+      if (window.RoomRigChannel && RoomRigChannel.postMessage) {
+        RoomRigChannel.postMessage(JSON.stringify({ type: 'ready' }));
+      }
+    } catch (_) {}
+  }).catch((e) => {
+    rebuildRoom(roomW, roomD, roomH);
+    showError('Texture load issue (room still works): ' + e);
+  });
+
+  function frame() {
+    resize();
+    updateCamera();
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  frame();
+})();
+  </script>
+</body>
+</html>

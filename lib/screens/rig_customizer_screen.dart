@@ -27,8 +27,9 @@ import '../widgets/rig_customizer/rig_furniture_cell.dart';
 import '../widgets/rig_customizer/rig_room_items_drawer.dart';
 import '../widgets/rig_customizer/room_grid_painter.dart';
 import '../widgets/rig_customizer/room_orbit_3d_painter.dart';
+import '../widgets/room_model_scene.dart';
 
-enum _RigViewMode { twoD, threeD }
+enum _RigViewMode { twoD, threeD, model3D }
 enum _OptimizeGoal { balanced, airflow, lighting, ergonomics, spatial }
 
 
@@ -57,7 +58,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   static const double _minTouchTarget = 46;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  _RigViewMode _viewMode = _RigViewMode.twoD;
+  _RigViewMode _viewMode = _RigViewMode.model3D;
   _OptimizeGoal _optimizeGoal = _OptimizeGoal.balanced;
   double _cameraYawRad = 0;
   double _cameraPitchRad = 0.34;
@@ -367,11 +368,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
   Widget _buildViewToggle() {
     return Container(
-      height: 40,
+      height: 44,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: AppColors.card,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(
@@ -389,6 +390,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               label: '3D',
               active: _viewMode == _RigViewMode.threeD,
               onTap: () => setState(() => _viewMode = _RigViewMode.threeD),
+            ),
+          ),
+          const SizedBox(width: 3),
+          Expanded(
+            child: _ViewModeChip(
+              label: 'Model',
+              active: _viewMode == _RigViewMode.model3D,
+              onTap: () => setState(() => _viewMode = _RigViewMode.model3D),
             ),
           ),
         ],
@@ -711,6 +720,29 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   Widget _buildCanvas(AppState state) {
+    if (_viewMode == _RigViewMode.model3D) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: RoomModelScene(
+            room: state.currentRoomData,
+            furniture: state.furniture,
+            selectedId: state.selectedIsScanObject
+                ? null
+                : state.selectedFurniture?.id,
+            yaw: _cameraYawRad,
+            pitch: _cameraPitchRad,
+            distance: _cameraDistance.clamp(4.0, 20.0),
+          ),
+        ),
+      );
+    }
     if (_viewMode == _RigViewMode.threeD) {
       return _buildPseudo3DCanvas(state);
     }

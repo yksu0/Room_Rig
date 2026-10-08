@@ -15,10 +15,11 @@ import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
+import 'room_model_scene.dart';
 import 'score_ring.dart';
 
 enum _SpatialStep { layout, analyze, results }
-enum _LayoutView { heatmap, room3d }
+enum _LayoutView { heatmap, room3d, model3d }
 
 class SpatialBenchPanel extends StatefulWidget {
   final ValueChanged<bool>? onOrbitDraggingChanged;
@@ -333,6 +334,12 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
               color: AppColors.spatialColor,
               onTap: () => setState(() => _layoutView = _LayoutView.room3d),
             ),
+            BenchChip(
+              label: 'Model',
+              selected: _layoutView == _LayoutView.model3d,
+              color: AppColors.spatialColor,
+              onTap: () => setState(() => _layoutView = _LayoutView.model3d),
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -353,6 +360,14 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
               const SizedBox(height: 12),
               if (_layoutView == _LayoutView.heatmap)
                 _heatmapView(room: room, furniture: furniture, metrics: metrics)
+              else if (_layoutView == _LayoutView.model3d)
+                SizedBox(
+                  height: 300,
+                  child: RoomModelScene(
+                    room: room,
+                    furniture: furniture,
+                  ),
+                )
               else
                 SizedBox(
                   height: 280,
