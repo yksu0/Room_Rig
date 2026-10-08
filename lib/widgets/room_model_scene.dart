@@ -8,6 +8,8 @@ import '../models/room_model.dart';
 import '../models/room_scale.dart';
 import '../services/gltf_catalog.dart';
 import '../theme/app_theme.dart';
+import 'room_model_scene_stub.dart'
+    if (dart.library.html) 'room_model_scene_web.dart' as platform;
 
 /// Interactive three.js room with Kenney CC0 furniture GLBs + textured shell.
 ///
@@ -40,13 +42,23 @@ class _RoomModelSceneState extends State<RoomModelScene> {
   bool _ready = false;
   bool _failed = false;
   String? _error;
+  bool _webRegistered = false;
 
   @override
   void initState() {
     super.initState();
     if (kIsWeb) {
-      _failed = true;
-      _error = 'Model scene uses a native WebView (run on Android/iOS).';
+      platform.createRoomModelIFrame(onReady: () {
+        _ready = true;
+        _pushScene();
+      });
+      _webRegistered = true;
+      // Fallback: push after a short delay if onLoad already fired.
+      Future<void>.delayed(const Duration(milliseconds: 600), () {
+        if (!mounted) return;
+        _ready = true;
+        _pushScene();
+      });
       return;
     }
     _initController();
@@ -120,7 +132,6 @@ class _RoomModelSceneState extends State<RoomModelScene> {
 
     final items = widget.furniture.map((f) {
       final model = GltfCatalog.assetForIcon(f.iconName);
-      // Convert Flutter asset path → relative URL from room_viewer.html
       final modelUrl = model == null
           ? null
           : '../gltf/${model.replaceFirst('assets/gltf/', '')}';
@@ -153,9 +164,15 @@ class _RoomModelSceneState extends State<RoomModelScene> {
   }
 
   Future<void> _pushScene() async {
+    if (!_ready) return;
+    final payload = _scenePayload();
+    if (kIsWeb) {
+      platform.pushRoomModelSceneWeb(payload);
+      return;
+    }
     final c = _controller;
-    if (c == null || !_ready) return;
-    final json = jsonEncode(_scenePayload());
+    if (c == null) return;
+    final json = jsonEncode(payload);
     try {
       await c.runJavaScript('window.setRoomScene($json);');
     } catch (e) {
@@ -177,8 +194,16 @@ class _RoomModelSceneState extends State<RoomModelScene> {
         ),
       );
     }
-    final c = _controller;
-    if (c == null) {
+
+    final sceneChild = kIsWeb
+        ? (_webRegistered
+            ? const HtmlElementView(viewType: 'room-model-scene')
+            : const SizedBox.shrink())
+        : _controller == null
+            ? null
+            : WebViewWidget(controller: _controller!);
+
+    if (sceneChild == null) {
       return const ColoredBox(
         color: AppColors.bg,
         child: Center(
@@ -186,12 +211,13 @@ class _RoomModelSceneState extends State<RoomModelScene> {
         ),
       );
     }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadius.md),
       child: Stack(
         fit: StackFit.expand,
         children: [
-          WebViewWidget(controller: c),
+          sceneChild,
           Positioned(
             top: 8,
             left: 8,

@@ -38,6 +38,16 @@ class AppState extends ChangeNotifier {
   int _currentTab = 0;
   int get currentTab => _currentTab;
 
+  /// When true, Flutter shell goes transparent so native ARCore camera shows through.
+  bool _arMeasurePassthrough = false;
+  bool get arMeasurePassthrough => _arMeasurePassthrough;
+
+  void setArMeasurePassthrough(bool value) {
+    if (_arMeasurePassthrough == value) return;
+    _arMeasurePassthrough = value;
+    notifyListeners();
+  }
+
   String? _tabNotice;
 
   /// One-shot notice after [setTab] (e.g. Place cancelled). Cleared when read.
@@ -57,6 +67,9 @@ class AppState extends ChangeNotifier {
       endFurnitureGesture();
     }
     _currentTab = tab;
+    if (tab != 1 && _arMeasurePassthrough) {
+      _arMeasurePassthrough = false;
+    }
     if (tab == 0) {
       // Mid-scan seed layouts must not overwrite My Rooms snapshots.
       if (!isScanSessionActive) {
@@ -1500,6 +1513,11 @@ class AppState extends ChangeNotifier {
     _lightingMetricsDirty = true;
     _ergonomicsMetricsDirty = true;
     _lastOptimizeReasons = const [];
+    // Drop any pre-scan Auto-Rig / Restore snapshot so Best/Retry cannot
+    // resurrect furniture from a previous room.
+    _originalFurniture = null;
+    _originalScores = null;
+    _clearAutoRigCandidateCache();
     clearLayoutHistory();
     // Checkpoint stashes + persists once (includes "After scan" revision).
     checkpointActiveRoom('After scan');
@@ -1734,21 +1752,25 @@ class AppState extends ChangeNotifier {
 
   void setAirflowSlider(double v) {
     _airflowSlider = v.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
   void setLightingSlider(double v) {
     _lightingSlider = v.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
   void setErgonomicsSlider(double v) {
     _ergonomicsSlider = v.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
   void setSpatialSlider(double v) {
     _spatialSlider = v.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
@@ -1762,6 +1784,7 @@ class AppState extends ChangeNotifier {
     _lightingSlider = lighting.clamp(0.0, 1.0);
     _ergonomicsSlider = ergonomics.clamp(0.0, 1.0);
     if (spatial != null) _spatialSlider = spatial.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
@@ -2026,8 +2049,10 @@ class AppState extends ChangeNotifier {
   /// Auto-Rig: scored best-of-N under the current weight mix.
   /// [goal] optionally applies a weight preset before solving.
   ///
-  /// Searches from the original compare snapshot when present, applies the
-  /// best first, then cycles ranked alternates on later taps.
+  /// Rearranges **only items already on the Rig** — never invents catalog stock.
+  /// If inventory still matches the Restore snapshot, searches from that pose so
+  /// “Try alternate” cycles the same ranked pool; after add/remove, searches the
+  /// live furniture list instead (so deleted pieces stay gone).
   void runOptimization({String? goal, bool tryAlternate = false}) {
     _abandonInFlightHydrate();
     // Drop unfinished Place ghosts so Auto-Rig does not treat them as real.
@@ -2043,10 +2068,17 @@ class AppState extends ChangeNotifier {
     _captureLightingBaselineIfNeeded();
     _captureErgonomicsBaselineIfNeeded();
 
-    final searchRoot = _originalFurniture ?? committedFurniture;
+    final live = committedFurniture;
+    final liveKey = _autoRigInventoryKey(live);
+    final original = _originalFurniture;
+    final sameInventory =
+        original != null && _autoRigInventoryKey(original) == liveKey;
+    // Pose root may be the Restore snapshot; inventory is always live ids only.
+    final searchRoot = sameInventory ? original! : live;
+    final allowedIds = {for (final f in live) f.id};
     final weights = optimizeWeights;
     final cacheKey =
-        '${weights.cacheKey}|${_autoRigInventoryKey(searchRoot)}|'
+        '${weights.cacheKey}|$liveKey|'
         '${currentRoomData.gridCols}x${currentRoomData.gridRows}';
 
     if (_autoRigCacheKey != cacheKey ||
@@ -2069,7 +2101,11 @@ class AppState extends ChangeNotifier {
     final result = _autoRigCandidates![_autoRigCursor];
     _lastAutoRigRankLabel = result.rankLabel;
 
-    _furniture = _cloneFurniture(result.furniture);
+    // Hard guard: never reintroduce pieces the user removed (or upgrades).
+    _furniture = _cloneFurniture([
+      for (final f in result.furniture)
+        if (allowedIds.contains(f.id)) f,
+    ]);
     _setAirflowMetrics(result.airflowMetrics);
     _setLightingMetrics(result.lightingMetrics);
     _setErgonomicsMetrics(result.ergonomicsMetrics);
@@ -2219,12 +2255,26 @@ class AppState extends ChangeNotifier {
   BenchLayoutKind _benchLayoutFocus = BenchLayoutKind.myRoom;
   int _benchLayoutFocusToken = 0;
 
+  /// Which ranked Auto-Rig candidate Bench Improved is previewing (shared).
+  int _benchAlternateCursor = 0;
+
   BenchLayoutKind get benchLayoutFocus => _benchLayoutFocus;
   int get benchLayoutFocusToken => _benchLayoutFocusToken;
+  int get benchAlternateCursor => _benchAlternateCursor;
 
   void focusBenchLayout(BenchLayoutKind kind) {
     _benchLayoutFocus = kind;
     _benchLayoutFocusToken++;
+    notifyListeners();
+  }
+
+  void _resetBenchAlternate() {
+    _benchAlternateCursor = 0;
+  }
+
+  /// Cycle Bench Improved to the next ranked Auto-Rig layout (same weight mix).
+  void cycleBenchAlternate() {
+    _benchAlternateCursor += 1;
     notifyListeners();
   }
 
