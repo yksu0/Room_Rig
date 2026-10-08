@@ -84,9 +84,10 @@ class SurfaceMounts {
   SurfaceMounts._();
 
   // Matched to AirflowSimulator._buildBoxes.
-  static const windowBottom = 0.9;
-  static const windowTop = 2.1;
-  static const doorTop = 2.1;
+  // Keep bands aligned with GltfCatalog clear opening heights.
+  static const windowBottom = 0.95;
+  static const windowTop = 2.05;
+  static const doorTop = 2.05;
   // Niche fittings — keep vertical span close to the GLB height so wall
   // holes are not sky-sized. AC ~0.62 m; grille vents ~0.32 m.
   static const ventBottom = 1.85;

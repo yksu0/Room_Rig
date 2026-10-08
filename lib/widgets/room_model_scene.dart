@@ -174,22 +174,28 @@ class _RoomModelSceneState extends State<RoomModelScene> {
             : (span.z0 < span.z1 ? span.z1 : span.z0);
         var along0 = a0g * alongCell;
         var along1 = a1g * alongCell;
-        // Footprint along wall from the item size (not inflated span quirks).
         final footprintAlong = (alongIsX ? f.width : f.height) * alongCell;
+        // Prefer catalog clear size so Kenney wall-kit meshes / cuts match.
+        final clearAlong = profile.clearWidthMeters ?? footprintAlong;
         final midAlong = (along0 + along1) * 0.5;
-        final half = footprintAlong * 0.5;
-        along0 = (midAlong - half).clamp(0.0, alongIsX ? roomW : roomD);
-        along1 = (midAlong + half).clamp(0.0, alongIsX ? roomW : roomD);
+        final half = clearAlong * 0.5;
+        final maxAlong = alongIsX ? roomW : roomD;
+        along0 = (midAlong - half).clamp(0.0, maxAlong);
+        along1 = (midAlong + half).clamp(0.0, maxAlong);
 
         final midX = (span.x0 + span.x1) * 0.5 * cellW;
         final midZ = (span.z0 + span.z1) * 0.5 * cellD;
-        // Protrude into the room by the mount amount (grid → metres).
-        final insetM = mount.protrusion * (alongIsX ? cellD : cellW) * 0.35;
+        // Through openings sit in the wall plane; niches protrude slightly in.
+        final insetM = profile.wallCut == WallCutKind.through
+            ? 0.04
+            : mount.protrusion * (alongIsX ? cellD : cellW) * 0.28;
         x = midX + span.inwardX * insetM;
         z = midZ + span.inwardZ * insetM;
         y = mount.bottomY;
-        itemW = footprintAlong;
-        itemD = (0.12 + mount.protrusion * 0.15).clamp(0.12, 0.45);
+        itemW = clearAlong;
+        itemD = profile.wallCut == WallCutKind.through
+            ? 0.14
+            : (0.12 + mount.protrusion * 0.12).clamp(0.1, 0.4);
         yaw = switch (span.wall) {
           RoomWall.north => 0,
           RoomWall.south => 180,
@@ -199,13 +205,19 @@ class _RoomModelSceneState extends State<RoomModelScene> {
 
         if (profile.cutsWall) {
           final pad = profile.wallCutPadMeters;
-          final yPad = profile.wallCut == WallCutKind.through ? 0.01 : 0.02;
+          final clearH = profile.openingHeightMeters;
+          // Anchor cut to mount bottom; height from catalog (not oversized band).
+          final y0 = mount.bottomY;
+          final y1 = (y0 + clearH).clamp(y0 + 0.1, 3.2);
           openings.add({
             'wall': _wallName(span.wall),
-            'along0': (along0 - pad).clamp(0.0, alongIsX ? roomW : roomD),
-            'along1': (along1 + pad).clamp(0.0, alongIsX ? roomW : roomD),
-            'y0': (mount.bottomY - yPad).clamp(0.0, 3.0),
-            'y1': (mount.topY + yPad).clamp(0.0, 3.2),
+            'along0': (along0 - pad).clamp(0.0, maxAlong),
+            'along1': (along1 + pad).clamp(0.0, maxAlong),
+            'y0': (y0 - (profile.wallCut == WallCutKind.niche ? 0.01 : 0)).clamp(
+              0.0,
+              3.0,
+            ),
+            'y1': (y1 + pad).clamp(0.0, 3.2),
             'glass': profile.wallCut == WallCutKind.through && profile.isGlass,
             'through': profile.wallCut == WallCutKind.through,
             'kind': profile.wallCut.name,
@@ -226,7 +238,9 @@ class _RoomModelSceneState extends State<RoomModelScene> {
         'z': z,
         'w': itemW,
         'd': itemD,
-        'h': profile.heightMeters,
+        'h': mount.isWall
+            ? profile.openingHeightMeters
+            : profile.heightMeters,
         'yaw': yaw,
         'selected': f.id == widget.selectedId,
         'mount': mount.isWall

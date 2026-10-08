@@ -87,12 +87,12 @@ void main() {
       expect(vent.topY, SurfaceMounts.acTop);
 
       final window = SurfaceMounts.of(_item(id: 'window', x: 2, y: 0), gridCols: 6, gridRows: 8);
-      expect(window.bottomY, 0.9);
-      expect(window.topY, 2.1);
+      expect(window.bottomY, SurfaceMounts.windowBottom);
+      expect(window.topY, SurfaceMounts.windowTop);
 
       final door = SurfaceMounts.of(_item(id: 'door', x: 0, y: 6), gridCols: 6, gridRows: 8);
       expect(door.bottomY, 0);
-      expect(door.topY, 2.1);
+      expect(door.topY, SurfaceMounts.doorTop);
       expect(door.occupiesFloor, isFalse);
     });
   });

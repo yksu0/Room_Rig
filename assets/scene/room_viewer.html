@@ -387,15 +387,25 @@
     return p;
   }
 
-  function fitObject(root, targetW, targetD, targetH) {
+  /**
+   * Uniform-scale [root] into a target box.
+   * ignoreDepth: Kenney wall-kit GLBs are often deep (full wall slabs); using
+   * a thin target depth was crushing door/window meshes smaller than the cut.
+   */
+  function fitObject(root, targetW, targetD, targetH, ignoreDepth) {
     const box = new THREE.Box3().setFromObject(root);
     const size = new THREE.Vector3();
     box.getSize(size);
     if (size.x < 1e-4 || size.y < 1e-4 || size.z < 1e-4) return;
     const sx = targetW / Math.max(size.x, 1e-4);
-    const sz = targetD / Math.max(size.z, 1e-4);
-    const sy = targetH > 0 ? targetH / Math.max(size.y, 1e-4) : Math.min(sx, sz);
-    const s = Math.min(sx, sz, sy) * 0.92;
+    const sy = targetH > 0 ? targetH / Math.max(size.y, 1e-4) : sx;
+    let s;
+    if (ignoreDepth) {
+      s = Math.min(sx, sy) * 0.98;
+    } else {
+      const sz = targetD / Math.max(size.z, 1e-4);
+      s = Math.min(sx, sz, sy) * 0.92;
+    }
     root.scale.setScalar(s);
     const box2 = new THREE.Box3().setFromObject(root);
     root.position.x -= (box2.min.x + box2.max.x) * 0.5;
@@ -443,9 +453,10 @@
           model = src.clone(true);
           enableShadows(model, !it.opening);
           if (mount === 'wall') {
-            fitObject(model, Math.max(w, d), 0.25, h);
+            // Fit width × height only — wall-kit depth must not shrink the mesh.
+            fitObject(model, Math.max(w, 0.35), d, h, true);
           } else {
-            fitObject(model, w, d, h);
+            fitObject(model, w, d, h, false);
           }
         } catch (e) {
           console.warn('GLB failed', it.model, e);

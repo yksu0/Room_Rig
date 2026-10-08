@@ -41,6 +41,12 @@ class MeshProfile {
 
   final WallCutKind wallCut;
 
+  /// Clear opening width along the wall (metres). Null → use furniture footprint.
+  final double? clearWidthMeters;
+
+  /// Clear opening height (metres). Null → use [heightMeters] / mount band.
+  final double? clearHeightMeters;
+
   const MeshProfile({
     required this.iconName,
     required this.assetPath,
@@ -50,12 +56,16 @@ class MeshProfile {
     this.airflowSolid = 1,
     this.wallCutPadMeters = 0.04,
     this.wallCut = WallCutKind.none,
+    this.clearWidthMeters,
+    this.clearHeightMeters,
   });
 
   bool get hasModel => assetPath != null;
   bool get isOpening => role == MeshSimRole.opening;
   bool get isGlass => role == MeshSimRole.glass;
   bool get cutsWall => wallCut != WallCutKind.none;
+
+  double get openingHeightMeters => clearHeightMeters ?? heightMeters;
 }
 
 class GltfCatalog {
@@ -198,6 +208,8 @@ class GltfCatalog {
       airflowSolid: 0.25,
       wallCut: WallCutKind.niche,
       wallCutPadMeters: 0.02,
+      clearWidthMeters: 0.9,
+      clearHeightMeters: 0.62,
     ),
     'intake': const MeshProfile(
       iconName: 'intake',
@@ -207,7 +219,9 @@ class GltfCatalog {
       airflowSolid: 0,
       lightTransmit: 0.12,
       wallCut: WallCutKind.niche,
-      wallCutPadMeters: 0.015,
+      wallCutPadMeters: 0.012,
+      clearWidthMeters: 0.45,
+      clearHeightMeters: 0.32,
     ),
     'exhaust': const MeshProfile(
       iconName: 'exhaust',
@@ -217,38 +231,46 @@ class GltfCatalog {
       airflowSolid: 0,
       lightTransmit: 0.12,
       wallCut: WallCutKind.niche,
-      wallCutPadMeters: 0.015,
+      wallCutPadMeters: 0.012,
+      clearWidthMeters: 0.45,
+      clearHeightMeters: 0.32,
     ),
     'door': const MeshProfile(
       iconName: 'door',
       assetPath: '$kenneyDir/doorwayOpen.glb',
-      heightMeters: 2.1,
+      heightMeters: 2.05,
       role: MeshSimRole.opening,
       lightTransmit: 0.95,
       airflowSolid: 0,
       wallCut: WallCutKind.through,
-      // Tight to the doorway leaf — avoid oversized sky holes.
-      wallCutPadMeters: 0.015,
+      // Match Kenney doorway clear — not the full wall-kit bbox.
+      wallCutPadMeters: 0.01,
+      clearWidthMeters: 0.95,
+      clearHeightMeters: 2.05,
     ),
     'window': const MeshProfile(
       iconName: 'window',
       assetPath: '$kenneyDir/wallWindow.glb',
-      heightMeters: 1.15,
+      heightMeters: 1.1,
       role: MeshSimRole.glass,
       lightTransmit: 0.82,
       airflowSolid: 0,
       wallCut: WallCutKind.through,
-      wallCutPadMeters: 0.02,
+      wallCutPadMeters: 0.01,
+      clearWidthMeters: 1.15,
+      clearHeightMeters: 1.1,
     ),
     'smartBlinds': const MeshProfile(
       iconName: 'smartBlinds',
       assetPath: '$kenneyDir/wallWindowSlide.glb',
-      heightMeters: 1.15,
+      heightMeters: 1.1,
       role: MeshSimRole.glass,
       lightTransmit: 0.35,
       airflowSolid: 0,
       wallCut: WallCutKind.through,
-      wallCutPadMeters: 0.02,
+      wallCutPadMeters: 0.01,
+      clearWidthMeters: 1.15,
+      clearHeightMeters: 1.1,
     ),
   };
 
