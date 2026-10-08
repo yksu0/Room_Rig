@@ -937,8 +937,8 @@ class AirflowSimulator {
             f: f,
             span: span,
             kind: kind,
-            bottomY: 1.4,
-            topY: 2.3,
+            bottomY: SurfaceMounts.acBottom,
+            topY: SurfaceMounts.acTop,
             strength: meta.strength,
           ));
         }
@@ -947,8 +947,8 @@ class AirflowSimulator {
           f: f,
           span: span,
           kind: kind,
-          bottomY: kind == 'door' ? 0.0 : 0.9,
-          topY: 2.1,
+          bottomY: kind == 'door' ? 0.0 : SurfaceMounts.windowBottom,
+          topY: kind == 'door' ? SurfaceMounts.doorTop : SurfaceMounts.windowTop,
           strength: 0,
         ));
       } else if (kind == 'intake' || kind == 'exhaust') {
@@ -956,8 +956,8 @@ class AirflowSimulator {
           f: f,
           span: span,
           kind: kind,
-          bottomY: 1.4,
-          topY: 2.3,
+          bottomY: SurfaceMounts.ventBottom,
+          topY: SurfaceMounts.ventTop,
           strength: meta.strength,
         ));
       } else if (kind == 'fan') {

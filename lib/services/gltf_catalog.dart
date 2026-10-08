@@ -1,27 +1,31 @@
-// Maps Rig furniture icon names → Kenney CC0 GLB assets + sim mesh profiles.
-// Source: Kenney Furniture Kit (CC0). Room textures: Poly Haven (CC0).
+// Maps Rig furniture icon names → CC0 GLB/glTF assets + sim / wall-cut profiles.
 //
-// Mesh profiles drive airflow collision volumes and lighting occluders so the
-// Model view GLBs and Bench physics share one source of truth.
+// Sources (see assets/gltf/SOURCES.md):
+// - Kenney Furniture Kit — most furniture
+// - Poly Haven — HVAC (aircon, ducts) when present under assets/gltf/hvac/
+// - Quaternius / Poly Pizza — recommended for stand fans, purifiers (drop-in)
 
 import '../models/room_model.dart';
 
 /// Physical role of a mesh in airflow / lighting.
 enum MeshSimRole {
-  /// Solid furniture — blocks particles and casts hard shadows.
   solid,
-
-  /// Heat / cold / fan emitters keep specialty boxes in the simulators.
   emitter,
-
-  /// Door / window opening — not a solid; vents pressure / admits light.
   opening,
-
-  /// Glass / translucent — particles pass; light is attenuated (refract approx).
   glass,
-
-  /// Decorative / ignored by coarse sims.
   ignore,
+}
+
+/// How a wall fitting cuts the room shell.
+enum WallCutKind {
+  /// No shell cut — model sits on the interior face.
+  none,
+
+  /// Full through-hole (door / window) — exterior visible.
+  through,
+
+  /// Recess filled with an opaque grille (AC / vents) — no outdoor view.
+  niche,
 }
 
 class MeshProfile {
@@ -29,12 +33,13 @@ class MeshProfile {
   final String? assetPath;
   final double heightMeters;
   final MeshSimRole role;
-
-  /// 0 = opaque blocker, 1 = fully clear. Used by lighting ray march.
   final double lightTransmit;
-
-  /// Soft particle collision factor (1 = full bounce, 0 = no hard collision).
   final double airflowSolid;
+
+  /// Extra meters added around the wall cut so frames/louvers fit.
+  final double wallCutPadMeters;
+
+  final WallCutKind wallCut;
 
   const MeshProfile({
     required this.iconName,
@@ -43,19 +48,21 @@ class MeshProfile {
     required this.role,
     this.lightTransmit = 0,
     this.airflowSolid = 1,
+    this.wallCutPadMeters = 0.04,
+    this.wallCut = WallCutKind.none,
   });
 
   bool get hasModel => assetPath != null;
   bool get isOpening => role == MeshSimRole.opening;
   bool get isGlass => role == MeshSimRole.glass;
-  bool get castsHardShadow =>
-      role == MeshSimRole.solid && lightTransmit < 0.15 && heightMeters >= 0.45;
+  bool get cutsWall => wallCut != WallCutKind.none;
 }
 
 class GltfCatalog {
   GltfCatalog._();
 
   static const kenneyDir = 'assets/gltf/kenney';
+  static const hvacDir = 'assets/gltf/hvac';
 
   static final Map<String, MeshProfile> _profiles = {
     'desk': const MeshProfile(
@@ -161,48 +168,56 @@ class GltfCatalog {
       role: MeshSimRole.emitter,
       airflowSolid: 0.9,
     ),
+    // CC0 HVAC pack under assets/gltf/hvac/ (see SOURCES.md).
     'fan': const MeshProfile(
       iconName: 'fan',
-      assetPath: '$kenneyDir/coatRackStanding.glb',
-      heightMeters: 1.2,
+      assetPath: '$hvacDir/stand_fan.glb',
+      heightMeters: 1.0,
       role: MeshSimRole.emitter,
-      airflowSolid: 0.2,
+      airflowSolid: 0.15,
     ),
     'purifier': const MeshProfile(
       iconName: 'purifier',
-      assetPath: '$kenneyDir/speakerSmall.glb',
-      heightMeters: 0.7,
+      assetPath: '$hvacDir/air_scrubber.glb',
+      heightMeters: 1.05,
       role: MeshSimRole.emitter,
       airflowSolid: 0.55,
     ),
     'heater': const MeshProfile(
       iconName: 'heater',
-      assetPath: '$kenneyDir/kitchenCabinet.glb',
-      heightMeters: 0.75,
+      assetPath: '$hvacDir/radiator.glb',
+      heightMeters: 0.68,
       role: MeshSimRole.emitter,
+      airflowSolid: 0.7,
     ),
     'ac': const MeshProfile(
       iconName: 'ac',
-      assetPath: '$kenneyDir/hoodModern.glb',
-      heightMeters: 0.35,
+      assetPath: '$hvacDir/ac_condenser.glb',
+      heightMeters: 0.62,
       role: MeshSimRole.emitter,
-      airflowSolid: 0.3,
+      airflowSolid: 0.25,
+      wallCut: WallCutKind.niche,
+      wallCutPadMeters: 0.02,
     ),
     'intake': const MeshProfile(
       iconName: 'intake',
-      assetPath: '$kenneyDir/wall.glb',
-      heightMeters: 0.35,
+      assetPath: '$hvacDir/extract_fan_grille.glb',
+      heightMeters: 0.32,
       role: MeshSimRole.emitter,
       airflowSolid: 0,
-      lightTransmit: 0.4,
+      lightTransmit: 0.12,
+      wallCut: WallCutKind.niche,
+      wallCutPadMeters: 0.015,
     ),
     'exhaust': const MeshProfile(
       iconName: 'exhaust',
-      assetPath: '$kenneyDir/hoodModern.glb',
-      heightMeters: 0.35,
+      assetPath: '$hvacDir/extract_fan_grille.glb',
+      heightMeters: 0.32,
       role: MeshSimRole.emitter,
       airflowSolid: 0,
-      lightTransmit: 0.4,
+      lightTransmit: 0.12,
+      wallCut: WallCutKind.niche,
+      wallCutPadMeters: 0.015,
     ),
     'door': const MeshProfile(
       iconName: 'door',
@@ -211,22 +226,29 @@ class GltfCatalog {
       role: MeshSimRole.opening,
       lightTransmit: 0.95,
       airflowSolid: 0,
+      wallCut: WallCutKind.through,
+      // Tight to the doorway leaf — avoid oversized sky holes.
+      wallCutPadMeters: 0.015,
     ),
     'window': const MeshProfile(
       iconName: 'window',
       assetPath: '$kenneyDir/wallWindow.glb',
-      heightMeters: 1.2,
+      heightMeters: 1.15,
       role: MeshSimRole.glass,
       lightTransmit: 0.82,
       airflowSolid: 0,
+      wallCut: WallCutKind.through,
+      wallCutPadMeters: 0.02,
     ),
     'smartBlinds': const MeshProfile(
       iconName: 'smartBlinds',
       assetPath: '$kenneyDir/wallWindowSlide.glb',
-      heightMeters: 1.2,
+      heightMeters: 1.15,
       role: MeshSimRole.glass,
       lightTransmit: 0.35,
       airflowSolid: 0,
+      wallCut: WallCutKind.through,
+      wallCutPadMeters: 0.02,
     ),
   };
 
@@ -244,13 +266,11 @@ class GltfCatalog {
   static MeshProfile profileForItem(FurnitureItem item) =>
       profileFor(item.iconName);
 
-  /// Flutter asset path for a furniture [iconName], or null for placeholder.
   static String? assetForIcon(String iconName) => profileFor(iconName).assetPath;
 
   static double defaultHeightMeters(String iconName) =>
       profileFor(iconName).heightMeters;
 
-  /// Relative URL from `assets/scene/room_viewer.html`.
   static String? sceneUrlForIcon(String iconName) {
     final asset = assetForIcon(iconName);
     if (asset == null) return null;

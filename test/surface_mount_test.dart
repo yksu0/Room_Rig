@@ -77,16 +77,14 @@ void main() {
     });
 
     test('mount heights match the volumes the simulators build', () {
-      // AirflowSimulator._buildBoxes puts an AC at 1.4-2.3 and a window sink at
-      // 0.9-2.1; drifting apart here would draw fittings where the physics has
-      // nothing.
+      // Keep AC / window bands aligned with AirflowSimulator._buildBoxes.
       final vent = SurfaceMounts.of(
         _item(id: 'ac', name: 'AC Unit', x: 5, y: 0),
         gridCols: 6,
         gridRows: 8,
       );
-      expect(vent.bottomY, 1.4);
-      expect(vent.topY, 2.3);
+      expect(vent.bottomY, SurfaceMounts.acBottom);
+      expect(vent.topY, SurfaceMounts.acTop);
 
       final window = SurfaceMounts.of(_item(id: 'window', x: 2, y: 0), gridCols: 6, gridRows: 8);
       expect(window.bottomY, 0.9);

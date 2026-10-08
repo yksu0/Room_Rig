@@ -73,7 +73,7 @@ class SurfaceMount {
   bool get isDesk => surface == MountSurface.desk;
 
   /// Floor-standing items are the only ones that contest floor space. A wall AC
-  /// at 1.4–2.3 m has to be free to sit above a desk, and a monitor on that desk
+  /// niche has to be free to sit above a desk, and a monitor on that desk
   /// lives on the work surface rather than as a second floor block.
   bool get occupiesFloor => surface == MountSurface.floor;
 
@@ -87,8 +87,12 @@ class SurfaceMounts {
   static const windowBottom = 0.9;
   static const windowTop = 2.1;
   static const doorTop = 2.1;
-  static const ventBottom = 1.4;
-  static const ventTop = 2.3;
+  // Niche fittings — keep vertical span close to the GLB height so wall
+  // holes are not sky-sized. AC ~0.62 m; grille vents ~0.32 m.
+  static const ventBottom = 1.85;
+  static const ventTop = 2.17;
+  static const acBottom = 1.55;
+  static const acTop = 2.17;
   static const deskTop = 0.74;
 
   static bool isWindow(FurnitureItem f) =>
@@ -348,8 +352,13 @@ class SurfaceMounts {
       top = doorTop;
     } else if (isVent(f)) {
       style = MountStyle.vent;
-      bottom = ventBottom;
-      top = ventTop;
+      // Wall AC uses isVent(); grille-sized vents share the same style when
+      // named as vents without the AC icon — prefer AC band for ac icons.
+      final acLike = f.iconName == 'ac' ||
+          f.iconName == 'acUnit' ||
+          f.id.toLowerCase().startsWith('ac');
+      bottom = acLike ? acBottom : ventBottom;
+      top = acLike ? acTop : ventTop;
     } else if (isIntake(f)) {
       style = MountStyle.intake;
       bottom = ventBottom;

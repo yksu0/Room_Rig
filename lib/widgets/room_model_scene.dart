@@ -163,14 +163,33 @@ class _RoomModelSceneState extends State<RoomModelScene> {
 
       if (mount.isWall && mount.span != null) {
         final span = mount.span!;
+        final alongIsX = span.inwardZ.abs() > 0.5;
+        final alongCell = alongIsX ? cellW : cellD;
+        // Span endpoints are in grid cells; convert to metres along the wall.
+        final a0g = alongIsX
+            ? (span.x0 < span.x1 ? span.x0 : span.x1)
+            : (span.z0 < span.z1 ? span.z0 : span.z1);
+        final a1g = alongIsX
+            ? (span.x0 < span.x1 ? span.x1 : span.x0)
+            : (span.z0 < span.z1 ? span.z1 : span.z0);
+        var along0 = a0g * alongCell;
+        var along1 = a1g * alongCell;
+        // Footprint along wall from the item size (not inflated span quirks).
+        final footprintAlong = (alongIsX ? f.width : f.height) * alongCell;
+        final midAlong = (along0 + along1) * 0.5;
+        final half = footprintAlong * 0.5;
+        along0 = (midAlong - half).clamp(0.0, alongIsX ? roomW : roomD);
+        along1 = (midAlong + half).clamp(0.0, alongIsX ? roomW : roomD);
+
         final midX = (span.x0 + span.x1) * 0.5 * cellW;
         final midZ = (span.z0 + span.z1) * 0.5 * cellD;
-        // Sit in the wall plane, slightly inset so the frame reads from inside.
-        x = midX + span.inwardX * cellW * 0.08;
-        z = midZ + span.inwardZ * cellD * 0.08;
+        // Protrude into the room by the mount amount (grid → metres).
+        final insetM = mount.protrusion * (alongIsX ? cellD : cellW) * 0.35;
+        x = midX + span.inwardX * insetM;
+        z = midZ + span.inwardZ * insetM;
         y = mount.bottomY;
-        itemW = span.length * (span.inwardZ.abs() > 0.5 ? cellW : cellD);
-        itemD = 0.2;
+        itemW = footprintAlong;
+        itemD = (0.12 + mount.protrusion * 0.15).clamp(0.12, 0.45);
         yaw = switch (span.wall) {
           RoomWall.north => 0,
           RoomWall.south => 180,
@@ -178,21 +197,18 @@ class _RoomModelSceneState extends State<RoomModelScene> {
           RoomWall.west => -90,
         };
 
-        final along0 = span.inwardZ.abs() > 0.5
-            ? (span.x0 < span.x1 ? span.x0 : span.x1) * cellW
-            : (span.z0 < span.z1 ? span.z0 : span.z1) * cellD;
-        final along1 = span.inwardZ.abs() > 0.5
-            ? (span.x0 < span.x1 ? span.x1 : span.x0) * cellW
-            : (span.z0 < span.z1 ? span.z1 : span.z0) * cellD;
-
-        if (profile.isOpening || profile.isGlass) {
+        if (profile.cutsWall) {
+          final pad = profile.wallCutPadMeters;
+          final yPad = profile.wallCut == WallCutKind.through ? 0.01 : 0.02;
           openings.add({
             'wall': _wallName(span.wall),
-            'along0': along0,
-            'along1': along1,
-            'y0': mount.bottomY,
-            'y1': mount.topY,
-            'glass': profile.isGlass || f.iconName == 'window',
+            'along0': (along0 - pad).clamp(0.0, alongIsX ? roomW : roomD),
+            'along1': (along1 + pad).clamp(0.0, alongIsX ? roomW : roomD),
+            'y0': (mount.bottomY - yPad).clamp(0.0, 3.0),
+            'y1': (mount.topY + yPad).clamp(0.0, 3.2),
+            'glass': profile.wallCut == WallCutKind.through && profile.isGlass,
+            'through': profile.wallCut == WallCutKind.through,
+            'kind': profile.wallCut.name,
           });
         }
       } else if (mount.isCeiling) {

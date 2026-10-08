@@ -143,7 +143,9 @@
     alongX, // true => wall runs on X at fixed Z
     length, fixed, height, thick, openings, inwardSign, wallMat, glassMat,
   }) {
-    // openings: [{ along0, along1, y0, y1, glass }]
+    // openings: [{ along0, along1, y0, y1, glass, through }]
+    // through=true (door/window): cut shell + glass/daylight.
+    // through=false niche (AC/vents): cut shell + opaque grille fill (no exterior).
     const segs = [{ a0: 0, a1: length }];
     const sorted = (openings || []).slice().sort((a, b) => a.along0 - b.along0);
     sorted.forEach((op) => {
@@ -151,9 +153,9 @@
       segs.forEach((s) => {
         const o0 = Math.max(s.a0, op.along0);
         const o1 = Math.min(s.a1, op.along1);
-        if (o1 <= o0 + 0.02) { next.push(s); return; }
-        if (o0 > s.a0 + 0.02) next.push({ a0: s.a0, a1: o0 });
-        if (o1 < s.a1 - 0.02) next.push({ a0: o1, a1: s.a1 });
+        if (o1 <= o0 + 0.015) { next.push(s); return; }
+        if (o0 > s.a0 + 0.015) next.push({ a0: s.a0, a1: o0 });
+        if (o1 < s.a1 - 0.015) next.push({ a0: o1, a1: s.a1 });
       });
       segs.length = 0;
       segs.push.apply(segs, next);
@@ -161,7 +163,7 @@
 
     segs.forEach((s) => {
       const len = s.a1 - s.a0;
-      if (len < 0.04) return;
+      if (len < 0.03) return;
       const m = new THREE.Mesh(new THREE.BoxGeometry(
         alongX ? len : thick,
         height,
@@ -177,12 +179,16 @@
       roomRoot.add(m);
     });
 
-    // Fill above/below openings + glass panes looking outside
+    const nicheMat = new THREE.MeshStandardMaterial({
+      color: 0x3a3f46, roughness: 0.55, metalness: 0.25, side: THREE.DoubleSide,
+    });
+
+    // Fill above/below openings + glass (through) or opaque niche grille
     sorted.forEach((op) => {
       const len = op.along1 - op.along0;
-      if (len < 0.05) return;
+      if (len < 0.04) return;
       // Sill / header
-      if (op.y0 > 0.05) {
+      if (op.y0 > 0.04) {
         const sill = new THREE.Mesh(
           new THREE.BoxGeometry(alongX ? len : thick, op.y0, alongX ? thick : len),
           wallMat.clone()
@@ -193,7 +199,7 @@
         sill.receiveShadow = true;
         roomRoot.add(sill);
       }
-      if (op.y1 < height - 0.05) {
+      if (op.y1 < height - 0.04) {
         const hh = height - op.y1;
         const head = new THREE.Mesh(
           new THREE.BoxGeometry(alongX ? len : thick, hh, alongX ? thick : len),
@@ -205,10 +211,12 @@
         head.receiveShadow = true;
         roomRoot.add(head);
       }
-      if (op.glass) {
-        const gh = Math.max(0.1, op.y1 - op.y0);
+      const oh = Math.max(0.08, op.y1 - op.y0);
+      const isThrough = op.through === true || op.kind === 'through';
+      const isNiche = op.through === false || op.kind === 'niche';
+      if (isThrough && op.glass) {
         const glass = new THREE.Mesh(
-          new THREE.PlaneGeometry(alongX ? len * 0.96 : gh, alongX ? gh : len * 0.96),
+          new THREE.PlaneGeometry(alongX ? len * 0.96 : oh, alongX ? oh : len * 0.96),
           glassMat
         );
         if (alongX) {
@@ -219,7 +227,6 @@
         }
         roomRoot.add(glass);
 
-        // Daylight spilling in through the opening
         const sunIn = new THREE.SpotLight(0xfff2cc, 0.85, 10, Math.PI / 4.5, 0.45, 1);
         if (alongX) {
           sunIn.position.set((op.along0 + op.along1) / 2, (op.y0 + op.y1) / 2, fixed - inwardSign * 1.2);
@@ -230,6 +237,52 @@
         }
         roomRoot.add(sunIn);
         roomRoot.add(sunIn.target);
+      } else if (isNiche) {
+        // Opaque recess so AC / vents do not punch a sky hole.
+        const niche = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            alongX ? len * 0.98 : thick * 0.55,
+            oh * 0.98,
+            alongX ? thick * 0.55 : len * 0.98
+          ),
+          nicheMat
+        );
+        if (alongX) {
+          niche.position.set(
+            (op.along0 + op.along1) / 2,
+            (op.y0 + op.y1) / 2,
+            fixed + inwardSign * thick * 0.15
+          );
+        } else {
+          niche.position.set(
+            fixed + inwardSign * thick * 0.15,
+            (op.y0 + op.y1) / 2,
+            (op.along0 + op.along1) / 2
+          );
+        }
+        niche.castShadow = true;
+        niche.receiveShadow = true;
+        roomRoot.add(niche);
+        // Simple louver stripes (read as grille)
+        const stripeN = Math.max(2, Math.min(6, Math.floor(oh / 0.06)));
+        for (let i = 0; i < stripeN; i++) {
+          const t = (i + 0.5) / stripeN;
+          const sy = op.y0 + oh * t;
+          const bar = new THREE.Mesh(
+            new THREE.BoxGeometry(
+              alongX ? len * 0.9 : 0.012,
+              0.012,
+              alongX ? 0.012 : len * 0.9
+            ),
+            new THREE.MeshStandardMaterial({ color: 0x6a7078, roughness: 0.4, metalness: 0.45 })
+          );
+          if (alongX) {
+            bar.position.set((op.along0 + op.along1) / 2, sy, fixed + inwardSign * thick * 0.42);
+          } else {
+            bar.position.set(fixed + inwardSign * thick * 0.42, sy, (op.along0 + op.along1) / 2);
+          }
+          roomRoot.add(bar);
+        }
       }
     });
   }
@@ -283,6 +336,8 @@
         y0: +op.y0 || 0,
         y1: +op.y1 || 2.1,
         glass: !!op.glass,
+        through: op.through === true || op.kind === 'through',
+        kind: op.kind || (op.glass ? 'through' : (op.through === false ? 'niche' : 'through')),
       });
     });
 
