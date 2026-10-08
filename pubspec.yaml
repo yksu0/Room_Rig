@@ -34,5 +34,6 @@ flutter:
     - assets/bench/
     - assets/gltf/
     - assets/gltf/kenney/
+    - assets/gltf/hvac/
     - assets/scene/
     - assets/scene/vendor/
