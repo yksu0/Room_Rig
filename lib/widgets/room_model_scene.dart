@@ -203,14 +203,16 @@ class _RoomModelSceneState extends State<RoomModelScene> {
           RoomWall.west => -90,
         };
 
+        String? wallName;
         if (profile.cutsWall) {
+          wallName = _wallName(span.wall);
           final pad = profile.wallCutPadMeters;
           final clearH = profile.openingHeightMeters;
           // Anchor cut to mount bottom; height from catalog (not oversized band).
           final y0 = mount.bottomY;
           final y1 = (y0 + clearH).clamp(y0 + 0.1, 3.2);
           openings.add({
-            'wall': _wallName(span.wall),
+            'wall': wallName,
             'along0': (along0 - pad).clamp(0.0, maxAlong),
             'along1': (along1 + pad).clamp(0.0, maxAlong),
             'y0': (y0 - (profile.wallCut == WallCutKind.niche ? 0.01 : 0)).clamp(
@@ -223,6 +225,26 @@ class _RoomModelSceneState extends State<RoomModelScene> {
             'kind': profile.wallCut.name,
           });
         }
+
+        return {
+          'id': f.id,
+          'kind': f.iconName,
+          'model': modelUrl,
+          'x': x,
+          'y': y,
+          'z': z,
+          'w': itemW,
+          'd': itemD,
+          'h': profile.openingHeightMeters,
+          'yaw': yaw,
+          'selected': f.id == widget.selectedId,
+          'mount': 'wall',
+          'wall': wallName ?? _wallName(span.wall),
+          'opening': profile.isOpening || profile.isGlass,
+          'glass': profile.isGlass,
+          'cutKind': profile.cutsWall ? profile.wallCut.name : null,
+          'lightTransmit': profile.lightTransmit,
+        };
       } else if (mount.isCeiling) {
         y = mount.bottomY;
       } else if (mount.isDesk) {
@@ -238,15 +260,13 @@ class _RoomModelSceneState extends State<RoomModelScene> {
         'z': z,
         'w': itemW,
         'd': itemD,
-        'h': mount.isWall
-            ? profile.openingHeightMeters
-            : profile.heightMeters,
+        'h': profile.heightMeters,
         'yaw': yaw,
         'selected': f.id == widget.selectedId,
-        'mount': mount.isWall
-            ? 'wall'
-            : mount.isCeiling
-                ? 'ceiling'
+        'mount': mount.isCeiling
+            ? 'ceiling'
+            : mount.isDesk
+                ? 'desk'
                 : 'floor',
         'opening': profile.isOpening || profile.isGlass,
         'lightTransmit': profile.lightTransmit,

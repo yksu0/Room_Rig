@@ -237,7 +237,8 @@ class GltfCatalog {
     ),
     'door': const MeshProfile(
       iconName: 'door',
-      assetPath: '$kenneyDir/doorwayOpen.glb',
+      // doorway.glb is the leaf/frame; doorwayOpen / wallDoorway are full wall slabs.
+      assetPath: '$kenneyDir/doorway.glb',
       heightMeters: 2.05,
       role: MeshSimRole.opening,
       lightTransmit: 0.95,

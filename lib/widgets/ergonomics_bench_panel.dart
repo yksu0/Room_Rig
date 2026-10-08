@@ -659,7 +659,8 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       summaryText:
           'Walks +${((opt.pathScore - base.pathScore) * 100).toStringAsFixed(0)} · '
           'Door view +${((opt.doorProspect - base.doorProspect) * 100).toStringAsFixed(0)} · '
-          'Bed privacy +${((opt.bedPrivacy - base.bedPrivacy) * 100).toStringAsFixed(0)}',
+          'Window glare +${((opt.windowSideLight - base.windowSideLight) * 100).toStringAsFixed(0)} · '
+          'HVAC +${((opt.hvacClearance - base.hvacClearance) * 100).toStringAsFixed(0)}',
     );
   }
 

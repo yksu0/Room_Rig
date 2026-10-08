@@ -435,8 +435,31 @@
     return g;
   }
 
+  /** Project a wall-mounted wrap's world AABB onto the wall opening axes. */
+  function measureWallOpening(wrap, wall, pad) {
+    wrap.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(wrap);
+    if (!isFinite(box.min.x) || box.isEmpty()) return null;
+    const p = pad || 0.02;
+    let along0, along1;
+    if (wall === 'north' || wall === 'south') {
+      along0 = box.min.x - p;
+      along1 = box.max.x + p;
+    } else {
+      along0 = box.min.z - p;
+      along1 = box.max.z + p;
+    }
+    return {
+      along0,
+      along1,
+      y0: Math.max(0, box.min.y - p * 0.5),
+      y1: box.max.y + p * 0.5,
+    };
+  }
+
   async function setFurniture(items) {
     while (furnitureRoot.children.length) furnitureRoot.remove(furnitureRoot.children[0]);
+    const measuredCuts = [];
     const jobs = (items || []).map(async (it) => {
       const w = Math.max(0.2, +it.w || 0.8);
       const d = Math.max(0.2, +it.d || 0.8);
@@ -445,6 +468,7 @@
       const mount = it.mount || 'floor';
       wrap.position.set(+it.x || 0, +it.y || 0, +it.z || 0);
       wrap.rotation.y = THREE.MathUtils.degToRad(+it.yaw || 0);
+      wrap.userData.itemId = it.id;
 
       let model = null;
       if (it.model) {
@@ -475,11 +499,29 @@
         wrap.add(ring);
       }
       furnitureRoot.add(wrap);
+
+      // After fit, size the shell hole from the real mesh bounds.
+      if (mount === 'wall' && it.wall && (it.opening || it.cutKind)) {
+        const m = measureWallOpening(wrap, it.wall, it.cutKind === 'niche' ? 0.015 : 0.02);
+        if (m) {
+          measuredCuts.push({
+            wall: it.wall,
+            along0: m.along0,
+            along1: m.along1,
+            y0: m.y0,
+            y1: m.y1,
+            glass: !!it.glass || it.kind === 'window' || it.kind === 'smartBlinds',
+            through: it.cutKind !== 'niche',
+            kind: it.cutKind || (it.opening ? 'through' : 'niche'),
+          });
+        }
+      }
     });
     await Promise.all(jobs);
     const n = (items || []).length;
     const withModel = (items || []).filter((i) => i.model).length;
     hud.textContent = n + ' items · ' + withModel + ' GLBs · exterior + openings';
+    return measuredCuts;
   }
 
   function updateCamera() {
@@ -535,7 +577,7 @@
     }
   }, { passive: true });
 
-  function applyScene(payload) {
+  async function applyScene(payload) {
     try {
       const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
       const w = +data.roomW || 4.2;
@@ -546,7 +588,21 @@
       if (data.yaw != null) yaw = +data.yaw;
       if (data.pitch != null) pitch = +data.pitch;
       if (data.distance != null) distance = +data.distance;
-      setFurniture(data.items || []);
+      const measured = await setFurniture(data.items || []);
+      // Second pass: shrink/grow shell cuts to the fitted GLB bounds.
+      if (measured && measured.length) {
+        const clamped = measured.map((op) => {
+          const maxAlong = (op.wall === 'north' || op.wall === 'south') ? w : d;
+          return {
+            ...op,
+            along0: Math.max(0, Math.min(maxAlong, op.along0)),
+            along1: Math.max(0, Math.min(maxAlong, op.along1)),
+            y0: Math.max(0, Math.min(h, op.y0)),
+            y1: Math.max(0.05, Math.min(h, op.y1)),
+          };
+        }).filter((op) => op.along1 - op.along0 > 0.08 && op.y1 - op.y0 > 0.08);
+        if (clamped.length) rebuildRoom(w, d, h, clamped);
+      }
     } catch (e) {
       showError('Scene update failed: ' + e);
     }
