@@ -4,6 +4,7 @@ import 'dart:math';
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
 import 'comfort_heuristics.dart';
+import 'gltf_catalog.dart';
 
 class AirflowVec3 {
   final double x;
@@ -973,6 +974,13 @@ class AirflowSimulator {
           ),
         );
       } else {
+        final profile = GltfCatalog.profileForItem(f);
+        // Glass / non-solid meshes do not rasterize as particle blockers.
+        if (profile.role == MeshSimRole.glass ||
+            profile.role == MeshSimRole.opening ||
+            profile.airflowSolid < 0.2) {
+          continue;
+        }
         boxes.add(
           AirflowBox(
             min: AirflowVec3(f.gridX, 0, f.gridY),
@@ -981,7 +989,7 @@ class AirflowSimulator {
             label: f.name,
             kind: kind,
             yawDegrees: yaw,
-            strength: meta.strength,
+            strength: meta.strength * profile.airflowSolid,
             directional: meta.directional,
           ),
         );
@@ -1235,17 +1243,19 @@ class AirflowSimulator {
   static double _itemHeight(FurnitureItem f, String kind) {
     final id = f.id.toLowerCase();
     final name = f.name.toLowerCase();
+    final meshH = GltfCatalog.profileForItem(f).heightMeters;
     switch (kind) {
       case 'heat':
         if (id.contains('console') || name.contains('console')) return 0.55;
-        if (id.contains('fridge') || name.contains('fridge')) return 0.95;
-        if (id.contains('heater') || name.contains('heater')) return 0.75;
+        if (id.contains('fridge') || name.contains('fridge')) return meshH.clamp(0.7, 1.2);
+        if (id.contains('heater') || name.contains('heater')) return meshH.clamp(0.55, 1.0);
         if (id.contains('radiator') || name.contains('radiator')) return 0.7;
         if (id.contains('nas') || name.contains('nas')) return 0.45;
-        return 1.35;
+        // PC tower — match Kenney speaker / tower proxy height.
+        return meshH.clamp(0.45, 1.45);
       case 'fan':
         if (id.contains('desk') || name.contains('desk fan')) return 0.45;
-        return 1.1;
+        return meshH.clamp(0.8, 1.4);
       case 'ac':
         if (id.contains('portable') ||
             name.contains('portable') ||
@@ -1253,16 +1263,15 @@ class AirflowSimulator {
             name.contains('evaporative') ||
             id.contains('cooler') ||
             name.contains('cooler')) {
-          return 0.85;
+          return meshH.clamp(0.7, 1.1);
         }
         return 2.3;
+      case 'opening':
+      case 'door':
+        return meshH.clamp(1.8, 2.3);
       default:
-        // Beds / desks / shelves need real collision volume.
-        if (f.id == 'bed') return 0.85;
-        if (f.id == 'desk') return 0.75;
-        if (f.id == 'shelf' || f.id == 'bookshelf') return 1.7;
-        if (f.id == 'chair') return 1.05;
-        return (0.55 + f.ergonomicsImpact.abs() * 0.55 + f.height * 0.15).clamp(0.45, 1.9);
+        // GLB mesh profile is the collision volume for Model-branch furniture.
+        return meshH.clamp(0.35, 2.2);
     }
   }
 

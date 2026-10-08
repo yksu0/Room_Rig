@@ -3,6 +3,7 @@
 import 'dart:math';
 import '../models/room_model.dart';
 import 'comfort_heuristics.dart';
+import 'gltf_catalog.dart';
 
 class LightingMetrics {
   final double exposureScore; // 0-100 overall
@@ -60,6 +61,10 @@ class LightingOccluder {
   final double height;
   final String id;
 
+  /// 0 = fully opaque (hard shadow), 1 = clear. Glass windows use ~0.8 so light
+  /// refracts/attenuates instead of vanishing (coarse Bench approximation).
+  final double transmit;
+
   const LightingOccluder({
     required this.minX,
     required this.minZ,
@@ -67,7 +72,10 @@ class LightingOccluder {
     required this.maxZ,
     required this.height,
     required this.id,
+    this.transmit = 0,
   });
+
+  bool get isGlass => transmit >= 0.35;
 }
 
 class LightingSimSnapshot {
@@ -228,23 +236,36 @@ class LightingSimulator {
   static List<LightingOccluder> _buildOccluders(List<FurnitureItem> furniture) {
     final list = <LightingOccluder>[];
     for (final f in furniture) {
-      final hay = '${f.id} ${f.name}'.toLowerCase();
-      if (hay.contains('window') || hay.contains('door') || hay.contains('lamp') || hay.contains('ac')) {
+      final profile = GltfCatalog.profileForItem(f);
+      // Openings are holes — they admit daylight via lights, not occluders.
+      if (profile.role == MeshSimRole.opening) continue;
+      if (profile.role == MeshSimRole.emitter && profile.airflowSolid < 0.2) {
         continue;
       }
-      final height = hay.contains('shelf') || hay.contains('bookshelf') || hay.contains('wardrobe')
-          ? 1.8
-          : hay.contains('bed')
-              ? 0.9
-              : (0.6 + f.height * 0.25).clamp(0.5, 1.6);
+      // Glass windows: thin translucent occluder so rays attenuate / "refract".
+      if (profile.role == MeshSimRole.glass || profile.isOpening) {
+        list.add(
+          LightingOccluder(
+            minX: f.gridX,
+            minZ: f.gridY,
+            maxX: f.gridX + f.width,
+            maxZ: f.gridY + max(0.15, f.height),
+            height: profile.heightMeters.clamp(0.8, 2.2),
+            id: f.id,
+            transmit: profile.lightTransmit.clamp(0.35, 0.95),
+          ),
+        );
+        continue;
+      }
       list.add(
         LightingOccluder(
           minX: f.gridX,
           minZ: f.gridY,
           maxX: f.gridX + f.width,
           maxZ: f.gridY + f.height,
-          height: height,
+          height: profile.heightMeters.clamp(0.4, 2.2),
           id: f.id,
+          transmit: profile.lightTransmit.clamp(0.0, 0.9),
         ),
       );
     }
@@ -282,14 +303,14 @@ class LightingSimulator {
       base = light.intensity / (1.0 + dist * dist * 0.55);
     }
 
-    // Occlusion: sample toward the light; tall blockers cast shadows.
-    if (_occluded(light.x, light.z, x, z, light.y, occluders)) {
-      base *= light.kind == 'ceiling' ? 0.55 : 0.18;
-    }
+    // Occlusion with GLB mesh profiles: hard shadows + glass attenuation.
+    base *= _rayTransmittance(light.x, light.z, x, z, light.y, occluders);
     return base;
   }
 
-  static bool _occluded(
+  /// Multiplies light by each occluder hit. Opaque → ~0.18/0.55; glass keeps
+  /// most energy (refraction / transmission stand-in for the coarse grid).
+  static double _rayTransmittance(
     double x0,
     double z0,
     double x1,
@@ -297,19 +318,28 @@ class LightingSimulator {
     double lightY,
     List<LightingOccluder> occluders,
   ) {
-    const steps = 14;
+    var transmit = 1.0;
+    const steps = 16;
     for (int i = 1; i < steps; i++) {
       final t = i / steps;
       final x = x0 + (x1 - x0) * t;
       final z = z0 + (z1 - z0) * t;
       for (final o in occluders) {
-        if (x >= o.minX && x <= o.maxX && z >= o.minZ && z <= o.maxZ) {
-          // Light rays from ceiling clear short furniture more easily.
-          if (o.height > lightY * 0.55) return true;
+        if (x < o.minX || x > o.maxX || z < o.minZ || z > o.maxZ) continue;
+        if (o.height <= lightY * 0.45 && !o.isGlass) continue;
+        if (o.isGlass) {
+          // Glass: keep most daylight, slight color-neutral attenuation.
+          transmit *= (0.55 + o.transmit * 0.4);
+        } else if (o.transmit > 0.05) {
+          transmit *= (0.25 + o.transmit * 0.55);
+        } else {
+          // Hard mesh shadow from tall GLB solids.
+          transmit *= lightY > 2.0 ? 0.55 : 0.18;
         }
+        if (transmit < 0.04) return transmit;
       }
     }
-    return false;
+    return transmit.clamp(0.0, 1.0);
   }
 
   static LightingMetrics _computeMetrics(
