@@ -42,4 +42,14 @@ void main() {
     }
     expect(FurnitureShapes.deskTopY, GltfCatalog.profileFor('desk').heightMeters);
   });
+
+  test('Orbit footprints match metre targets for sized catalog items', () {
+    expect(GltfCatalog.orbitFootprint('monitor').width, closeTo(1.25, 0.01));
+    expect(GltfCatalog.orbitFootprint('monitor').depth, closeTo(0.35, 0.05));
+    expect(GltfCatalog.orbitFootprint('pc').width, closeTo(0.35, 0.05));
+    expect(GltfCatalog.orbitFootprint('pc').depth, closeTo(0.75, 0.05));
+    expect(GltfCatalog.orbitFootprint('fan').width, closeTo(0.55, 0.05));
+    expect(GltfCatalog.orbitFootprint('desk').width, closeTo(2.0, 0.01));
+    expect(GltfCatalog.orbitFootprint('desk').depth, closeTo(1.0, 0.01));
+  });
 }

@@ -13,6 +13,7 @@
 // - Poly Haven / HVAC pack — ac, fan, purifier, heater, vents
 
 import '../models/room_model.dart';
+import '../models/room_scale.dart';
 
 /// Physical role of a mesh in airflow / lighting.
 enum MeshSimRole {
@@ -109,6 +110,20 @@ class MeshProfile {
 
   double get openingHeightMeters => clearHeightMeters ?? heightMeters;
 
+  /// Orbit / Rig grid width in cells from metre targets (0.05-cell snap).
+  double? get footprintWidthCells {
+    final m = clearWidthMeters ?? targetWidthMeters;
+    if (m == null) return null;
+    return GltfCatalog.cellsFromMeters(m);
+  }
+
+  /// Orbit / Rig grid depth in cells from metre targets (0.05-cell snap).
+  double? get footprintDepthCells {
+    final m = targetDepthMeters;
+    if (m == null) return null;
+    return GltfCatalog.cellsFromMeters(m);
+  }
+
   /// Fit fields embedded in the Model scene JSON payload.
   Map<String, dynamic> fitPayload() => {
         'fit': fitMode.name,
@@ -133,6 +148,8 @@ class GltfCatalog {
       heightMeters: 0.74,
       role: MeshSimRole.solid,
       fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 1.2,
+      targetDepthMeters: 0.6,
       // Kenney drawer / knee opening faces -Z; Orbit chair sits on +Z.
       localYawBiasDegrees: 180,
       alignFootprint: true,
@@ -144,6 +161,8 @@ class GltfCatalog {
       role: MeshSimRole.solid,
       airflowSolid: 0.85,
       fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 1.2,
+      targetDepthMeters: 0.6,
       alignFootprint: true,
     ),
     'chair': const MeshProfile(
@@ -162,6 +181,8 @@ class GltfCatalog {
       heightMeters: 0.55,
       role: MeshSimRole.solid,
       fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 1.2,
+      targetDepthMeters: 1.2,
       alignFootprint: true,
     ),
     'sofa': const MeshProfile(
@@ -170,6 +191,8 @@ class GltfCatalog {
       heightMeters: 0.85,
       role: MeshSimRole.solid,
       fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 1.2,
+      targetDepthMeters: 0.6,
       alignFootprint: true,
     ),
     'shelf': const MeshProfile(
@@ -416,6 +439,25 @@ class GltfCatalog {
 
   static double defaultHeightMeters(String iconName) =>
       profileFor(iconName).heightMeters;
+
+  /// Snap metres → grid cells (0.05 resolution) for Orbit / Rig footprints.
+  static double cellsFromMeters(double meters) {
+    final raw = meters / RoomScale.cellMeters;
+    return (raw * 20).round() / 20.0;
+  }
+
+  /// Default Orbit footprint (cells) for an icon — metre targets when set.
+  static ({double width, double depth}) orbitFootprint(
+    String iconName, {
+    double fallbackWidth = 1,
+    double fallbackDepth = 1,
+  }) {
+    final p = profileFor(iconName);
+    return (
+      width: p.footprintWidthCells ?? fallbackWidth,
+      depth: p.footprintDepthCells ?? fallbackDepth,
+    );
+  }
 
   /// All catalog keys (for audits / tests).
   static Iterable<String> get catalogKeys => _profiles.keys;
