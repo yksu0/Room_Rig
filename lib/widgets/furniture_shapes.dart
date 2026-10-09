@@ -182,9 +182,9 @@ class FurnitureShapes {
       case FurnitureKind.chair:
         return 0.98;
       case FurnitureKind.monitor:
-        return 0.48;
+        return 0.58;
       case FurnitureKind.pc:
-        return 0.52;
+        return 0.62;
       case FurnitureKind.bed:
         return 0.55;
       case FurnitureKind.sofa:

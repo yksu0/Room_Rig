@@ -160,7 +160,7 @@ class GltfCatalog {
     'monitor': const MeshProfile(
       iconName: 'monitor',
       assetPath: '$kenneyDir/computerScreen.glb',
-      heightMeters: 0.48,
+      heightMeters: 0.58,
       role: MeshSimRole.solid,
       airflowSolid: 0.35,
     ),
@@ -174,7 +174,7 @@ class GltfCatalog {
     'pc': const MeshProfile(
       iconName: 'pc',
       assetPath: '$kenneyDir/speaker.glb',
-      heightMeters: 0.52,
+      heightMeters: 0.62,
       role: MeshSimRole.emitter,
       airflowSolid: 0.9,
     ),

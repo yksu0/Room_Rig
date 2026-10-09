@@ -434,7 +434,11 @@
    * ignoreDepth: wall kits — fit W×H only.
    * default: uniform min scale into the box.
    */
-  function fitObject(root, targetW, targetD, targetH, ignoreDepth, fillBox) {
+  /**
+   * mode: 'fill' | 'ignoreDepth' | 'fillWidth' | 'uniform'
+   * fillWidth: screens — Kenney stand bboxes are tall; min(sx,sy) left them tiny.
+   */
+  function fitObject(root, targetW, targetD, targetH, mode) {
     const box = new THREE.Box3().setFromObject(root);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -442,10 +446,13 @@
     const sx = targetW / Math.max(size.x, 1e-4);
     const sy = targetH > 0 ? targetH / Math.max(size.y, 1e-4) : sx;
     const sz = targetD / Math.max(size.z, 1e-4);
-    if (fillBox) {
+    if (mode === 'fill') {
       root.scale.set(sx * 0.98, sy * 0.98, sz * 0.98);
-    } else if (ignoreDepth) {
+    } else if (mode === 'ignoreDepth') {
       root.scale.setScalar(Math.min(sx, sy) * 0.98);
+    } else if (mode === 'fillWidth') {
+      // Prefer filling the footprint width so the panel reads as a real monitor.
+      root.scale.setScalar(sx * 0.96);
     } else {
       root.scale.setScalar(Math.min(sx, sz, sy) * 0.92);
     }
@@ -541,20 +548,26 @@
           model = src.clone(true);
           enableShadows(model, !it.opening);
           if (mount === 'wall') {
-            // Fit width × height only — wall-kit depth must not shrink the mesh.
-            fitObject(model, Math.max(w, 0.35), d, h, true, false);
+            fitObject(model, Math.max(w, 0.35), d, h, 'ignoreDepth');
           } else {
             alignCanonicalAxes(model);
             if (kind === 'monitor' || kind === 'tv') {
-              // Screen: keep aspect — fit width×height only (don't stretch into depth).
-              fitObject(model, fitW, fitD, h, true, false);
-            } else if (kind === 'pc' || kind === 'lamp') {
-              // Tower / lamp: uniform scale into the Orbit box (no squash).
-              fitObject(model, fitW, fitD, h, false, false);
-            } else if (kind === 'desk' || kind === 'table') {
-              fitObject(model, fitW, fitD, h, false, true);
+              fitObject(model, fitW, fitD, h, 'fillWidth');
+            } else if (kind === 'pc') {
+              // Prefer filling tower height so it isn't a stub next to the desk.
+              const box0 = new THREE.Box3().setFromObject(model);
+              const sz0 = new THREE.Vector3();
+              box0.getSize(sz0);
+              const sy = h / Math.max(sz0.y, 1e-4);
+              model.scale.setScalar(sy * 0.95);
+              const box1 = new THREE.Box3().setFromObject(model);
+              model.position.x -= (box1.min.x + box1.max.x) * 0.5;
+              model.position.y -= box1.min.y;
+              model.position.z -= (box1.min.z + box1.max.z) * 0.5;
+            } else if (kind === 'lamp') {
+              fitObject(model, fitW, fitD, h, 'uniform');
             } else {
-              fitObject(model, fitW, fitD, h, false, true);
+              fitObject(model, fitW, fitD, h, 'fill');
             }
           }
         } catch (e) {
