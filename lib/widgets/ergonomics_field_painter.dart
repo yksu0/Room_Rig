@@ -17,6 +17,7 @@ class ErgonomicsFieldPainter extends CustomPainter {
   final double? lookAtX;
   final double? lookAtZ;
   final double pulse;
+  final bool showPaths;
 
   ErgonomicsFieldPainter({
     required this.snapshot,
@@ -27,6 +28,7 @@ class ErgonomicsFieldPainter extends CustomPainter {
     this.lookAtX,
     this.lookAtZ,
     this.pulse = 0.5,
+    this.showPaths = true,
   }) : super(repaint: FurnitureSprites.revision);
 
   /// Keep the busiest routes only so the view stays readable.
@@ -93,6 +95,7 @@ class ErgonomicsFieldPainter extends CustomPainter {
       furniture: snapshot.furniture,
     );
 
+    if (!showPaths) return;
     final paths = _focusPaths;
     for (int i = 0; i < paths.length; i++) {
       final route = paths[i];
@@ -166,6 +169,7 @@ class ErgonomicsFieldPainter extends CustomPainter {
       lookAtZ: lookAtZ,
     );
 
+    if (!showPaths) return;
     final paths = _focusPaths;
     for (int i = 0; i < paths.length; i++) {
       final route = paths[i];
@@ -295,7 +299,8 @@ class ErgonomicsFieldPainter extends CustomPainter {
         oldDelegate.distance != distance ||
         oldDelegate.lookAtX != lookAtX ||
         oldDelegate.lookAtZ != lookAtZ ||
-        oldDelegate.pulse != pulse;
+        oldDelegate.pulse != pulse ||
+        oldDelegate.showPaths != showPaths;
   }
 }
 

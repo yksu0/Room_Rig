@@ -15,6 +15,8 @@ import 'screens/upgrades_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Portrait-only for now. AdaptivePanelLayout.useExpandedRails unlocks
+  // supporting-pane side rails when multi-orientation is enabled (Phase 5).
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,

@@ -11,6 +11,7 @@ import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
+import 'chrome/bench_results_chrome.dart';
 import 'ergonomics_field_painter.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
@@ -49,6 +50,8 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
   double _progress = 0;
   bool _showResults = false;
   bool _ready = false;
+  double _compareScrub = 0;
+  bool _showPaths = true;
 
   BenchLayouts? _layouts;
   int _seenFocusToken = 0;
@@ -564,6 +567,24 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
             ),
           ],
         ),
+        const SizedBox(height: 10),
+        BenchCompareScrub(
+          value: _compareScrub,
+          accent: AppColors.ergonomicsColor,
+          onChanged: (v) {
+            setState(() {
+              _compareScrub = v;
+              _simVariant = v < 0.5 ? BenchLayoutKind.myRoom : BenchLayoutKind.improved;
+            });
+          },
+        ),
+        const SizedBox(height: 8),
+        BenchLayerToggles(
+          showPaths: _showPaths,
+          onPaths: (v) => setState(() => _showPaths = v),
+        ),
+        const SizedBox(height: 8),
+        const BenchLegend(caption: 'Walk paths'),
         const SizedBox(height: 12),
         Container(
           height: 300,
@@ -584,6 +605,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
                       pitch: _defaultPitch,
                       distance: _defaultDistance,
                       pulse: _pulse.value,
+                      showPaths: _showPaths,
                     ),
                     child: const SizedBox.expand(),
                   ),
@@ -607,6 +629,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
                         lookAtX: cam.lookAtX,
                         lookAtZ: cam.lookAtZ,
                         pulse: _pulse.value,
+                        showPaths: _showPaths,
                       ),
                       child: const SizedBox.expand(),
                     ),
@@ -645,9 +668,13 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     final base = _myRoomSim!.metrics;
     final opt = _improvedSim!.metrics;
     final sample = _sampleSim?.metrics;
+    final pathDelta = ((opt.pathScore - base.pathScore) * 100).round();
+    final pathLabel = pathDelta >= 0 ? '+$pathDelta' : '$pathDelta';
     return BenchResultsCard(
       title: 'Ergonomics Comfort Bench',
+      accentColor: AppColors.ergonomicsColor,
       validation: validation,
+      whyReasons: _layouts?.improvedReasons ?? const [],
       rings: [
         BenchScoreRingSpec(score: base.comfortScore, color: AppColors.cyan, label: 'My Room'),
         BenchScoreRingSpec(score: opt.comfortScore, color: AppColors.ergonomicsColor, label: 'Improved'),
@@ -657,9 +684,9 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
           BenchScoreRingSpec(score: state.ergonomicsScore, color: AppColors.green, label: 'Score'),
       ],
       summaryText:
-          'Walks +${((opt.pathScore - base.pathScore) * 100).toStringAsFixed(0)} · '
+          'Walk paths $pathLabel · '
           'Door view +${((opt.doorProspect - base.doorProspect) * 100).toStringAsFixed(0)} · '
-          'Window glare +${((opt.windowSideLight - base.windowSideLight) * 100).toStringAsFixed(0)} · '
+          'Window +${((opt.windowSideLight - base.windowSideLight) * 100).toStringAsFixed(0)} · '
           'HVAC +${((opt.hvacClearance - base.hvacClearance) * 100).toStringAsFixed(0)}',
     );
   }

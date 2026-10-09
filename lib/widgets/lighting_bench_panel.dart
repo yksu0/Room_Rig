@@ -11,6 +11,7 @@ import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
+import 'chrome/bench_results_chrome.dart';
 import 'glass_card.dart';
 import 'lighting_field_painter.dart';
 import 'room_icons.dart';
@@ -49,6 +50,9 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   double _progress = 0;
   bool _showResults = false;
   bool _ready = false;
+  double _compareScrub = 0; // 0 = My Room, 1 = Improved
+  bool _showHeatmap = true;
+  bool _showParticles = true;
 
   BenchLayouts? _layouts;
   int _seenFocusToken = 0;
@@ -562,6 +566,26 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
             ),
           ],
         ),
+        const SizedBox(height: 10),
+        BenchCompareScrub(
+          value: _compareScrub,
+          accent: AppColors.lightingColor,
+          onChanged: (v) {
+            setState(() {
+              _compareScrub = v;
+              _simVariant = v < 0.5 ? BenchLayoutKind.myRoom : BenchLayoutKind.improved;
+            });
+          },
+        ),
+        const SizedBox(height: 8),
+        BenchLayerToggles(
+          showHeatmap: _showHeatmap,
+          showParticles: _showParticles,
+          onHeatmap: (v) => setState(() => _showHeatmap = v),
+          onParticles: (v) => setState(() => _showParticles = v),
+        ),
+        const SizedBox(height: 8),
+        const BenchLegend(caption: 'Illuminance'),
         const SizedBox(height: 12),
         Container(
           height: 300,
@@ -645,9 +669,14 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     final base = _myRoomSim!.metrics;
     final opt = _improvedSim!.metrics;
     final sample = _sampleSim?.metrics;
+    final delta =
+        (opt.exposureScore - base.exposureScore).round();
+    final deltaLabel = delta >= 0 ? '+$delta' : '$delta';
     return BenchResultsCard(
       title: 'Lighting Exposure Bench',
+      accentColor: AppColors.lightingColor,
       validation: validation,
+      whyReasons: _layouts?.improvedReasons ?? const [],
       rings: [
         BenchScoreRingSpec(score: base.exposureScore, color: AppColors.cyan, label: 'My Room'),
         BenchScoreRingSpec(score: opt.exposureScore, color: AppColors.lightingColor, label: 'Improved'),
@@ -657,6 +686,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
           BenchScoreRingSpec(score: state.lightingScore, color: AppColors.green, label: 'Score'),
       ],
       summaryText:
+          'Exposure $deltaLabel · '
           'Shadows ${((base.shadowRatio - opt.shadowRatio) * 100).toStringAsFixed(0)} pts · '
           'Task light +${((opt.taskIllumination - base.taskIllumination) * 100).toStringAsFixed(0)}',
     );

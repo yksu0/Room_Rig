@@ -17,12 +17,11 @@ import '../theme/app_theme.dart';
 import '../widgets/airflow_voxel_painter.dart';
 import '../widgets/bench_room_views.dart';
 import '../widgets/bench_panel_scaffold.dart';
-import '../widgets/benchmark_validation_card.dart';
+import '../widgets/chrome/bench_results_chrome.dart';
 import '../widgets/ergonomics_bench_panel.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/lighting_bench_panel.dart';
 import '../widgets/room_icons.dart';
-import '../widgets/score_ring.dart';
 import '../widgets/spatial_bench_panel.dart';
 
 enum _AirflowStep { layout, simulate, results }
@@ -56,6 +55,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   BenchLayoutKind _layoutVariant = BenchLayoutKind.myRoom;
   _RoomViewMode _roomViewMode = _RoomViewMode.twoD;
   AirflowVizMode _simVizMode = AirflowVizMode.orbit3D;
+  double _compareScrub = 0;
+  bool _showParticles = true;
+  bool _showHeatmap = true;
   BenchLayoutKind _simVariant = BenchLayoutKind.myRoom;
 
   BenchLayouts? _layouts;
@@ -995,6 +997,26 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             }),
           ],
         ),
+        const SizedBox(height: 10),
+        BenchCompareScrub(
+          value: _compareScrub,
+          accent: AppColors.airflowColor,
+          onChanged: (v) {
+            setState(() {
+              _compareScrub = v;
+              _simVariant = v < 0.5 ? BenchLayoutKind.myRoom : BenchLayoutKind.improved;
+            });
+          },
+        ),
+        const SizedBox(height: 8),
+        BenchLayerToggles(
+          showParticles: _showParticles,
+          showHeatmap: _showHeatmap,
+          onParticles: (v) => setState(() => _showParticles = v),
+          onHeatmap: (v) => setState(() => _showHeatmap = v),
+        ),
+        const SizedBox(height: 8),
+        const BenchLegend(caption: 'Airflow field'),
         const SizedBox(height: 12),
         Container(
           height: 300,
@@ -1012,6 +1034,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                         sim: sim,
                         furniture: _furnitureFor(_simVariant),
                         vizMode: _simVizMode,
+                        showParticles: _showParticles,
+                        showHeatmap: _showHeatmap,
                         orbitEnabled: true,
                         roomWidth: sim.field.roomWidth,
                         roomDepth: sim.field.roomDepth,
@@ -1033,6 +1057,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                         sim: sim,
                         furniture: _furnitureFor(_simVariant),
                         vizMode: _simVizMode,
+                        showParticles: _showParticles,
+                        showHeatmap: _showHeatmap,
                         orbitEnabled: false,
                         roomWidth: sim.field.roomWidth,
                         roomDepth: sim.field.roomDepth,
@@ -1129,13 +1155,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   }
 
   Widget _buildAirflowResults(AppState state) {
-    // Before / after are your room and the optimizer's rearrange of it, so the
-    // deltas describe a change you can actually make.
     final base = _myRoomSim!.metrics;
     final opt = _improvedSim!.metrics;
     final sample = _sampleSim?.metrics;
     final validation = _validationForSimVariant(state);
-    final verdictColor = BenchResultBadge.colorFor(validation.verdict);
+    final delta = (opt.circulationScore - base.circulationScore).round();
+    final deltaLabel = delta >= 0 ? '+$delta' : '$delta';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1145,67 +1170,46 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
         ),
         const SizedBox(height: 12),
-        GlassCard(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF0D1A14), Color(0xFF0A1018)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderColor: verdictColor.withValues(alpha: 0.4),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'Voxel Circulation Bench',
-                      style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 16),
-                    ),
-                  ),
-                  BenchResultBadge(validation: validation),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ScoreRing(score: base.circulationScore, size: 78, color: AppColors.cyan, label: 'My Room'),
-                  ScoreRing(score: opt.circulationScore, size: 78, color: AppColors.airflowColor, label: 'Improved'),
-                  if (sample != null)
-                    ScoreRing(score: sample.circulationScore, size: 78, color: AppColors.amber, label: 'Sample')
-                  else
-                    ScoreRing(score: state.airflowScore, size: 78, color: AppColors.green, label: 'Score'),
-                ],
-              ),
-              const SizedBox(height: 18),
-              _ComparisonRow(
-                label: 'Circulation',
-                before: base.circulationScore,
-                after: opt.circulationScore,
-                color: AppColors.airflowColor,
-              ),
-              const SizedBox(height: 10),
-              _ComparisonRow(
-                label: 'Dead zones',
-                before: base.deadZoneRatio * 100,
-                after: opt.deadZoneRatio * 100,
-                color: AppColors.red,
-                lowerIsBetter: true,
-              ),
-              const SizedBox(height: 18),
-              _ComparisonRow(
-                label: 'Heat pockets',
-                before: base.heatPocketRatio * 100,
-                after: opt.heatPocketRatio * 100,
-                color: AppColors.amber,
-                lowerIsBetter: true,
-              ),
-              const SizedBox(height: 16),
-              BenchmarkValidationCard(validation: validation),
-            ],
-          ),
+        BenchResultsCard(
+          title: 'Voxel Circulation Bench',
+          accentColor: AppColors.airflowColor,
+          validation: validation,
+          whyReasons: _layouts?.improvedReasons ?? const [],
+          rings: [
+            BenchScoreRingSpec(score: base.circulationScore, color: AppColors.cyan, label: 'My Room'),
+            BenchScoreRingSpec(score: opt.circulationScore, color: AppColors.airflowColor, label: 'Improved'),
+            if (sample != null)
+              BenchScoreRingSpec(score: sample.circulationScore, color: AppColors.amber, label: 'Sample')
+            else
+              BenchScoreRingSpec(score: state.airflowScore, color: AppColors.green, label: 'Score'),
+          ],
+          summaryText:
+              'Circulation $deltaLabel · '
+              'Dead zones ${((base.deadZoneRatio - opt.deadZoneRatio) * 100).toStringAsFixed(0)} pts · '
+              'Heat ${((base.heatPocketRatio - opt.heatPocketRatio) * 100).toStringAsFixed(0)} pts',
+        ),
+        const SizedBox(height: 12),
+        _ComparisonRow(
+          label: 'Circulation',
+          before: base.circulationScore,
+          after: opt.circulationScore,
+          color: AppColors.airflowColor,
+        ),
+        const SizedBox(height: 10),
+        _ComparisonRow(
+          label: 'Dead zones',
+          before: base.deadZoneRatio * 100,
+          after: opt.deadZoneRatio * 100,
+          color: AppColors.red,
+          lowerIsBetter: true,
+        ),
+        const SizedBox(height: 10),
+        _ComparisonRow(
+          label: 'Heat pockets',
+          before: base.heatPocketRatio * 100,
+          after: opt.heatPocketRatio * 100,
+          color: AppColors.amber,
+          lowerIsBetter: true,
         ),
       ],
     );
@@ -1462,6 +1466,8 @@ class _AirflowSimCanvas extends StatefulWidget {
   final double lookAtZ;
   final int resetNonce;
   final bool animating;
+  final bool showParticles;
+  final bool showHeatmap;
   final VoidCallback? onDoubleTap;
   final ValueChanged<bool>? onDragChanged;
 
@@ -1478,6 +1484,8 @@ class _AirflowSimCanvas extends StatefulWidget {
     required this.lookAtZ,
     required this.resetNonce,
     required this.animating,
+    this.showParticles = true,
+    this.showHeatmap = true,
     this.onDoubleTap,
     this.onDragChanged,
   });
@@ -1548,6 +1556,8 @@ class _AirflowSimCanvasState extends State<_AirflowSimCanvas>
           time: _timeMs,
           gridCols: widget.gridCols,
           gridRows: widget.gridRows,
+          showVoxels: widget.showHeatmap,
+          showParticles: widget.showParticles,
         ),
         child: const SizedBox.expand(),
       ),

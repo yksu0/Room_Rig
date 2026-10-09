@@ -28,6 +28,7 @@ import '../widgets/rig_customizer/rig_room_items_drawer.dart';
 import '../widgets/rig_customizer/room_grid_painter.dart';
 import '../widgets/rig_customizer/room_orbit_3d_painter.dart';
 import '../widgets/room_model_scene.dart';
+import '../widgets/chrome/adaptive_panel.dart';
 
 enum _RigViewMode { twoD, threeD, model3D }
 enum _OptimizeGoal { balanced, airflow, lighting, ergonomics, spatial }
@@ -96,6 +97,28 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   bool _drag2dGestureStarted = false;
   static const _drag2dSlop = 10.0;
 
+  /// Adaptive supporting panes (compact sheet; expanded rails later).
+  CameraPreset? _pendingPreset;
+  bool _showMiniMap = false;
+  bool _showDimensions = false;
+  int _focusToken = 0;
+
+  ChromeViewMode _chromeForViewMode(_RigViewMode m) => switch (m) {
+        _RigViewMode.twoD => ChromeViewMode.edit,
+        _RigViewMode.threeD => ChromeViewMode.orbit,
+        _RigViewMode.model3D => ChromeViewMode.check,
+      };
+
+  void _applyChromeView(ChromeViewMode mode) {
+    setState(() {
+      _viewMode = switch (mode) {
+        ChromeViewMode.edit => _RigViewMode.twoD,
+        ChromeViewMode.orbit => _RigViewMode.threeD,
+        ChromeViewMode.check => _RigViewMode.model3D,
+      };
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -145,12 +168,50 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                             top: 4,
                             child: _buildFurnitureInfoCard(state, selectedFurniture),
                           ),
+                        if (_showDimensions && _viewMode == _RigViewMode.twoD) ...[
+                          Positioned(
+                            left: 16,
+                            bottom: 12,
+                            child: _DimensionsHint(room: state.currentRoomData),
+                          ),
+                          if (selectedFurniture != null && !state.selectedIsScanObject)
+                            Positioned(
+                              right: 16,
+                              bottom: 12,
+                              child: _SelectedItemSizeChip(item: selectedFurniture),
+                            ),
+                        ],
+                        if (state.hasApplyGhost)
+                          Positioned(
+                            top: _viewMode == _RigViewMode.model3D ? 40 : 56,
+                            left: 12,
+                            right: 12,
+                            child: _ApplyGhostBanner(
+                              onDismiss: state.clearApplyGhost,
+                            ),
+                          ),
+                        // Soft warning tint while an edit conflict is live.
+                        if (state.layoutConflicts.isNotEmpty &&
+                            (_dragItemId != null || _drag2dItemId != null))
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: AppColors.red.withValues(alpha: 0.55),
+                                    width: 2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(16),
+                                  color: AppColors.red.withValues(alpha: 0.06),
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
                   if (state.hasPendingPlacement) _buildPlacementBar(state),
                   if (selectedScanObject != null) _buildScanInfoCard(state, selectedScanObject),
-                  _buildOptimizationPanel(state),
                 ],
               ),
             ),
@@ -228,21 +289,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 ),
               ],
               const SizedBox(width: AppSpace.xs),
-              GestureDetector(
-                onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: const Text(
-                    'Items',
-                    style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w800, fontSize: 12),
-                  ),
-                ),
-              ),
+              _AddItemButton(onTap: _showAddItemSheet),
             ],
           ),
           if (state.layoutConflicts.isNotEmpty) ...[
@@ -254,35 +301,365 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             height: 44,
             child: Row(
               children: [
-                Expanded(flex: 5, child: _buildViewToggle()),
+                Expanded(
+                  child: _buildCompactViewChips(),
+                ),
                 const SizedBox(width: AppSpace.xs),
-                _InvasiveEditToggle(
-                  invasive: state.invasiveEdit,
-                  onChanged: state.setInvasiveEdit,
+                AdaptivePanelTriggers(
+                  controller: _adaptivePanelControllerFor(state),
+                  visible: const [
+                    ChromeRegion.view,
+                    ChromeRegion.tools,
+                    ChromeRegion.inspect,
+                  ],
                 ),
-                const SizedBox(width: 6),
-                _AddItemButton(onTap: _showAddItemSheet),
-                const SizedBox(width: 4),
-                _IconToolButton(
-                  icon: Icons.auto_awesome_rounded,
-                  tooltip: 'Auto-Rig',
-                  accent: true,
-                  onTap: () => _runAutoRig(context, state),
-                ),
-                if (kDebugMode) ...[
-                  const SizedBox(width: 2),
-                  _IconToolButton(
-                    icon: Icons.science_rounded,
-                    tooltip: 'Sample Room on Bench',
-                    onTap: () => _openSampleRoom(state),
-                  ),
-                ],
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  AdaptivePanelController _adaptivePanelControllerFor(AppState state) {
+    return AdaptivePanelController([
+      AdaptivePanelSpec(
+        region: ChromeRegion.view,
+        preferTall: true,
+        builder: (ctx) => _buildViewPanelBody(state),
+      ),
+      AdaptivePanelSpec(
+        region: ChromeRegion.tools,
+        preferTall: true,
+        builder: (ctx) => _buildToolsPanelBody(ctx, state),
+      ),
+      AdaptivePanelSpec(
+        region: ChromeRegion.inspect,
+        builder: (ctx) => _buildInspectPanelBody(ctx, state),
+      ),
+    ]);
+  }
+
+  Widget _buildCompactViewChips() {
+    final mode = _chromeForViewMode(_viewMode);
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          for (final m in const [
+            ChromeViewMode.edit,
+            ChromeViewMode.orbit,
+            ChromeViewMode.check,
+          ]) ...[
+            if (m != ChromeViewMode.edit) const SizedBox(width: 2),
+            Expanded(
+              child: _ViewModeChip(
+                label: m.label,
+                active: mode == m,
+                onTap: () => _applyChromeView(m),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewPanelBody(AppState state) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ChromeViewModeChips(
+          selected: _chromeForViewMode(_viewMode),
+          onChanged: (m) {
+            _applyChromeView(m);
+            Navigator.of(context).maybePop();
+          },
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'CAMERA PRESETS',
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.4,
+          ),
+        ),
+        const SizedBox(height: 8),
+        CameraPresetChips(
+          onSelect: (p) {
+            setState(() {
+              _pendingPreset = p;
+              _viewMode = _RigViewMode.model3D;
+            });
+            Navigator.of(context).maybePop();
+          },
+        ),
+        const SizedBox(height: 16),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Mini-map', style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
+          subtitle: const Text('Picture-in-picture floor plan', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+          value: _showMiniMap,
+          activeThumbColor: AppColors.cyan,
+          onChanged: (v) => setState(() => _showMiniMap = v),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.center_focus_strong_rounded, color: AppColors.cyan),
+          title: const Text('Focus selection', style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
+          subtitle: Text(
+            state.selectedFurniture == null ? 'Select an item first' : 'Orbit around ${state.selectedFurniture!.name}',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+          ),
+          onTap: state.selectedFurniture == null
+              ? null
+              : () {
+                  setState(() {
+                    _focusToken++;
+                    _viewMode = _RigViewMode.model3D;
+                  });
+                  Navigator.of(context).maybePop();
+                },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildToolsPanelBody(BuildContext ctx, AppState state) {
+    final selected = state.selectedFurniture;
+    final canEdit = selected != null && !state.selectedIsScanObject && state.canMoveFurniture(selected);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'EDIT',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.4),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _ToolActionChip(
+              label: 'Rotate −90°',
+              icon: Icons.rotate_left_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) _rotateSelected(state, selected, -90);
+              },
+            ),
+            _ToolActionChip(
+              label: 'Rotate +90°',
+              icon: Icons.rotate_right_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) _rotateSelected(state, selected, 90);
+              },
+            ),
+            _ToolActionChip(
+              label: 'Flip',
+              icon: Icons.flip_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) _rotateSelected(state, selected, 180);
+              },
+            ),
+            _ToolActionChip(
+              label: 'Duplicate',
+              icon: Icons.copy_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) state.duplicateFurniture(selected.id);
+              },
+            ),
+            _ToolActionChip(
+              label: 'Align wall',
+              icon: Icons.align_horizontal_left_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) _alignSelectedToNearestWall(state, selected);
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Dimensions', style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
+          subtitle: const Text('Show cm labels on the plan', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+          value: _showDimensions,
+          activeThumbColor: AppColors.cyan,
+          onChanged: (v) => setState(() => _showDimensions = v),
+        ),
+        const SizedBox(height: 8),
+        _InvasiveEditToggle(
+          invasive: state.invasiveEdit,
+          onChanged: state.setInvasiveEdit,
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'AUTO-RIG GOAL',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.4),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _GoalChip(
+              label: 'Balanced',
+              color: AppColors.cyan,
+              active: _optimizeGoal == _OptimizeGoal.balanced,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.balanced);
+                state.applyOptimizeGoalPreset('balanced');
+              },
+            ),
+            _GoalChip(
+              label: 'Airflow',
+              color: AppColors.airflowColor,
+              active: _optimizeGoal == _OptimizeGoal.airflow,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.airflow);
+                state.applyOptimizeGoalPreset('airflow');
+              },
+            ),
+            _GoalChip(
+              label: 'Lighting',
+              color: AppColors.lightingColor,
+              active: _optimizeGoal == _OptimizeGoal.lighting,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.lighting);
+                state.applyOptimizeGoalPreset('lighting');
+              },
+            ),
+            _GoalChip(
+              label: 'Ergonomics',
+              color: AppColors.ergonomicsColor,
+              active: _optimizeGoal == _OptimizeGoal.ergonomics,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.ergonomics);
+                state.applyOptimizeGoalPreset('ergonomics');
+              },
+            ),
+            _GoalChip(
+              label: 'Space',
+              color: AppColors.spatialColor,
+              active: _optimizeGoal == _OptimizeGoal.spatial,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.spatial);
+                state.applyOptimizeGoalPreset('spatial');
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(ctx).maybePop();
+                  _runAutoRig(context, state);
+                },
+                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                label: const Text('Run Auto-Rig'),
+              ),
+            ),
+            if (kDebugMode) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Sample on Bench',
+                onPressed: () {
+                  Navigator.of(ctx).maybePop();
+                  _openSampleRoom(state);
+                },
+                icon: const Icon(Icons.science_rounded, color: AppColors.amber),
+              ),
+            ],
+          ],
+        ),
+        if (state.lastOptimizeReasons.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          ...state.lastOptimizeReasons.take(2).map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(r, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildInspectPanelBody(BuildContext ctx, AppState state) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.list_alt_rounded, color: AppColors.cyan),
+          title: const Text('Room items', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+          subtitle: Text(
+            '${state.furniture.length} pieces',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+          onTap: () {
+            Navigator.of(ctx).maybePop();
+            _scaffoldKey.currentState?.openEndDrawer();
+          },
+        ),
+        if (state.layoutConflicts.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            '${state.layoutConflicts.length} layout warning(s)',
+            style: const TextStyle(color: AppColors.amber, fontWeight: FontWeight.w700, fontSize: 12),
+          ),
+          const SizedBox(height: 6),
+          ...state.layoutConflicts.take(4).map(
+            (c) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                c.message,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _alignSelectedToNearestWall(AppState state, FurnitureItem item) {
+    final room = state.currentRoomData;
+    final cx = item.gridX + item.width * 0.5;
+    final cy = item.gridY + item.height * 0.5;
+    final distLeft = cx;
+    final distRight = room.gridCols - cx;
+    final distTop = cy;
+    final distBottom = room.gridRows - cy;
+    final minD = [distLeft, distRight, distTop, distBottom].reduce((a, b) => a < b ? a : b);
+    double nx = item.gridX;
+    double ny = item.gridY;
+    if (minD == distLeft) {
+      nx = 0;
+    } else if (minD == distRight) {
+      nx = (room.gridCols - item.width).toDouble();
+    } else if (minD == distTop) {
+      ny = 0;
+    } else {
+      ny = (room.gridRows - item.height).toDouble();
+    }
+    state.moveFurniture(item.id, nx, ny);
   }
 
   Future<void> _runAutoRig(BuildContext context, AppState state) async {
@@ -362,45 +739,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         backgroundColor: AppColors.card,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  Widget _buildViewToggle() {
-    return Container(
-      height: 44,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _ViewModeChip(
-              label: '2D',
-              active: _viewMode == _RigViewMode.twoD,
-              onTap: () => setState(() => _viewMode = _RigViewMode.twoD),
-            ),
-          ),
-          const SizedBox(width: 3),
-          Expanded(
-            child: _ViewModeChip(
-              label: '3D',
-              active: _viewMode == _RigViewMode.threeD,
-              onTap: () => setState(() => _viewMode = _RigViewMode.threeD),
-            ),
-          ),
-          const SizedBox(width: 3),
-          Expanded(
-            child: _ViewModeChip(
-              label: 'Model',
-              active: _viewMode == _RigViewMode.model3D,
-              onTap: () => setState(() => _viewMode = _RigViewMode.model3D),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -730,15 +1068,29 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.lg),
-          child: RoomModelScene(
-            room: state.currentRoomData,
-            furniture: state.furniture,
-            selectedId: state.selectedIsScanObject
-                ? null
-                : state.selectedFurniture?.id,
-            yaw: _cameraYawRad,
-            pitch: _cameraPitchRad,
-            distance: _cameraDistance.clamp(4.0, 20.0),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              RoomModelScene(
+                room: state.currentRoomData,
+                furniture: state.furniture,
+                selectedId: state.selectedIsScanObject
+                    ? null
+                    : state.selectedFurniture?.id,
+                yaw: _cameraYawRad,
+                pitch: _cameraPitchRad,
+                distance: _cameraDistance.clamp(4.0, 20.0),
+                exploreChrome: ChromeViewMode.check,
+                pendingPreset: _pendingPreset,
+                showMiniMap: _showMiniMap,
+                focusToken: _focusToken,
+                onPresetApplied: () {
+                  if (_pendingPreset != null) {
+                    setState(() => _pendingPreset = null);
+                  }
+                },
+              ),
+            ],
           ),
         ),
       );
@@ -1913,110 +2265,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       );
   }
 
-  Widget _buildOptimizationPanel(AppState state) {
-    final weights = state.optimizeWeights;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'AUTO-RIG GOAL',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 2),
-          ),
-          const SizedBox(height: 6),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _GoalChip(
-                  label: 'Balanced',
-                  color: AppColors.cyan,
-                  active: _optimizeGoal == _OptimizeGoal.balanced,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.balanced);
-                    state.applyOptimizeGoalPreset('balanced');
-                  },
-                ),
-                const SizedBox(width: 8),
-                _GoalChip(
-                  label: 'Airflow',
-                  color: AppColors.airflowColor,
-                  active: _optimizeGoal == _OptimizeGoal.airflow,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.airflow);
-                    state.applyOptimizeGoalPreset('airflow');
-                  },
-                ),
-                const SizedBox(width: 8),
-                _GoalChip(
-                  label: 'Lighting',
-                  color: AppColors.lightingColor,
-                  active: _optimizeGoal == _OptimizeGoal.lighting,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.lighting);
-                    state.applyOptimizeGoalPreset('lighting');
-                  },
-                ),
-                const SizedBox(width: 8),
-                _GoalChip(
-                  label: 'Ergonomics',
-                  color: AppColors.ergonomicsColor,
-                  active: _optimizeGoal == _OptimizeGoal.ergonomics,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.ergonomics);
-                    state.applyOptimizeGoalPreset('ergonomics');
-                  },
-                ),
-                const SizedBox(width: 8),
-                _GoalChip(
-                  label: 'Space',
-                  color: AppColors.spatialColor,
-                  active: _optimizeGoal == _OptimizeGoal.spatial,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.spatial);
-                    state.applyOptimizeGoalPreset('spatial');
-                  },
-                ),
-              ],
-            ),
-          ),
-          if (state.lastOptimizeReasons.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            ...state.lastOptimizeReasons.take(2).map(
-              (r) => Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.check_circle_outline, size: 12, color: AppColors.green),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        r,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ] else ...[
-            const SizedBox(height: 4),
-            Text(
-              weights.dominantGoal == null
-                  ? 'Star button runs Auto-Rig for the goal above.'
-                  : 'Dominant ${weights.dominantGoal} path.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _buildPlacementBar(AppState state) {
     final blocked = state.selectedFurniture != null &&
         state.isPendingPlacement(state.selectedFurniture!.id) &&
@@ -2803,45 +3051,6 @@ class _AddItemButton extends StatelessWidget {
   }
 }
 
-class _IconToolButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  final bool accent;
-
-  const _IconToolButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-    this.accent = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            gradient: accent ? AppColors.accentGradient : null,
-            color: accent ? null : AppColors.card,
-            borderRadius: BorderRadius.circular(10),
-            border: accent ? null : Border.all(color: AppColors.border),
-          ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: accent ? Colors.white : AppColors.cyan,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _AddItemSheetBody extends StatefulWidget {
   final ScrollController scrollController;
   final void Function(RigCatalogEntry entry) onAddCatalog;
@@ -3209,6 +3418,144 @@ class _RotationButton extends StatelessWidget {
             height: 28,
             child: Icon(icon, size: 14, color: AppColors.textSecondary),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolActionChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _ToolActionChip({
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: GestureDetector(
+        onTap: enabled ? onTap : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: AppColors.cyan),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ApplyGhostBanner extends StatelessWidget {
+  final VoidCallback onDismiss;
+  const _ApplyGhostBanner({required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.green.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.compare_rounded, size: 18, color: AppColors.green),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Before/after · layout just applied from Bench',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: onDismiss,
+              icon: const Icon(Icons.close_rounded, size: 16, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DimensionsHint extends StatelessWidget {
+  final RoomData room;
+  const _DimensionsHint({required this.room});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = RoomScale.metersFromCells(room.gridCols);
+    final d = RoomScale.metersFromCells(room.gridRows);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(
+        '${RoomScale.formatMeters(w)} × ${RoomScale.formatMeters(d)} · cell ${(RoomScale.metersFromCells(1) * 100).round()} cm',
+        style: const TextStyle(
+          color: AppColors.cyan,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectedItemSizeChip extends StatelessWidget {
+  final FurnitureItem item;
+  const _SelectedItemSizeChip({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final wCm = (RoomScale.metersFromCells(item.width) * 100).round();
+    final dCm = (RoomScale.metersFromCells(item.height) * 100).round();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.cyan.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        '${item.name} · $wCm×$dCm cm',
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

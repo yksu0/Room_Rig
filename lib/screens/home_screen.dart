@@ -967,21 +967,15 @@ class _HomeScreenState extends State<HomeScreen> {
             final narrow = constraints.maxWidth < 360;
             final actions = [
               _ActionButton(
-                svgString: RoomSvg.scan,
-                label: 'Measure room',
-                color: AppColors.cyan,
-                onTap: () => context.read<AppState>().setTab(1),
-              ),
-              _ActionButton(
                 svgString: RoomSvg.home,
                 label: 'Create',
-                color: AppColors.purple,
+                color: AppColors.amber,
                 onTap: () => _showCreateRoomSheet(context, state),
               ),
               _ActionButton(
                 svgString: RoomSvg.tune,
                 label: 'Customize',
-                color: AppColors.purple,
+                color: AppColors.cyan,
                 onTap: () => context.read<AppState>().setTab(2),
               ),
               _ActionButton(
@@ -989,6 +983,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'Bench',
                 color: AppColors.amber,
                 onTap: () => context.read<AppState>().setTab(3),
+              ),
+              _ActionButton(
+                svgString: RoomSvg.scan,
+                label: 'Scan (opt.)',
+                color: AppColors.textMuted,
+                onTap: () => context.read<AppState>().setTab(1),
               ),
             ];
             if (narrow) {
@@ -1347,7 +1347,7 @@ class _GettingStartedBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Start a room',
+                      'Start from a template',
                       style: TextStyle(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w800,
@@ -1356,7 +1356,7 @@ class _GettingStartedBanner extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpace.xxs),
                     Text(
-                      'Demo needs no camera. Scan measures size, then detects items, then Rig.',
+                      'Create or Demo → Rig → Bench. Scores stay ROUGH EST. until you run Bench. Scan is optional.',
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 13,
@@ -1374,14 +1374,6 @@ class _GettingStartedBanner extends StatelessWidget {
             children: [
               Expanded(
                 child: _StartChip(
-                  label: 'Demo',
-                  color: AppColors.green,
-                  onTap: onDemo,
-                ),
-              ),
-              const SizedBox(width: AppSpace.xs),
-              Expanded(
-                child: _StartChip(
                   label: 'Create',
                   color: AppColors.amber,
                   onTap: onCreate,
@@ -1390,8 +1382,16 @@ class _GettingStartedBanner extends StatelessWidget {
               const SizedBox(width: AppSpace.xs),
               Expanded(
                 child: _StartChip(
-                  label: 'Scan',
-                  color: AppColors.cyan,
+                  label: 'Demo',
+                  color: AppColors.green,
+                  onTap: onDemo,
+                ),
+              ),
+              const SizedBox(width: AppSpace.xs),
+              Expanded(
+                child: _StartChip(
+                  label: 'Scan (opt.)',
+                  color: AppColors.textMuted,
                   onTap: onScan,
                 ),
               ),

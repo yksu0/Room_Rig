@@ -23,8 +23,11 @@
 </head>
 <body>
   <canvas id="c"></canvas>
-  <div id="hud">Drag orbit · pinch zoom</div>
+  <div id="hud">1-finger orbit · 2-finger pan · pinch zoom</div>
   <div id="err"></div>
+  <div id="minimap" style="display:none;position:absolute;right:10px;bottom:10px;z-index:2;width:108px;height:86px;border-radius:10px;border:1px solid #2C3348;background:rgba(17,20,28,0.82);overflow:hidden;pointer-events:none;">
+    <canvas id="mm" width="108" height="86"></canvas>
+  </div>
   <script src="vendor/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script>
@@ -55,6 +58,22 @@
   let lookAt = new THREE.Vector3(2.1, 0.9, 1.8);
   let roomW = 4.2, roomD = 3.6, roomH = 2.7;
   let pendingOpenings = [];
+  let exploreMode = 'orbit';
+  let showMiniMap = false;
+  let lastItems = [];
+  // Default works for staged temp dirs (Android) and web. Flutter may override.
+  let assetBase = '../gltf/';
+
+  function resolveAsset(url) {
+    if (!url) return url;
+    if (/^(https?:|file:|blob:)/i.test(url)) return url;
+    if (url.indexOf('../gltf/') === 0) return assetBase + url.slice('../gltf/'.length);
+    if (url.indexOf('gltf/') === 0) return assetBase + url.slice('gltf/'.length);
+    return url;
+  }
+  const mmCanvas = document.getElementById('mm');
+  const mmCtx = mmCanvas ? mmCanvas.getContext('2d') : null;
+  const miniMapEl = document.getElementById('minimap');
 
   const loader = new THREE.GLTFLoader();
   const gltfCache = new Map();
@@ -379,6 +398,7 @@
   }
 
   function loadGltf(url) {
+    url = resolveAsset(url);
     if (gltfCache.has(url)) return gltfCache.get(url);
     const p = new Promise((resolve, reject) => {
       loader.load(url, (g) => resolve(g.scene), undefined, reject);
@@ -524,6 +544,19 @@
     return measuredCuts;
   }
 
+  // Pitch: negative = below lookAt looking up (ceiling); ~1.45 = top-down.
+  const PITCH_MIN = -0.85;
+  const PITCH_MAX = 1.45;
+  const DIST_MIN = 2.2;
+  const DIST_MAX = 28;
+
+  function clampLookAt() {
+    const m = 0.15;
+    lookAt.x = Math.max(m, Math.min(roomW - m, lookAt.x));
+    lookAt.z = Math.max(m, Math.min(roomD - m, lookAt.z));
+    lookAt.y = Math.max(0.05, Math.min(roomH + 0.8, lookAt.y));
+  }
+
   function updateCamera() {
     const cp = Math.cos(pitch), sp = Math.sin(pitch);
     const cy = Math.cos(yaw), sy = Math.sin(yaw);
@@ -535,6 +568,80 @@
     camera.lookAt(lookAt);
   }
 
+  function applyPreset(name) {
+    exploreMode = 'orbit';
+    const cx = roomW * 0.5, cz = roomD * 0.5;
+    lookAt.set(cx, 0.9, cz);
+    if (name === 'birdseye') {
+      yaw = 0; pitch = 1.15; distance = Math.max(roomW, roomD) * 1.35 + 2;
+      lookAt.y = 0.2;
+    } else if (name === 'cornerA') {
+      yaw = 0.7; pitch = 0.38; distance = Math.max(roomW, roomD) * 1.1 + 3;
+    } else if (name === 'cornerB') {
+      yaw = -2.3; pitch = 0.38; distance = Math.max(roomW, roomD) * 1.1 + 3;
+    } else if (name === 'eyeLevel') {
+      yaw = 0.4; pitch = 0.18; distance = Math.max(roomW, roomD) * 0.85 + 2.2;
+      lookAt.y = 1.35;
+    } else if (name === 'door') {
+      lookAt.set(cx, 1.2, roomD * 0.45);
+      yaw = 0; pitch = 0.22; distance = Math.max(roomW, roomD) * 0.7 + 1.8;
+    } else if (name === 'ceiling') {
+      // Low in the room, looking up at the ceiling.
+      lookAt.set(cx, roomH * 0.92, cz);
+      yaw = 0.55; pitch = -0.55; distance = Math.max(roomW, roomD) * 0.55 + 1.6;
+    }
+    clampLookAt();
+    hud.textContent = '1-finger orbit · 2-finger pan · pinch zoom';
+  }
+
+  function focusItem(id) {
+    const it = lastItems.find((x) => x.id === id);
+    if (!it) return;
+    lookAt.set(+it.x || 0, (+it.y || 0) + (+it.h || 0.8) * 0.45, +it.z || 0);
+    distance = Math.max(2.8, Math.min(10, Math.max(+it.w || 1, +it.d || 1) * 3.2 + 2.2));
+    pitch = 0.42;
+    exploreMode = 'orbit';
+    clampLookAt();
+    hud.textContent = 'Focused · 1-finger orbit · 2-finger pan';
+  }
+
+  function setExploreMode(mode) {
+    exploreMode = 'orbit';
+    hud.textContent = '1-finger orbit · 2-finger pan · pinch zoom';
+  }
+
+  function setMiniMap(on) {
+    showMiniMap = !!on;
+    if (miniMapEl) miniMapEl.style.display = showMiniMap ? 'block' : 'none';
+  }
+
+  function drawMiniMap() {
+    if (!showMiniMap || !mmCtx) return;
+    const w = mmCanvas.width, h = mmCanvas.height;
+    mmCtx.clearRect(0, 0, w, h);
+    mmCtx.fillStyle = '#1B2030';
+    mmCtx.fillRect(0, 0, w, h);
+    const pad = 8;
+    const sx = (w - pad * 2) / Math.max(roomW, 0.1);
+    const sz = (h - pad * 2) / Math.max(roomD, 0.1);
+    const s = Math.min(sx, sz);
+    const ox = (w - roomW * s) * 0.5;
+    const oz = (h - roomD * s) * 0.5;
+    mmCtx.strokeStyle = '#2C3348';
+    mmCtx.strokeRect(ox, oz, roomW * s, roomD * s);
+    for (const it of lastItems) {
+      const iw = Math.max(0.15, +it.w || 0.4) * s;
+      const id = Math.max(0.15, +it.d || 0.4) * s;
+      mmCtx.fillStyle = it.selected ? '#00E5FF' : '#5A6280';
+      mmCtx.fillRect(ox + (+it.x - (+it.w || 0.4) * 0.5) * s, oz + (+it.z - (+it.d || 0.4) * 0.5) * s, iw, id);
+    }
+    const cam = camera.position;
+    mmCtx.fillStyle = '#2EE68A';
+    mmCtx.beginPath();
+    mmCtx.arc(ox + cam.x * s, oz + cam.z * s, 3.5, 0, Math.PI * 2);
+    mmCtx.fill();
+  }
+
   function resize() {
     const w = canvas.clientWidth || window.innerWidth;
     const h = canvas.clientHeight || window.innerHeight;
@@ -543,39 +650,84 @@
     camera.updateProjectionMatrix();
   }
 
-  let dragging = false, lastX = 0, lastY = 0;
-  let pinchStart = 0, distStart = 0;
+  // Multi-touch: 1 pointer = orbit, 2+ = pan + pinch zoom.
+  const activePtrs = new Map();
+  let gesture = null; // 'orbit' | 'panzoom'
+  let lastX = 0, lastY = 0;
+  let lastMidX = 0, lastMidY = 0, lastPinch = 0;
+
+  function ptrList() { return Array.from(activePtrs.values()); }
+
+  function beginGesture() {
+    const pts = ptrList();
+    if (pts.length === 1) {
+      gesture = 'orbit';
+      lastX = pts[0].x; lastY = pts[0].y;
+    } else if (pts.length >= 2) {
+      gesture = 'panzoom';
+      lastMidX = (pts[0].x + pts[1].x) * 0.5;
+      lastMidY = (pts[0].y + pts[1].y) * 0.5;
+      lastPinch = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+    } else {
+      gesture = null;
+    }
+  }
+
+  const _panRight = new THREE.Vector3();
+  const _panUp = new THREE.Vector3();
+  function panLookAt(dx, dy) {
+    // Screen-space pan (like OrbitControls): vertical drag raises the pivot
+    // so you can slide up toward the ceiling without leaving orbit mode.
+    updateCamera();
+    const h = canvas.clientHeight || 1;
+    const panScale = distance * Math.tan((camera.fov * Math.PI / 180) * 0.5) * 2 / h;
+    _panRight.setFromMatrixColumn(camera.matrixWorld, 0);
+    _panUp.setFromMatrixColumn(camera.matrixWorld, 1);
+    lookAt.addScaledVector(_panRight, -dx * panScale);
+    lookAt.addScaledVector(_panUp, dy * panScale);
+    clampLookAt();
+  }
+
   canvas.addEventListener('pointerdown', (e) => {
-    dragging = true; lastX = e.clientX; lastY = e.clientY;
-    canvas.setPointerCapture(e.pointerId);
+    activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    beginGesture();
   });
   canvas.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
-    const dx = e.clientX - lastX, dy = e.clientY - lastY;
-    lastX = e.clientX; lastY = e.clientY;
-    yaw -= dx * 0.008;
-    pitch = Math.max(0.12, Math.min(1.25, pitch + dy * 0.006));
+    if (!activePtrs.has(e.pointerId)) return;
+    activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pts = ptrList();
+    if (pts.length === 1 && gesture === 'orbit') {
+      const dx = pts[0].x - lastX, dy = pts[0].y - lastY;
+      lastX = pts[0].x; lastY = pts[0].y;
+      yaw -= dx * 0.008;
+      pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch + dy * 0.006));
+    } else if (pts.length >= 2) {
+      if (gesture !== 'panzoom') beginGesture();
+      const midX = (pts[0].x + pts[1].x) * 0.5;
+      const midY = (pts[0].y + pts[1].y) * 0.5;
+      const pinch = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      const mdx = midX - lastMidX, mdy = midY - lastMidY;
+      panLookAt(mdx, mdy);
+      if (lastPinch > 0) {
+        distance = Math.max(DIST_MIN, Math.min(DIST_MAX, distance * (lastPinch / pinch)));
+      }
+      lastMidX = midX; lastMidY = midY; lastPinch = pinch;
+    }
   });
-  canvas.addEventListener('pointerup', () => { dragging = false; });
-  canvas.addEventListener('pointercancel', () => { dragging = false; });
+  function endPointer(e) {
+    activePtrs.delete(e.pointerId);
+    beginGesture();
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('pointerout', (e) => {
+    if (e.pointerType === 'touch') endPointer(e);
+  });
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    distance = Math.max(3.5, Math.min(22, distance + e.deltaY * 0.01));
+    distance = Math.max(DIST_MIN, Math.min(DIST_MAX, distance + e.deltaY * 0.01));
   }, { passive: false });
-  canvas.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 2) {
-      const a = e.touches[0], b = e.touches[1];
-      pinchStart = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-      distStart = distance;
-    }
-  }, { passive: true });
-  canvas.addEventListener('touchmove', (e) => {
-    if (e.touches.length === 2) {
-      const a = e.touches[0], b = e.touches[1];
-      const pin = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-      if (pinchStart > 0) distance = Math.max(3.5, Math.min(22, distStart * (pinchStart / pin)));
-    }
-  }, { passive: true });
 
   async function applyScene(payload) {
     try {
@@ -588,6 +740,12 @@
       if (data.yaw != null) yaw = +data.yaw;
       if (data.pitch != null) pitch = +data.pitch;
       if (data.distance != null) distance = +data.distance;
+      if (data.assetBase) assetBase = data.assetBase;
+      lastItems = data.items || [];
+      if (data.exploreMode) setExploreMode(data.exploreMode);
+      if (data.preset) applyPreset(data.preset);
+      if (data.focusId) focusItem(data.focusId);
+      if (data.miniMap != null) setMiniMap(!!data.miniMap);
       const measured = await setFurniture(data.items || []);
       // Second pass: shrink/grow shell cuts to the fitted GLB bounds.
       if (measured && measured.length) {
@@ -609,13 +767,17 @@
   }
 
   window.setRoomScene = applyScene;
+  window.applyCameraPreset = applyPreset;
+  window.setExploreMode = setExploreMode;
+  window.focusItem = focusItem;
+  window.setMiniMap = setMiniMap;
   window.addEventListener('message', (ev) => {
     if (ev && ev.data) applyScene(ev.data);
   });
 
   Promise.all([
-    loadTex('../gltf/wood_floor_diff.jpg', 3, 3),
-    loadTex('../gltf/plaster_wall_diff.jpg', 2.2, 1.4),
+    loadTex(resolveAsset('../gltf/wood_floor_diff.jpg'), 3, 3),
+    loadTex(resolveAsset('../gltf/plaster_wall_diff.jpg'), 2.2, 1.4),
   ]).then(([f, w]) => {
     floorMap = f;
     wallMap = w;
@@ -630,6 +792,7 @@
   function frame() {
     resize();
     updateCamera();
+    drawMiniMap();
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }

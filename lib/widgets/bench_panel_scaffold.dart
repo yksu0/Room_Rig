@@ -5,6 +5,7 @@ import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
 import 'benchmark_validation_card.dart';
+import 'chrome/bench_results_chrome.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
 import 'score_ring.dart';
@@ -453,12 +454,15 @@ class BenchScoreRingSpec {
   });
 }
 
-/// Results comparison header with trophy, badge, score rings, and validation.
+/// Results comparison: verdict-first, legend, rings, expandable validation.
 class BenchResultsCard extends StatelessWidget {
   final String title;
   final BenchmarkValidation validation;
   final List<BenchScoreRingSpec> rings;
   final String summaryText;
+  final Color? accentColor;
+  final List<String> whyReasons;
+  final VoidCallback? onOpenWhySheet;
 
   const BenchResultsCard({
     super.key,
@@ -466,52 +470,78 @@ class BenchResultsCard extends StatelessWidget {
     required this.validation,
     required this.rings,
     required this.summaryText,
+    this.accentColor,
+    this.whyReasons = const [],
+    this.onOpenWhySheet,
   });
 
   @override
   Widget build(BuildContext context) {
+    final accent = accentColor ?? AppColors.cyan;
     return GlassCard(
       borderColor: BenchResultBadge.colorFor(validation.verdict).withValues(alpha: 0.4),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          BenchVerdictHeader(
+            verdict: summaryText,
+            detail: title,
+            accent: accent,
             children: [
-              SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
+              const BenchLegend(caption: 'Score scale'),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  BenchResultBadge(validation: validation),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: rings
+                    .map(
+                      (r) => ScoreRing(
+                        score: r.score,
+                        size: r.size,
+                        color: r.color,
+                        label: r.label,
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 14),
+              BenchmarkValidationCard(validation: validation),
+              if (whyReasons.isNotEmpty || onOpenWhySheet != null) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: onOpenWhySheet ??
+                        () => showWhyScoreSheet(
+                              context,
+                              title: 'Why this score',
+                              reasons: whyReasons,
+                              accent: accent,
+                            ),
+                    icon: Icon(Icons.help_outline_rounded, size: 16, color: accent),
+                    label: Text('Why this score', style: TextStyle(color: accent)),
                   ),
                 ),
-              ),
-              BenchResultBadge(validation: validation),
+              ],
             ],
           ),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: rings
-                .map(
-                  (r) => ScoreRing(
-                    score: r.score,
-                    size: r.size,
-                    color: r.color,
-                    label: r.label,
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            summaryText,
-            style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13),
-          ),
-          const SizedBox(height: 14),
-          BenchmarkValidationCard(validation: validation),
         ],
       ),
     );

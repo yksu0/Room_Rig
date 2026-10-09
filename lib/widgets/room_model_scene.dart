@@ -1,14 +1,18 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
 import '../models/surface_mount.dart';
 import '../services/gltf_catalog.dart';
+import '../services/scene_asset_stage.dart';
 import '../theme/app_theme.dart';
+import 'chrome/adaptive_panel.dart';
 import 'room_model_scene_stub.dart'
     if (dart.library.html) 'room_model_scene_web.dart' as platform;
 
@@ -23,6 +27,11 @@ class RoomModelScene extends StatefulWidget {
   final double? yaw;
   final double? pitch;
   final double? distance;
+  final ChromeViewMode exploreChrome;
+  final CameraPreset? pendingPreset;
+  final bool showMiniMap;
+  final int focusToken;
+  final VoidCallback? onPresetApplied;
 
   const RoomModelScene({
     super.key,
@@ -32,18 +41,25 @@ class RoomModelScene extends StatefulWidget {
     this.yaw,
     this.pitch,
     this.distance,
+    this.exploreChrome = ChromeViewMode.check,
+    this.pendingPreset,
+    this.showMiniMap = false,
+    this.focusToken = 0,
+    this.onPresetApplied,
   });
 
   @override
-  State<RoomModelScene> createState() => _RoomModelSceneState();
+  State<RoomModelScene> createState() => RoomModelSceneState();
 }
 
-class _RoomModelSceneState extends State<RoomModelScene> {
+class RoomModelSceneState extends State<RoomModelScene> {
   WebViewController? _controller;
   bool _ready = false;
   bool _failed = false;
   String? _error;
   bool _webRegistered = false;
+  CameraPreset? _lastPreset;
+  int _lastFocusToken = 0;
 
   @override
   void initState() {
@@ -87,6 +103,11 @@ class _RoomModelSceneState extends State<RoomModelScene> {
             _pushScene();
           },
           onWebResourceError: (err) {
+            // Subresource misses (GLB/texture) must not blank the whole Model view.
+            if (err.isForMainFrame != true) {
+              debugPrint('Model asset error: ${err.description} ${err.url}');
+              return;
+            }
             if (!mounted) return;
             setState(() {
               _failed = true;
@@ -97,7 +118,23 @@ class _RoomModelSceneState extends State<RoomModelScene> {
       );
 
     try {
-      await controller.loadFlutterAsset('assets/scene/room_viewer.html');
+      if (controller.platform is AndroidWebViewController) {
+        await (controller.platform as AndroidWebViewController)
+            .setAllowFileAccess(true);
+      }
+
+      // Android: localhost HTTP so Three.js can fetch ../gltf/*.glb
+      // (file:// XHR is blocked with net::ERR_FAILED).
+      final stagedUrl = (!kIsWeb &&
+              defaultTargetPlatform == TargetPlatform.android)
+          ? await SceneAssetStage.ensureViewerHtml()
+          : null;
+
+      if (stagedUrl != null) {
+        await controller.loadRequest(Uri.parse(stagedUrl));
+      } else {
+        await controller.loadFlutterAsset('assets/scene/room_viewer.html');
+      }
       if (!mounted) return;
       setState(() => _controller = controller);
     } catch (e) {
@@ -117,7 +154,11 @@ class _RoomModelSceneState extends State<RoomModelScene> {
         oldWidget.selectedId != widget.selectedId ||
         oldWidget.yaw != widget.yaw ||
         oldWidget.pitch != widget.pitch ||
-        oldWidget.distance != widget.distance) {
+        oldWidget.distance != widget.distance ||
+        oldWidget.exploreChrome != widget.exploreChrome ||
+        oldWidget.showMiniMap != widget.showMiniMap ||
+        oldWidget.pendingPreset != widget.pendingPreset ||
+        oldWidget.focusToken != widget.focusToken) {
       _pushScene();
     }
   }
@@ -165,7 +206,6 @@ class _RoomModelSceneState extends State<RoomModelScene> {
         final span = mount.span!;
         final alongIsX = span.inwardZ.abs() > 0.5;
         final alongCell = alongIsX ? cellW : cellD;
-        // Span endpoints are in grid cells; convert to metres along the wall.
         final a0g = alongIsX
             ? (span.x0 < span.x1 ? span.x0 : span.x1)
             : (span.z0 < span.z1 ? span.z0 : span.z1);
@@ -175,7 +215,6 @@ class _RoomModelSceneState extends State<RoomModelScene> {
         var along0 = a0g * alongCell;
         var along1 = a1g * alongCell;
         final footprintAlong = (alongIsX ? f.width : f.height) * alongCell;
-        // Prefer catalog clear size so Kenney wall-kit meshes / cuts match.
         final clearAlong = profile.clearWidthMeters ?? footprintAlong;
         final midAlong = (along0 + along1) * 0.5;
         final half = clearAlong * 0.5;
@@ -185,7 +224,6 @@ class _RoomModelSceneState extends State<RoomModelScene> {
 
         final midX = (span.x0 + span.x1) * 0.5 * cellW;
         final midZ = (span.z0 + span.z1) * 0.5 * cellD;
-        // Through openings sit in the wall plane; niches protrude slightly in.
         final insetM = profile.wallCut == WallCutKind.through
             ? 0.04
             : mount.protrusion * (alongIsX ? cellD : cellW) * 0.28;
@@ -208,7 +246,6 @@ class _RoomModelSceneState extends State<RoomModelScene> {
           wallName = _wallName(span.wall);
           final pad = profile.wallCutPadMeters;
           final clearH = profile.openingHeightMeters;
-          // Anchor cut to mount bottom; height from catalog (not oversized band).
           final y0 = mount.bottomY;
           final y1 = (y0 + clearH).clamp(y0 + 0.1, 3.2);
           openings.add({
@@ -273,7 +310,7 @@ class _RoomModelSceneState extends State<RoomModelScene> {
       };
     }).toList();
 
-    return {
+    final payload = <String, dynamic>{
       'roomW': roomW,
       'roomD': roomD,
       'roomH': widget.room.heightMeters > 0
@@ -281,27 +318,89 @@ class _RoomModelSceneState extends State<RoomModelScene> {
           : RoomScale.defaultHeightMeters,
       'items': items,
       'openings': openings,
+      'assetBase': GltfCatalog.sceneAssetBase,
+      'exploreMode': 'orbit',
+      'miniMap': widget.showMiniMap,
       if (widget.yaw != null) 'yaw': widget.yaw,
       if (widget.pitch != null) 'pitch': widget.pitch,
       if (widget.distance != null) 'distance': widget.distance,
     };
+
+    final preset = widget.pendingPreset;
+    if (preset != null && preset != _lastPreset) {
+      payload['preset'] = switch (preset) {
+        CameraPreset.birdseye => 'birdseye',
+        CameraPreset.cornerA => 'cornerA',
+        CameraPreset.cornerB => 'cornerB',
+        CameraPreset.eyeLevel => 'eyeLevel',
+        CameraPreset.door => 'door',
+        CameraPreset.ceiling => 'ceiling',
+      };
+    }
+
+    if (widget.focusToken != _lastFocusToken &&
+        widget.selectedId != null &&
+        widget.selectedId!.isNotEmpty) {
+      payload['focusId'] = widget.selectedId;
+    }
+
+    return payload;
+  }
+
+  Future<void> _runJs(String code) async {
+    if (kIsWeb) return;
+    final c = _controller;
+    if (c == null || !_ready) return;
+    try {
+      await c.runJavaScript(code);
+    } catch (e) {
+      debugPrint('RoomModelScene js failed: $e');
+    }
   }
 
   Future<void> _pushScene() async {
     if (!_ready) return;
     final payload = _scenePayload();
+    final preset = widget.pendingPreset;
+    final focusToken = widget.focusToken;
+
     if (kIsWeb) {
       platform.pushRoomModelSceneWeb(payload);
-      return;
+    } else {
+      final c = _controller;
+      if (c == null) return;
+      final json = jsonEncode(payload);
+      try {
+        await c.runJavaScript('window.setRoomScene($json);');
+      } catch (e) {
+        debugPrint('RoomModelScene push failed: $e');
+      }
     }
-    final c = _controller;
-    if (c == null) return;
-    final json = jsonEncode(payload);
-    try {
-      await c.runJavaScript('window.setRoomScene($json);');
-    } catch (e) {
-      debugPrint('RoomModelScene push failed: $e');
+
+    if (preset != null && preset != _lastPreset) {
+      _lastPreset = preset;
+      widget.onPresetApplied?.call();
     }
+    if (focusToken != _lastFocusToken) {
+      _lastFocusToken = focusToken;
+    }
+  }
+
+  Future<void> applyPreset(CameraPreset preset) => _runJs(
+        "window.applyCameraPreset('${switch (preset) {
+          CameraPreset.birdseye => 'birdseye',
+          CameraPreset.cornerA => 'cornerA',
+          CameraPreset.cornerB => 'cornerB',
+          CameraPreset.eyeLevel => 'eyeLevel',
+          CameraPreset.door => 'door',
+          CameraPreset.ceiling => 'ceiling',
+        }}');",
+      );
+
+  Future<void> focusSelected() async {
+    final id = widget.selectedId;
+    if (id == null) return;
+    await _runJs("window.focusItem(${jsonEncode(id)});");
   }
 
   @override
@@ -325,7 +424,16 @@ class _RoomModelSceneState extends State<RoomModelScene> {
             : const SizedBox.shrink())
         : _controller == null
             ? null
-            : WebViewWidget(controller: _controller!);
+            : WebViewWidget(
+                controller: _controller!,
+                // Let multi-touch (pinch / two-finger pan) reach the WebView
+                // instead of competing with Flutter scroll arenas.
+                gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                  Factory<OneSequenceGestureRecognizer>(
+                    EagerGestureRecognizer.new,
+                  ),
+                },
+              );
 
     if (sceneChild == null) {
       return const ColoredBox(
@@ -335,6 +443,12 @@ class _RoomModelSceneState extends State<RoomModelScene> {
         ),
       );
     }
+
+    final modeLabel = switch (widget.exploreChrome) {
+      ChromeViewMode.orbit => 'ORBIT · 1-finger · pinch',
+      ChromeViewMode.check => 'MODEL · exterior · mesh sims',
+      ChromeViewMode.edit => 'MODEL',
+    };
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppRadius.md),
@@ -352,9 +466,9 @@ class _RoomModelSceneState extends State<RoomModelScene> {
                 borderRadius: BorderRadius.circular(AppRadius.sm),
                 border: Border.all(color: AppColors.border),
               ),
-              child: const Text(
-                'MODEL · exterior · mesh sims',
-                style: TextStyle(
+              child: Text(
+                modeLabel,
+                style: const TextStyle(
                   color: AppColors.cyan,
                   fontSize: 10,
                   fontWeight: FontWeight.w800,

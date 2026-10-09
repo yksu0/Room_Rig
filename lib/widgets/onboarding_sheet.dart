@@ -18,32 +18,32 @@ class OnboardingSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final steps = [
       (
-        RoomSvg.tune,
-        'Start from a preset (recommended)',
-        'Use Demo on Hub or load Gaming Setup — no camera needed for a full professor walkthrough.',
+        RoomSvg.home,
+        'Start from a template',
+        'Create a room or run Demo — no camera required. This is the golden path.',
         AppColors.green,
         0,
       ),
       (
-        RoomSvg.scan,
-        'Scan is optional',
-        'Scan can seed a layout (approximate). If the camera struggles, skip it and stay on Rig → Bench.',
-        AppColors.cyan,
-        1,
-      ),
-      (
         RoomSvg.tune,
         'Arrange in Rig',
-        'Drag items in 2D/3D. Collision, undo, and Place ghosts keep edits safe.',
-        AppColors.purple,
+        'Edit · Orbit · Check. Tools and Inspect open as adaptive panels so the canvas stays clear.',
+        AppColors.cyan,
         2,
       ),
       (
         RoomSvg.speedometer,
         'Bench & Apply',
-        'Simulate My Room → Improved, then Apply. Hub flips to ${HubScoreLabels.benchOk}. Rig edits show ${HubScoreLabels.roughEst} until you Apply again.',
+        'Simulate My Room → Improved, then Apply. Hub flips to ${HubScoreLabels.benchOk}. Edits show ${HubScoreLabels.roughEst} until Bench again.',
         AppColors.amber,
         3,
+      ),
+      (
+        RoomSvg.scan,
+        'Scan stays optional',
+        'Scan can seed size later. Skip it anytime and stay on Create → Rig → Bench.',
+        AppColors.textMuted,
+        1,
       ),
     ];
 

@@ -294,9 +294,14 @@ class GltfCatalog {
   static double defaultHeightMeters(String iconName) =>
       profileFor(iconName).heightMeters;
 
+  /// Base URL for textures / GLBs inside the Model WebView.
+  /// Android stages assets to a real temp folder so `../gltf/` XHR works.
+  static String get sceneAssetBase => '../gltf/';
+
   static String? sceneUrlForIcon(String iconName) {
     final asset = assetForIcon(iconName);
     if (asset == null) return null;
-    return '../gltf/${asset.replaceFirst('assets/gltf/', '')}';
+    final rel = asset.replaceFirst('assets/gltf/', '');
+    return '$sceneAssetBase$rel';
   }
 }

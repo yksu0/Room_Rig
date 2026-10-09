@@ -2138,6 +2138,24 @@ class AppState extends ChangeNotifier {
   /// in. The Bench now derives its layouts from this furniture, so applying one
   /// is a rearrange of their own room — it must not swap their preset back to
   /// the gaming setup or throw away a completed scan.
+  /// Previous furniture after Bench Apply — Rig shows a short before/after ghost.
+  List<FurnitureItem>? _applyGhostBefore;
+  DateTime? _applyGhostUntil;
+  List<FurnitureItem>? get applyGhostBefore => _applyGhostBefore;
+  bool get hasApplyGhost {
+    final until = _applyGhostUntil;
+    return _applyGhostBefore != null &&
+        until != null &&
+        DateTime.now().isBefore(until);
+  }
+
+  void clearApplyGhost() {
+    if (_applyGhostBefore == null && _applyGhostUntil == null) return;
+    _applyGhostBefore = null;
+    _applyGhostUntil = null;
+    notifyListeners();
+  }
+
   void applyFurnitureLayout(
     List<FurnitureItem> items, {
     bool markOptimized = false,
@@ -2149,6 +2167,11 @@ class AppState extends ChangeNotifier {
     // Clear pending Place state; the incoming layout replaces the ghost entirely.
     cancelPendingPlacement(notify: false);
     _pushUndoCheckpoint();
+
+    if (markOptimized) {
+      _applyGhostBefore = _cloneFurniture(committedFurniture);
+      _applyGhostUntil = DateTime.now().add(const Duration(seconds: 10));
+    }
 
     // Snapshot BEFORE swap so Hub Score Delta compares sim-to-sim, not estimate-to-sim.
     final beforeAir = markOptimized ? AirflowOptimizer.evaluate(committedFurniture) : null;
