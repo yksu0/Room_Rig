@@ -6,6 +6,7 @@
 // (see AirflowSimulator._buildBoxes and LightingSimulator._buildLights) so the
 // Rig can never draw a wall AC in a spot the physics treats as floor.
 import 'dart:math' as math;
+import '../services/gltf_catalog.dart';
 import 'room_model.dart';
 
 enum MountSurface { floor, wall, ceiling, desk }
@@ -87,14 +88,15 @@ class SurfaceMounts {
   // Keep bands aligned with GltfCatalog clear opening heights.
   static const windowBottom = 0.95;
   static const windowTop = 2.05;
-  static const doorTop = 1.92;
+  static double get doorTop => GltfCatalog.profileFor('door').openingHeightMeters;
   // Niche fittings — keep vertical span close to the GLB height so wall
   // holes are not sky-sized. AC ~0.62 m; grille vents ~0.32 m.
   static const ventBottom = 1.85;
   static const ventTop = 2.17;
   static const acBottom = 1.55;
   static const acTop = 2.17;
-  static const deskTop = 0.74;
+  /// Desk surface height — same metre as Model `MeshProfile` for `desk`.
+  static double get deskTop => GltfCatalog.profileFor('desk').heightMeters;
 
   static bool isWindow(FurnitureItem f) =>
       _hay(f).contains('window') || f.iconName == 'window';
@@ -333,11 +335,12 @@ class SurfaceMounts {
 
     if (isDeskTopItem(f) && furniture != null && hostUnder(f, furniture) != null) {
       const rise = 0.42;
-      return const SurfaceMount(
+      final top = deskTop;
+      return SurfaceMount(
         surface: MountSurface.desk,
         style: MountStyle.deskItem,
-        bottomY: deskTop,
-        topY: deskTop + rise,
+        bottomY: top,
+        topY: top + rise,
       );
     }
 

@@ -2,10 +2,14 @@
 // Plan (top-down) and orbit (3D) silhouettes. Door / window / wall AC stay on
 // the wall-fitting painters. Everything else is a small cluster of boxes, built
 // facing +Z (yaw 0) and then turned with the item so rotate moves the mesh.
+//
+// Orbit mesh heights come from GltfCatalog MeshProfile.heightMeters so Model
+// and Orbit cannot drift apart.
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
+import '../services/gltf_catalog.dart';
 import '../theme/app_theme.dart';
 import 'room_orbit_projection.dart';
 
@@ -47,13 +51,60 @@ class FurnitureBox {
 class FurnitureShapes {
   FurnitureShapes._();
 
-  static const deskTopY = 0.74;
+  /// Desk surface height — same metre as `MeshProfile` for `desk`.
+  static double get deskTopY => GltfCatalog.profileFor('desk').heightMeters;
 
   static FurnitureKind kindOf(FurnitureItem item) => kindFrom(
         id: item.id,
         name: item.name,
         iconName: item.iconName,
       );
+
+  /// Catalog icon key for a [FurnitureKind] (Model + Orbit height lookup).
+  static String catalogIconFor(FurnitureKind kind) {
+    switch (kind) {
+      case FurnitureKind.desk:
+        return 'desk';
+      case FurnitureKind.table:
+        return 'table';
+      case FurnitureKind.chair:
+        return 'chair';
+      case FurnitureKind.monitor:
+        return 'monitor';
+      case FurnitureKind.pc:
+        return 'pc';
+      case FurnitureKind.bed:
+        return 'bed';
+      case FurnitureKind.sofa:
+        return 'sofa';
+      case FurnitureKind.wardrobe:
+        return 'wardrobe';
+      case FurnitureKind.shelf:
+        return 'shelf';
+      case FurnitureKind.plant:
+        return 'plant';
+      case FurnitureKind.tv:
+        return 'tv';
+      case FurnitureKind.portableAc:
+        return 'ac';
+      case FurnitureKind.fan:
+        return 'fan';
+      case FurnitureKind.heater:
+        return 'heater';
+      case FurnitureKind.taskLamp:
+        return 'lamp';
+      case FurnitureKind.floorLamp:
+        return 'floorLamp';
+      case FurnitureKind.ceilingLight:
+        return 'ceilingLight';
+      case FurnitureKind.purifier:
+        return 'purifier';
+      case FurnitureKind.smartBlinds:
+        return 'smartBlinds';
+      case FurnitureKind.generic:
+        return 'desk';
+    }
+  }
 
   static FurnitureKind kindFrom({
     required String id,
@@ -173,49 +224,17 @@ class FurnitureShapes {
   }
 
   /// Metres of visual height for the 3D mesh (added on top of [yBase]).
-  static double meshHeight(FurnitureKind kind) {
-    switch (kind) {
-      case FurnitureKind.desk:
-        return 0.78;
-      case FurnitureKind.table:
-        return 0.5;
-      case FurnitureKind.chair:
-        return 0.98;
-      case FurnitureKind.monitor:
-        return 0.58;
-      case FurnitureKind.pc:
-        return 0.62;
-      case FurnitureKind.bed:
-        return 0.55;
-      case FurnitureKind.sofa:
-        return 0.78;
-      case FurnitureKind.wardrobe:
-        return 2.05;
-      case FurnitureKind.shelf:
-        return 1.72;
-      case FurnitureKind.plant:
-        return 0.62;
-      case FurnitureKind.tv:
-        return 0.82;
-      case FurnitureKind.portableAc:
-        return 0.78;
-      case FurnitureKind.fan:
-        return 1.22;
-      case FurnitureKind.heater:
-        return 0.46;
-      case FurnitureKind.taskLamp:
-        return 0.52;
-      case FurnitureKind.floorLamp:
-        return 1.52;
-      case FurnitureKind.ceilingLight:
-        return 0.14;
-      case FurnitureKind.purifier:
-        return 0.72;
-      case FurnitureKind.smartBlinds:
-        return 1.45;
-      case FurnitureKind.generic:
-        return 0.9;
+  /// Delegates to [GltfCatalog] so Orbit matches Model.
+  static double meshHeight(FurnitureKind kind) =>
+      GltfCatalog.profileFor(catalogIconFor(kind)).heightMeters;
+
+  /// Prefer the item's iconName when present (more precise than kind alone).
+  static double meshHeightForItem(FurnitureItem item) {
+    final fromIcon = GltfCatalog.profileFor(item.iconName);
+    if (fromIcon.hasModel || GltfCatalog.catalogKeys.contains(item.iconName)) {
+      return fromIcon.heightMeters;
     }
+    return meshHeight(kindOf(item));
   }
 
   static List<FurnitureBox> boxes({
@@ -286,7 +305,7 @@ class FurnitureShapes {
 
     switch (kind) {
       case FurnitureKind.desk:
-        const top = 0.74;
+        final top = deskTopY;
         const thick = 0.05;
         const leg = 0.07;
         return [
@@ -298,7 +317,7 @@ class FurnitureShapes {
           ...box(x1 - leg, 0, z1 - leg, x1, top - thick, z1, 0.42),
         ];
       case FurnitureKind.table:
-        const top = 0.46;
+        final top = meshHeight(FurnitureKind.table);
         const thick = 0.05;
         const leg = 0.07;
         return [

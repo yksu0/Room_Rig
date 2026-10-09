@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/services/gltf_catalog.dart';
+import 'package:room_rig/widgets/furniture_shapes.dart';
 
 void main() {
   test('every catalog item declares metre fit metadata', () {
@@ -26,5 +27,19 @@ void main() {
     expect(GltfCatalog.profileFor('desk').localYawBiasDegrees, 180);
     expect(GltfCatalog.profileFor('monitor').localYawBiasDegrees, 0);
     expect(GltfCatalog.profileFor('tv').localYawBiasDegrees, 0);
+  });
+
+  test('Orbit meshHeight matches MeshProfile for every catalog kind', () {
+    const kinds = FurnitureKind.values;
+    for (final kind in kinds) {
+      if (kind == FurnitureKind.generic) continue;
+      final icon = FurnitureShapes.catalogIconFor(kind);
+      expect(
+        FurnitureShapes.meshHeight(kind),
+        GltfCatalog.profileFor(icon).heightMeters,
+        reason: '$kind / $icon',
+      );
+    }
+    expect(FurnitureShapes.deskTopY, GltfCatalog.profileFor('desk').heightMeters);
   });
 }

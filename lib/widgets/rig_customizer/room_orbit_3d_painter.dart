@@ -48,7 +48,7 @@ RoomRenderItem furnitureRenderItem({
     ghost: ghost,
     isScanObject: false,
     label: item.name,
-    heightY: yBase + FurnitureShapes.meshHeight(kind),
+    heightY: yBase + FurnitureShapes.meshHeightForItem(item),
     kind: kind,
     mount: mount,
   );
