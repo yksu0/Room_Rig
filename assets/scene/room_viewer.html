@@ -408,35 +408,35 @@
   }
 
   /**
-   * Uniform-scale [root] into a target box.
-   * ignoreDepth: Kenney wall-kit GLBs are often deep (full wall slabs); using
-   * a thin target depth was crushing door/window meshes smaller than the cut.
+   * Rotate 90° only when the mesh long-axis disagrees with this item's
+   * footprint — never a global "everything long on X" rule (that spun beds).
    */
-  /**
-   * Orbit assumes canonical meshes are long along +X and face +Z. Kenney GLBs
-   * are often long along Z — rotate into that convention before fitting.
-   */
-  function alignCanonicalAxes(root) {
+  function alignToFootprint(root, targetW, targetD) {
     root.updateWorldMatrix(true, true);
     const box = new THREE.Box3().setFromObject(root);
     const size = new THREE.Vector3();
     box.getSize(size);
-    if (size.z > size.x * 1.05) {
+    if (size.x < 1e-4 || size.z < 1e-4) return;
+    const meshLongX = size.x >= size.z * 1.05;
+    const meshLongZ = size.z >= size.x * 1.05;
+    const footLongX = targetW >= targetD * 1.05;
+    const footLongZ = targetD >= targetW * 1.05;
+    if ((meshLongZ && footLongX) || (meshLongX && footLongZ)) {
       root.rotation.y += Math.PI / 2;
       root.updateMatrixWorld(true);
     }
   }
 
-  /**
-   * Fit [root] into a target box.
-   * fillBox: non-uniform scale so footprint/height match (desks/tables — avoid
-   * tiny Kenney desks that leave monitors floating beside the grid cell).
-   * ignoreDepth: wall kits — fit W×H only.
-   * default: uniform min scale into the box.
-   */
+  function recenterOnFloor(root) {
+    const box2 = new THREE.Box3().setFromObject(root);
+    root.position.x -= (box2.min.x + box2.max.x) * 0.5;
+    root.position.y -= box2.min.y;
+    root.position.z -= (box2.min.z + box2.max.z) * 0.5;
+  }
+
   /**
    * mode: 'fill' | 'ignoreDepth' | 'fillWidth' | 'uniform'
-   * fillWidth: screens — Kenney stand bboxes are tall; min(sx,sy) left them tiny.
+   * Each furniture kind picks its own mode — models are separate GLBs.
    */
   function fitObject(root, targetW, targetD, targetH, mode) {
     const box = new THREE.Box3().setFromObject(root);
@@ -451,15 +451,59 @@
     } else if (mode === 'ignoreDepth') {
       root.scale.setScalar(Math.min(sx, sy) * 0.98);
     } else if (mode === 'fillWidth') {
-      // Prefer filling the footprint width so the panel reads as a real monitor.
       root.scale.setScalar(sx * 0.96);
     } else {
+      // uniform: keep authored proportions, stay inside the cell
       root.scale.setScalar(Math.min(sx, sz, sy) * 0.92);
     }
-    const box2 = new THREE.Box3().setFromObject(root);
-    root.position.x -= (box2.min.x + box2.max.x) * 0.5;
-    root.position.y -= box2.min.y;
-    root.position.z -= (box2.min.z + box2.max.z) * 0.5;
+    recenterOnFloor(root);
+  }
+
+  /** Per-kind fit — monitor rules must not reshapes beds/sofas. */
+  function fitFurnitureModel(model, kind, fitW, fitD, h, mount) {
+    if (mount === 'wall') {
+      fitObject(model, Math.max(fitW, 0.35), fitD, h, 'ignoreDepth');
+      return;
+    }
+    switch (kind) {
+      case 'desk':
+      case 'table':
+        alignToFootprint(model, fitW, fitD);
+        fitObject(model, fitW, fitD, h, 'fill');
+        break;
+      case 'monitor':
+      case 'tv':
+        alignToFootprint(model, fitW, fitD);
+        fitObject(model, fitW, fitD, h, 'fillWidth');
+        break;
+      case 'pc': {
+        const box0 = new THREE.Box3().setFromObject(model);
+        const sz0 = new THREE.Vector3();
+        box0.getSize(sz0);
+        model.scale.setScalar((h / Math.max(sz0.y, 1e-4)) * 0.95);
+        recenterOnFloor(model);
+        break;
+      }
+      case 'lamp':
+      case 'floorlamp':
+        fitObject(model, fitW, fitD, h, 'uniform');
+        break;
+      case 'bed':
+      case 'sofa':
+      case 'chair':
+      case 'wardrobe':
+      case 'shelf':
+      case 'bookshelf':
+      case 'plant':
+      case 'fan':
+      case 'purifier':
+      case 'heater':
+        // Keep Kenney facing; uniform scale so we don't stretch/spin large props.
+        fitObject(model, fitW, fitD, h, 'uniform');
+        break;
+      default:
+        fitObject(model, fitW, fitD, h, 'uniform');
+    }
   }
 
   function enableShadows(obj, cast) {
@@ -547,29 +591,7 @@
           const src = await loadGltf(it.model);
           model = src.clone(true);
           enableShadows(model, !it.opening);
-          if (mount === 'wall') {
-            fitObject(model, Math.max(w, 0.35), d, h, 'ignoreDepth');
-          } else {
-            alignCanonicalAxes(model);
-            if (kind === 'monitor' || kind === 'tv') {
-              fitObject(model, fitW, fitD, h, 'fillWidth');
-            } else if (kind === 'pc') {
-              // Prefer filling tower height so it isn't a stub next to the desk.
-              const box0 = new THREE.Box3().setFromObject(model);
-              const sz0 = new THREE.Vector3();
-              box0.getSize(sz0);
-              const sy = h / Math.max(sz0.y, 1e-4);
-              model.scale.setScalar(sy * 0.95);
-              const box1 = new THREE.Box3().setFromObject(model);
-              model.position.x -= (box1.min.x + box1.max.x) * 0.5;
-              model.position.y -= box1.min.y;
-              model.position.z -= (box1.min.z + box1.max.z) * 0.5;
-            } else if (kind === 'lamp') {
-              fitObject(model, fitW, fitD, h, 'uniform');
-            } else {
-              fitObject(model, fitW, fitD, h, 'fill');
-            }
-          }
+          fitFurnitureModel(model, kind, fitW, fitD, h, mount);
         } catch (e) {
           console.warn('GLB failed', it.model, e);
         }
