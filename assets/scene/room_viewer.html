@@ -463,8 +463,9 @@
   function fitFurnitureModel(model, kind, fitW, fitD, h, mount) {
     if (mount === 'wall') {
       // Doors/windows: fit clear width × opening height (never wall thickness).
-      const along = kind === 'door' ? Math.max(fitW, 0.9) : Math.max(fitW, 0.35);
-      const openH = kind === 'door' ? Math.max(h, 2.0) : h;
+      // Door ~1.9m — adult-sized without overshooting the shell.
+      const along = kind === 'door' ? Math.max(fitW, 0.85) : Math.max(fitW, 0.35);
+      const openH = kind === 'door' ? Math.min(Math.max(h, 1.85), 1.95) : h;
       fitObject(model, along, fitD, openH, 'ignoreDepth');
       return;
     }

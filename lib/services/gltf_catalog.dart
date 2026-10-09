@@ -239,15 +239,15 @@ class GltfCatalog {
       iconName: 'door',
       // doorway.glb is the leaf/frame; doorwayOpen / wallDoorway are full wall slabs.
       assetPath: '$kenneyDir/doorway.glb',
-      heightMeters: 2.05,
+      heightMeters: 1.92,
       role: MeshSimRole.opening,
       lightTransmit: 0.95,
       airflowSolid: 0,
       wallCut: WallCutKind.through,
       // Match Kenney doorway clear — not the full wall-kit bbox.
       wallCutPadMeters: 0.01,
-      clearWidthMeters: 0.95,
-      clearHeightMeters: 2.05,
+      clearWidthMeters: 0.9,
+      clearHeightMeters: 1.92,
     ),
     'window': const MeshProfile(
       iconName: 'window',
