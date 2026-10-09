@@ -13,6 +13,7 @@ import '../services/gltf_catalog.dart';
 import '../services/scene_asset_stage.dart';
 import '../theme/app_theme.dart';
 import 'chrome/adaptive_panel.dart';
+import 'furniture_shapes.dart';
 import 'room_model_scene_stub.dart'
     if (dart.library.html) 'room_model_scene_web.dart' as platform;
 
@@ -288,6 +289,12 @@ class RoomModelSceneState extends State<RoomModelScene> {
         y = mount.bottomY;
       }
 
+      // Heights match Orbit (FurnitureShapes), not a separate GLB profile table.
+      final orbitH = FurnitureShapes.meshHeight(FurnitureShapes.kindOf(f));
+      final itemH = mount.isWall
+          ? profile.openingHeightMeters
+          : (orbitH > 0 ? orbitH : profile.heightMeters);
+
       return {
         'id': f.id,
         'kind': f.iconName,
@@ -297,7 +304,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
         'z': z,
         'w': itemW,
         'd': itemD,
-        'h': profile.heightMeters,
+        'h': itemH,
         'yaw': yaw,
         'selected': f.id == widget.selectedId,
         'mount': mount.isCeiling

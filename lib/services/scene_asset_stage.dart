@@ -13,7 +13,7 @@ import 'package:path_provider/path_provider.dart';
 class SceneAssetStage {
   SceneAssetStage._();
 
-  static const _stageName = 'room_rig_scene_v7';
+  static const _stageName = 'room_rig_scene_v8';
   static Directory? _baseDir;
   static HttpServer? _server;
   static String? _viewerHttpUrl;

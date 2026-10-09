@@ -174,7 +174,7 @@ class GltfCatalog {
     'pc': const MeshProfile(
       iconName: 'pc',
       assetPath: '$kenneyDir/speaker.glb',
-      heightMeters: 0.45,
+      heightMeters: 0.52,
       role: MeshSimRole.emitter,
       airflowSolid: 0.9,
     ),
