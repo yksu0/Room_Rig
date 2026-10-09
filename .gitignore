@@ -73,6 +73,12 @@ AGENTS.local.md
 
 # Root / accidental Ultralytics dumps (keep repo lean)
 /yolov8n.*
+/yolo11n.*
 *.onnx
 *.onnx.data
 *.pt
+
+# Local debug captures / empty scratch folders
+/debug_*.png
+/debug_*.xml
+/nu8/
