@@ -343,16 +343,17 @@ class FurnitureShapes {
         ];
       }
       case FurnitureKind.monitor:
+        // Fill most of the Orbit cell so desk capacity reads as 2–3 slots.
         return [
-          ...box(x + width * 0.28, y, z + depth * 0.30, x1 - width * 0.28, y + h * 0.09, z1 - depth * 0.18, 0.42),
-          ...box(x + width * 0.46, y + h * 0.09, z + depth * 0.48, x1 - width * 0.46, y + h * 0.29, z1 - depth * 0.28, 0.5),
-          ...box(x + width * 0.06, y + h * 0.29, z + depth * 0.62, x1 - width * 0.06, y + h, z1 - depth * 0.08, 0.82),
+          ...box(x + width * 0.18, y, z + depth * 0.18, x1 - width * 0.18, y + h * 0.08, z1 - depth * 0.10, 0.42),
+          ...box(x + width * 0.40, y + h * 0.08, z + depth * 0.28, x1 - width * 0.40, y + h * 0.26, z1 - depth * 0.16, 0.5),
+          ...box(x + width * 0.02, y + h * 0.26, z + depth * 0.22, x1 - width * 0.02, y + h, z1 - depth * 0.04, 0.82),
         ];
       case FurnitureKind.pc:
         return [
-          ...box(x + width * 0.22, y, z + depth * 0.12, x1 - width * 0.22, y + h, z1 - depth * 0.12, 0.7),
-          ...box(x + width * 0.26, y + h * 0.16, z1 - depth * 0.16, x1 - width * 0.26, y + h * 0.88, z1 - depth * 0.10, 0.45),
-          ...box(x + width * 0.30, y + h * 0.84, z + depth * 0.16, x1 - width * 0.30, y + h * 0.96, z + depth * 0.40, 0.85),
+          ...box(x + width * 0.08, y, z + depth * 0.06, x1 - width * 0.08, y + h, z1 - depth * 0.06, 0.7),
+          ...box(x + width * 0.14, y + h * 0.16, z1 - depth * 0.14, x1 - width * 0.14, y + h * 0.88, z1 - depth * 0.04, 0.45),
+          ...box(x + width * 0.20, y + h * 0.84, z + depth * 0.10, x1 - width * 0.20, y + h * 0.96, z + depth * 0.36, 0.85),
         ];
       case FurnitureKind.bed:
         return [
@@ -425,10 +426,10 @@ class FurnitureShapes {
         ];
       case FurnitureKind.taskLamp:
         return [
-          ...box(x + width * 0.34, y, z + depth * 0.34, x1 - width * 0.34, y + h * 0.12, z1 - depth * 0.34, 0.5),
-          ...box(x + width * 0.46, y + h * 0.12, z + depth * 0.46, x1 - width * 0.46, y + h * 0.60, z1 - depth * 0.46, 0.4),
-          ...box(x + width * 0.30, y + h * 0.56, z + depth * 0.22, x1 - width * 0.22, y + h * 0.72, z + depth * 0.48, 0.55),
-          ...box(x + width * 0.16, y + h * 0.68, z + depth * 0.12, x1 - width * 0.38, y + h, z + depth * 0.40, 0.75),
+          ...box(x + width * 0.18, y, z + depth * 0.18, x1 - width * 0.18, y + h * 0.12, z1 - depth * 0.18, 0.5),
+          ...box(x + width * 0.38, y + h * 0.12, z + depth * 0.38, x1 - width * 0.38, y + h * 0.58, z1 - depth * 0.38, 0.4),
+          ...box(x + width * 0.16, y + h * 0.52, z + depth * 0.14, x1 - width * 0.12, y + h * 0.70, z + depth * 0.48, 0.55),
+          ...box(x + width * 0.08, y + h * 0.66, z + depth * 0.08, x1 - width * 0.28, y + h, z + depth * 0.42, 0.75),
         ];
       case FurnitureKind.floorLamp:
         return [

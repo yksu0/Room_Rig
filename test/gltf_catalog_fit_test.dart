@@ -46,11 +46,6 @@ void main() {
   });
 
   test('Orbit footprints match metre targets for every catalog icon', () {
-    // Spot-check the items that previously drifted (monitor / PC / fan / desk).
-    expect(GltfCatalog.orbitFootprint('monitor').width, closeTo(1.25, 0.01));
-    expect(GltfCatalog.orbitFootprint('monitor').depth, closeTo(0.35, 0.05));
-    expect(GltfCatalog.orbitFootprint('pc').width, closeTo(0.35, 0.05));
-    expect(GltfCatalog.orbitFootprint('pc').depth, closeTo(0.75, 0.05));
     expect(GltfCatalog.orbitFootprint('fan').width, closeTo(0.55, 0.05));
     expect(GltfCatalog.orbitFootprint('desk').width, closeTo(2.0, 0.01));
     expect(GltfCatalog.orbitFootprint('desk').depth, closeTo(1.0, 0.01));
@@ -68,6 +63,46 @@ void main() {
       }
       expect(fp.width, greaterThan(0), reason: '$key width');
       expect(fp.depth, greaterThan(0), reason: '$key depth');
+    }
+  });
+
+  test('desk-top trio (PC + monitor + lamp) fills a standard desk width', () {
+    final desk = GltfCatalog.orbitFootprint('desk');
+    final pc = GltfCatalog.orbitFootprint('pc');
+    final mon = GltfCatalog.orbitFootprint('monitor');
+    final lamp = GltfCatalog.orbitFootprint('lamp');
+    final trio = pc.width + mon.width + lamp.width;
+    expect(trio, closeTo(desk.width, 0.1), reason: '2–3 desk items should fill the top');
+    expect(pc.depth, lessThanOrEqualTo(desk.depth + 0.05));
+    expect(mon.depth, lessThanOrEqualTo(desk.depth + 0.05));
+    expect(lamp.depth, lessThanOrEqualTo(desk.depth + 0.05));
+    // Uniform fit so Model meshes stay inside Orbit cells (no GLB overflow).
+    for (final key in ['monitor', 'pc', 'lamp']) {
+      expect(GltfCatalog.profileFor(key).fitMode, MeshFitMode.uniform);
+    }
+  });
+
+  test('gaming preset packs desk-top gear without overlap', () {
+    final room = RoomPresets.getPreset(RoomPreset.gamingSetup);
+    final desk = room.furniture.firstWhere((f) => f.id == 'desk');
+    final tops = room.furniture
+        .where((f) => f.id == 'pc' || f.id == 'monitor' || f.id == 'lamp')
+        .toList();
+    expect(tops, hasLength(3));
+    for (final a in tops) {
+      expect(a.gridX, greaterThanOrEqualTo(desk.gridX - 0.01));
+      expect(a.gridX + a.width, lessThanOrEqualTo(desk.gridX + desk.width + 0.05));
+      expect(a.gridY, greaterThanOrEqualTo(desk.gridY - 0.01));
+      expect(a.gridY + a.height, lessThanOrEqualTo(desk.gridY + desk.height + 0.05));
+      for (final b in tops) {
+        if (identical(a, b)) continue;
+        final ax1 = a.gridX + a.width;
+        final ay1 = a.gridY + a.height;
+        final bx1 = b.gridX + b.width;
+        final by1 = b.gridY + b.height;
+        final overlap = a.gridX < bx1 && ax1 > b.gridX && a.gridY < by1 && ay1 > b.gridY;
+        expect(overlap, isFalse, reason: '${a.id} vs ${b.id}');
+      }
     }
   });
 

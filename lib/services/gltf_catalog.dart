@@ -225,13 +225,14 @@ class GltfCatalog {
     'lamp': const MeshProfile(
       iconName: 'lamp',
       assetPath: '$kenneyDir/lampRoundTable.glb',
-      heightMeters: 0.45,
+      heightMeters: 0.42,
       role: MeshSimRole.emitter,
       airflowSolid: 0.15,
       lightTransmit: 0.35,
-      fitMode: MeshFitMode.height,
-      targetWidthMeters: 0.22,
-      targetDepthMeters: 0.22,
+      // ~¼ of a 1.2 m desk — with monitor + PC, three fill the top.
+      fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 0.30,
+      targetDepthMeters: 0.35,
     ),
     'floorLamp': const MeshProfile(
       iconName: 'floorLamp',
@@ -269,15 +270,14 @@ class GltfCatalog {
     'monitor': const MeshProfile(
       iconName: 'monitor',
       assetPath: '$kenneyDir/computerScreen.glb',
-      heightMeters: 0.55,
+      heightMeters: 0.50,
       role: MeshSimRole.solid,
       airflowSolid: 0.35,
-      fitMode: MeshFitMode.width,
-      // ~27–32\" class display on a gaming desk.
-      targetWidthMeters: 0.75,
-      targetDepthMeters: 0.22,
+      // ~½ of a 1.2 m desk — uniform so Model never overshoots the Orbit cell.
+      fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 0.55,
+      targetDepthMeters: 0.42,
       // Kenney computerScreen already faces Orbit +Z (yaw 0 → chair).
-      // A +180 bias pointed the panel at the wall.
       localYawBiasDegrees: 0,
     ),
     'tv': const MeshProfile(
@@ -297,9 +297,10 @@ class GltfCatalog {
       heightMeters: 0.55,
       role: MeshSimRole.emitter,
       airflowSolid: 0.9,
-      fitMode: MeshFitMode.height,
-      targetWidthMeters: 0.22,
-      targetDepthMeters: 0.45,
+      // ~⅓ of desk width; uniform keeps the tall GLB inside the Orbit footprint.
+      fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 0.35,
+      targetDepthMeters: 0.50,
     ),
     // CC0 HVAC pack under assets/gltf/hvac/ (see SOURCES.md).
     // Placeholder cage/blower GLB — not a household pedestal; keep modest until
