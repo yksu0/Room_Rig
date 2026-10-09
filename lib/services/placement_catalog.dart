@@ -256,7 +256,7 @@ class PlacementCatalog {
       functionalTarget: 'sofa',
       relative: RelativePlacement.near,
     ),
-    // Wall-mounted TV defaults to must-wall; stand mode can relax later.
+    // Prefers a wall when free; otherwise lounge table / floor stand.
     'tv': PlacementSpec(
       id: 'tv',
       surface: PlacementSurface.floor,
