@@ -6,3 +6,5 @@ Object? createRoomModelIFrame({
     null;
 
 void pushRoomModelSceneWeb(Map<String, dynamic> payload) {}
+
+void setRoomModelScenePointerEvents(bool enabled) {}

@@ -12,6 +12,7 @@ import 'screens/scan_focus_placeholder_screen.dart';
 import 'screens/rig_customizer_screen.dart';
 import 'screens/benchmark_screen.dart';
 import 'screens/upgrades_screen.dart';
+import 'widgets/room_model_scene_pointer_guard.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,6 +59,7 @@ class RoomRigApp extends StatelessWidget {
       // Transparent so AR measure can show native camera through Scan.
       // Each tab Scaffold sets its own opaque backgroundColor.
       theme: AppTheme.dark.copyWith(scaffoldBackgroundColor: Colors.transparent),
+      navigatorObservers: [RoomModelScenePointerGuard()],
       home: const _MainShell(),
     );
   }

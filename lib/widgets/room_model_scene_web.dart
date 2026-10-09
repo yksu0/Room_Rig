@@ -43,3 +43,11 @@ void pushRoomModelSceneWeb(Map<String, dynamic> payload) {
   if (win == null) return;
   win.postMessage(jsonEncode(payload), '*');
 }
+
+/// HtmlElementView sits above Flutter hit-testing on web — turn off iframe
+/// pointers while dialogs / sheets are open so buttons receive clicks.
+void setRoomModelScenePointerEvents(bool enabled) {
+  final iframe = _iframe;
+  if (iframe == null) return;
+  iframe.style.pointerEvents = enabled ? 'auto' : 'none';
+}
