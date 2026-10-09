@@ -853,11 +853,13 @@ class LayoutOptimizerCommon {
         ItemPlacementRules.isTv(f)) {
       return 0;
     }
+    // PC before lamp — otherwise the lamp claims the beside-monitor slot and
+    // the tower falls through to the floor.
     if (hay.contains('pc') || hay.contains('tower') || hay.contains('computer')) {
-      return 4;
+      return 1;
     }
     if (hay.contains('plant')) return 5;
-    return 1; // lamp
+    return 2; // lamp
   }
 
   /// Desk-top slots relative to [workFace] (chair side):
@@ -932,7 +934,7 @@ class LayoutOptimizerCommon {
           preferX = backX.clamp(loX, hiX);
           preferY = (loY + (hiY - loY) * 0.35).clamp(loY, hiY);
         }
-      case 4: // PC — wall edge, beside monitor along the wall (never toward chair)
+      case 1: // PC — wall edge, beside monitor along the wall (never toward chair)
         FurnitureItem? monitor;
         for (final o in alreadyOnHost) {
           final oh = '${o.id} ${o.name} ${o.iconName}'.toLowerCase();
@@ -941,9 +943,8 @@ class LayoutOptimizerCommon {
             break;
           }
         }
-        final pcsOnHost = alreadyOnHost.where((o) => _deskItemRank(o) == 4).length;
+        final pcsOnHost = alreadyOnHost.where((o) => _deskItemRank(o) == 1).length;
         // Only park on the floor when the tower cannot fit the desk top.
-        // A second tower still tries the desk first (beside the first).
         if (!fitsOnDesk) {
           preferX = switch (workFace) {
             'east' => 0.0,
@@ -954,7 +955,6 @@ class LayoutOptimizerCommon {
           break;
         }
         if (pcsOnHost >= 1) {
-          // Prefer the free back-corner opposite the first tower.
           preferX = hiX;
           preferY = backY.clamp(loY, hiY);
         } else if (monitor != null) {
@@ -1046,7 +1046,7 @@ class LayoutOptimizerCommon {
       for (final (x, y) in candidates) {
         final candidate = item.copyWith(gridX: x, gridY: y);
         if (blocksOpening(candidate)) continue;
-        if (rank == 4 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
+        if (rank == 1 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
           continue;
         }
         final clash = alreadyOnHost.any(
@@ -1067,7 +1067,7 @@ class LayoutOptimizerCommon {
         };
         final candidate = item.copyWith(gridX: x, gridY: y);
         if (blocksOpening(candidate)) continue;
-        if (rank == 4 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
+        if (rank == 1 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
           continue;
         }
         final clash = alreadyOnHost.any(
@@ -1077,6 +1077,29 @@ class LayoutOptimizerCommon {
         );
         if (!clash) return clampRoom(x, y);
       }
+    }
+
+    // PC that fits the desk must stay on the desk — never drop to the floor.
+    if (rank == 1 && fitsOnDesk) {
+      for (final (x, y) in <(double, double)>[
+        (hiX, backY.clamp(loY, hiY)),
+        (loX, backY.clamp(loY, hiY)),
+        (hiX, loY),
+        (loX, loY),
+        (hiX, hiY),
+        (loX, hiY),
+      ]) {
+        final candidate = item.copyWith(gridX: x, gridY: y);
+        if (blocksOpening(candidate)) continue;
+        if (_onWorkFaceSideOfDesk(candidate, host, workFace)) continue;
+        final clash = alreadyOnHost.any(
+          (o) =>
+              LayoutCollision.overlaps(candidate, o) &&
+              SurfaceMounts.deskTopFootprintsConflict(candidate, o),
+        );
+        if (!clash) return clampRoom(x, y);
+      }
+      return clampRoom(hiX, backY.clamp(loY, hiY));
     }
 
     // Floor beside desk — flush to the same wall, always inside the room.
@@ -1123,7 +1146,7 @@ class LayoutOptimizerCommon {
           y >= host.gridY - 0.01 &&
           x + item.width <= host.gridX + host.width + 0.01 &&
           y + item.height <= host.gridY + host.height + 0.01;
-      if (rank == 4 && onDesk && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
+      if (rank == 1 && onDesk && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
         continue;
       }
       final clash = alreadyOnHost.any(

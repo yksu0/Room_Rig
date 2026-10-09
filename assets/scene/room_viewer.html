@@ -545,9 +545,17 @@
             fitObject(model, Math.max(w, 0.35), d, h, true, false);
           } else {
             alignCanonicalAxes(model);
-            // Fill the Orbit footprint (W×D×H) — uniform min-scale left
-            // monitors/towers tiny beside a filled desk.
-            fitObject(model, fitW, fitD, h, false, true);
+            if (kind === 'monitor' || kind === 'tv') {
+              // Screen: keep aspect — fit width×height only (don't stretch into depth).
+              fitObject(model, fitW, fitD, h, true, false);
+            } else if (kind === 'pc' || kind === 'lamp') {
+              // Tower / lamp: uniform scale into the Orbit box (no squash).
+              fitObject(model, fitW, fitD, h, false, false);
+            } else if (kind === 'desk' || kind === 'table') {
+              fitObject(model, fitW, fitD, h, false, true);
+            } else {
+              fitObject(model, fitW, fitD, h, false, true);
+            }
           }
         } catch (e) {
           console.warn('GLB failed', it.model, e);
