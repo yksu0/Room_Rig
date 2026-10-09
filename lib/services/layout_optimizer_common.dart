@@ -698,20 +698,26 @@ class LayoutOptimizerCommon {
       } else if (hay.contains('monitor') ||
           hay.contains('display') ||
           item.iconName == 'monitor') {
-        // Default 1×1 footprint is larger than the desk depth and floats off.
-        item = item.copyWith(
-          width: math.min(item.width, 0.75),
-          height: math.min(item.height, 0.4),
-        );
-        next[i] = item;
+        // Keep Orbit's silhouette. Only clamp when the footprint cannot fit
+        // the desk — never flatten a normal 1×1 / ~0.9×0.6 monitor.
+        if (item.width > host.width - 0.05 || item.height > host.height - 0.05) {
+          item = item.copyWith(
+            width: math.min(item.width, math.max(0.7, host.width - 0.15)),
+            height: math.min(item.height, math.max(0.45, host.height - 0.15)),
+          );
+          next[i] = item;
+        }
       } else if (hay.contains('pc') ||
           hay.contains('tower') ||
           item.iconName == 'pc') {
-        item = item.copyWith(
-          width: math.min(item.width, 0.4),
-          height: math.min(item.height, 0.5),
-        );
-        next[i] = item;
+        // Preserve tower proportions (Orbit uses ~0.45×0.5).
+        if (item.width > host.width - 0.05 || item.height > host.height - 0.05) {
+          item = item.copyWith(
+            width: math.min(item.width, 0.5),
+            height: math.min(item.height, 0.55),
+          );
+          next[i] = item;
+        }
       } else if (hay.contains('plant')) {
         item = item.copyWith(
           width: math.min(item.width, 0.5),
