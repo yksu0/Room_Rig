@@ -13,7 +13,6 @@ import '../services/gltf_catalog.dart';
 import '../services/scene_asset_stage.dart';
 import '../theme/app_theme.dart';
 import 'chrome/adaptive_panel.dart';
-import 'furniture_shapes.dart';
 import 'room_model_scene_stub.dart'
     if (dart.library.html) 'room_model_scene_web.dart' as platform;
 
@@ -282,6 +281,11 @@ class RoomModelSceneState extends State<RoomModelScene> {
           'glass': profile.isGlass,
           'cutKind': profile.cutsWall ? profile.wallCut.name : null,
           'lightTransmit': profile.lightTransmit,
+          ...profile.fitPayload(),
+          // Wall openings always use clear W×H from the profile.
+          'fit': MeshFitMode.wallOpening.name,
+          'tw': profile.clearWidthMeters ?? profile.targetWidthMeters ?? itemW,
+          'th': profile.openingHeightMeters,
         };
       } else if (mount.isCeiling) {
         y = mount.bottomY;
@@ -289,11 +293,8 @@ class RoomModelSceneState extends State<RoomModelScene> {
         y = mount.bottomY;
       }
 
-      // Heights match Orbit (FurnitureShapes), not a separate GLB profile table.
-      final orbitH = FurnitureShapes.meshHeight(FurnitureShapes.kindOf(f));
-      final itemH = mount.isWall
-          ? profile.openingHeightMeters
-          : (orbitH > 0 ? orbitH : profile.heightMeters);
+      // Single height source: MeshProfile (not a parallel Orbit table).
+      final itemH = profile.heightMeters;
 
       return {
         'id': f.id,
@@ -314,6 +315,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
                 : 'floor',
         'opening': profile.isOpening || profile.isGlass,
         'lightTransmit': profile.lightTransmit,
+        ...profile.fitPayload(),
       };
     }).toList();
 

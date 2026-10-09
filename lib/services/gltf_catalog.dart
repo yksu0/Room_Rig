@@ -1,9 +1,16 @@
-// Maps Rig furniture icon names → CC0 GLB/glTF assets + sim / wall-cut profiles.
+// Maps Rig furniture icon names → CC0 GLB/glTF assets + sim / wall-cut /
+// Model-fit profiles.
+//
+// Sizing convention (one source of truth per kind):
+// - [MeshFitMode] + optional targetWidth/Depth/Height metres drive the viewer.
+// - Grid cells are for placement; fixed [targetWidthMeters] overrides footprint
+//   when set (monitors, doors, etc.).
+// - [localYawBiasDegrees] rotates Kenney fronts (-Z) to Orbit +Z = yaw 0.
+// - Prefer changing targets here over magic scale multipliers in room_viewer.
 //
 // Sources (see assets/gltf/SOURCES.md):
 // - Kenney Furniture Kit — most furniture
-// - Poly Haven — HVAC (aircon, ducts) when present under assets/gltf/hvac/
-// - Quaternius / Poly Pizza — recommended for stand fans, purifiers (drop-in)
+// - Poly Haven / HVAC pack — ac, fan, purifier, heater, vents
 
 import '../models/room_model.dart';
 
@@ -28,6 +35,21 @@ enum WallCutKind {
   niche,
 }
 
+/// How the Model viewer scales a GLB into its target box.
+enum MeshFitMode {
+  /// Uniform scale; stay inside W×D×H (default for most furniture).
+  uniform,
+
+  /// Uniform scale from width only (screens).
+  width,
+
+  /// Uniform scale from height only (towers, lamps, plants).
+  height,
+
+  /// Uniform scale from clear width × opening height; ignore wall thickness.
+  wallOpening,
+}
+
 class MeshProfile {
   final String iconName;
   final String? assetPath;
@@ -47,6 +69,21 @@ class MeshProfile {
   /// Clear opening height (metres). Null → use [heightMeters] / mount band.
   final double? clearHeightMeters;
 
+  /// Model fit mode consumed by `room_viewer.html`.
+  final MeshFitMode fitMode;
+
+  /// Optional real-world width (m). Null → use grid footprint width.
+  final double? targetWidthMeters;
+
+  /// Optional real-world depth (m). Null → use grid footprint depth.
+  final double? targetDepthMeters;
+
+  /// Local Y rotation (degrees) so Kenney “front” matches Orbit yaw 0 = +Z.
+  final double localYawBiasDegrees;
+
+  /// Rotate 90° when mesh long-axis disagrees with the footprint.
+  final bool alignFootprint;
+
   const MeshProfile({
     required this.iconName,
     required this.assetPath,
@@ -58,6 +95,11 @@ class MeshProfile {
     this.wallCut = WallCutKind.none,
     this.clearWidthMeters,
     this.clearHeightMeters,
+    this.fitMode = MeshFitMode.uniform,
+    this.targetWidthMeters,
+    this.targetDepthMeters,
+    this.localYawBiasDegrees = 0,
+    this.alignFootprint = false,
   });
 
   bool get hasModel => assetPath != null;
@@ -66,6 +108,16 @@ class MeshProfile {
   bool get cutsWall => wallCut != WallCutKind.none;
 
   double get openingHeightMeters => clearHeightMeters ?? heightMeters;
+
+  /// Fit fields embedded in the Model scene JSON payload.
+  Map<String, dynamic> fitPayload() => {
+        'fit': fitMode.name,
+        'th': heightMeters,
+        'yawBias': localYawBiasDegrees,
+        'alignFoot': alignFootprint,
+        if (targetWidthMeters != null) 'tw': targetWidthMeters,
+        if (targetDepthMeters != null) 'td': targetDepthMeters,
+      };
 }
 
 class GltfCatalog {
@@ -80,6 +132,10 @@ class GltfCatalog {
       assetPath: '$kenneyDir/desk.glb',
       heightMeters: 0.74,
       role: MeshSimRole.solid,
+      fitMode: MeshFitMode.uniform,
+      // Kenney drawer / knee opening faces -Z; Orbit chair sits on +Z.
+      localYawBiasDegrees: 180,
+      alignFootprint: true,
     ),
     'table': const MeshProfile(
       iconName: 'table',
@@ -87,6 +143,8 @@ class GltfCatalog {
       heightMeters: 0.45,
       role: MeshSimRole.solid,
       airflowSolid: 0.85,
+      fitMode: MeshFitMode.uniform,
+      alignFootprint: true,
     ),
     'chair': const MeshProfile(
       iconName: 'chair',
@@ -94,36 +152,52 @@ class GltfCatalog {
       heightMeters: 1.05,
       role: MeshSimRole.solid,
       airflowSolid: 0.7,
+      fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 0.65,
+      targetDepthMeters: 0.65,
     ),
     'bed': const MeshProfile(
       iconName: 'bed',
       assetPath: '$kenneyDir/bedDouble.glb',
       heightMeters: 0.55,
       role: MeshSimRole.solid,
+      fitMode: MeshFitMode.uniform,
+      alignFootprint: true,
     ),
     'sofa': const MeshProfile(
       iconName: 'sofa',
       assetPath: '$kenneyDir/loungeSofa.glb',
       heightMeters: 0.85,
       role: MeshSimRole.solid,
+      fitMode: MeshFitMode.uniform,
+      alignFootprint: true,
     ),
     'shelf': const MeshProfile(
       iconName: 'shelf',
       assetPath: '$kenneyDir/bookcaseOpen.glb',
       heightMeters: 1.8,
       role: MeshSimRole.solid,
+      fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 0.85,
+      targetDepthMeters: 0.4,
     ),
     'bookshelf': const MeshProfile(
       iconName: 'bookshelf',
       assetPath: '$kenneyDir/bookcaseClosed.glb',
       heightMeters: 1.85,
       role: MeshSimRole.solid,
+      fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 0.85,
+      targetDepthMeters: 0.4,
     ),
     'wardrobe': const MeshProfile(
       iconName: 'wardrobe',
       assetPath: '$kenneyDir/cabinetBedDrawer.glb',
       heightMeters: 1.9,
       role: MeshSimRole.solid,
+      fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 0.9,
+      targetDepthMeters: 0.55,
     ),
     'lamp': const MeshProfile(
       iconName: 'lamp',
@@ -132,6 +206,9 @@ class GltfCatalog {
       role: MeshSimRole.emitter,
       airflowSolid: 0.15,
       lightTransmit: 0.35,
+      fitMode: MeshFitMode.height,
+      targetWidthMeters: 0.22,
+      targetDepthMeters: 0.22,
     ),
     'floorLamp': const MeshProfile(
       iconName: 'floorLamp',
@@ -140,6 +217,9 @@ class GltfCatalog {
       role: MeshSimRole.emitter,
       airflowSolid: 0.25,
       lightTransmit: 0.2,
+      fitMode: MeshFitMode.height,
+      targetWidthMeters: 0.35,
+      targetDepthMeters: 0.35,
     ),
     'ceilingLight': const MeshProfile(
       iconName: 'ceilingLight',
@@ -148,6 +228,9 @@ class GltfCatalog {
       role: MeshSimRole.emitter,
       airflowSolid: 0,
       lightTransmit: 0.5,
+      fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 0.35,
+      targetDepthMeters: 0.35,
     ),
     'plant': const MeshProfile(
       iconName: 'plant',
@@ -156,35 +239,54 @@ class GltfCatalog {
       role: MeshSimRole.solid,
       airflowSolid: 0.45,
       lightTransmit: 0.25,
+      fitMode: MeshFitMode.height,
+      targetWidthMeters: 0.4,
+      targetDepthMeters: 0.4,
     ),
     'monitor': const MeshProfile(
       iconName: 'monitor',
       assetPath: '$kenneyDir/computerScreen.glb',
-      heightMeters: 0.58,
+      heightMeters: 0.55,
       role: MeshSimRole.solid,
       airflowSolid: 0.35,
+      fitMode: MeshFitMode.width,
+      // ~27–32\" class display on a gaming desk.
+      targetWidthMeters: 0.75,
+      targetDepthMeters: 0.22,
+      // Kenney screen faces -Z; Orbit yaw 0 = +Z toward the chair.
+      localYawBiasDegrees: 180,
     ),
     'tv': const MeshProfile(
       iconName: 'tv',
       assetPath: '$kenneyDir/televisionModern.glb',
-      heightMeters: 0.55,
+      heightMeters: 0.65,
       role: MeshSimRole.solid,
       airflowSolid: 0.4,
+      fitMode: MeshFitMode.width,
+      targetWidthMeters: 1.1,
+      targetDepthMeters: 0.28,
+      localYawBiasDegrees: 180,
     ),
     'pc': const MeshProfile(
       iconName: 'pc',
       assetPath: '$kenneyDir/speaker.glb',
-      heightMeters: 0.62,
+      heightMeters: 0.55,
       role: MeshSimRole.emitter,
       airflowSolid: 0.9,
+      fitMode: MeshFitMode.height,
+      targetWidthMeters: 0.22,
+      targetDepthMeters: 0.45,
     ),
     // CC0 HVAC pack under assets/gltf/hvac/ (see SOURCES.md).
     'fan': const MeshProfile(
       iconName: 'fan',
       assetPath: '$hvacDir/stand_fan.glb',
-      heightMeters: 1.0,
+      heightMeters: 1.15,
       role: MeshSimRole.emitter,
       airflowSolid: 0.15,
+      fitMode: MeshFitMode.height,
+      targetWidthMeters: 0.45,
+      targetDepthMeters: 0.45,
     ),
     'purifier': const MeshProfile(
       iconName: 'purifier',
@@ -192,6 +294,9 @@ class GltfCatalog {
       heightMeters: 1.05,
       role: MeshSimRole.emitter,
       airflowSolid: 0.55,
+      fitMode: MeshFitMode.height,
+      targetWidthMeters: 0.4,
+      targetDepthMeters: 0.4,
     ),
     'heater': const MeshProfile(
       iconName: 'heater',
@@ -199,6 +304,9 @@ class GltfCatalog {
       heightMeters: 0.68,
       role: MeshSimRole.emitter,
       airflowSolid: 0.7,
+      fitMode: MeshFitMode.uniform,
+      targetWidthMeters: 0.7,
+      targetDepthMeters: 0.25,
     ),
     'ac': const MeshProfile(
       iconName: 'ac',
@@ -210,6 +318,8 @@ class GltfCatalog {
       wallCutPadMeters: 0.02,
       clearWidthMeters: 0.9,
       clearHeightMeters: 0.62,
+      fitMode: MeshFitMode.wallOpening,
+      targetWidthMeters: 0.9,
     ),
     'intake': const MeshProfile(
       iconName: 'intake',
@@ -222,6 +332,8 @@ class GltfCatalog {
       wallCutPadMeters: 0.012,
       clearWidthMeters: 0.45,
       clearHeightMeters: 0.32,
+      fitMode: MeshFitMode.wallOpening,
+      targetWidthMeters: 0.45,
     ),
     'exhaust': const MeshProfile(
       iconName: 'exhaust',
@@ -234,6 +346,8 @@ class GltfCatalog {
       wallCutPadMeters: 0.012,
       clearWidthMeters: 0.45,
       clearHeightMeters: 0.32,
+      fitMode: MeshFitMode.wallOpening,
+      targetWidthMeters: 0.45,
     ),
     'door': const MeshProfile(
       iconName: 'door',
@@ -244,10 +358,11 @@ class GltfCatalog {
       lightTransmit: 0.95,
       airflowSolid: 0,
       wallCut: WallCutKind.through,
-      // Match Kenney doorway clear — not the full wall-kit bbox.
       wallCutPadMeters: 0.01,
       clearWidthMeters: 0.9,
       clearHeightMeters: 1.92,
+      fitMode: MeshFitMode.wallOpening,
+      targetWidthMeters: 0.9,
     ),
     'window': const MeshProfile(
       iconName: 'window',
@@ -260,6 +375,8 @@ class GltfCatalog {
       wallCutPadMeters: 0.01,
       clearWidthMeters: 1.15,
       clearHeightMeters: 1.1,
+      fitMode: MeshFitMode.wallOpening,
+      targetWidthMeters: 1.15,
     ),
     'smartBlinds': const MeshProfile(
       iconName: 'smartBlinds',
@@ -272,6 +389,8 @@ class GltfCatalog {
       wallCutPadMeters: 0.01,
       clearWidthMeters: 1.15,
       clearHeightMeters: 1.1,
+      fitMode: MeshFitMode.wallOpening,
+      targetWidthMeters: 1.15,
     ),
   };
 
@@ -283,6 +402,7 @@ class GltfCatalog {
           assetPath: null,
           heightMeters: 0.9,
           role: MeshSimRole.solid,
+          fitMode: MeshFitMode.uniform,
         );
   }
 
@@ -293,6 +413,9 @@ class GltfCatalog {
 
   static double defaultHeightMeters(String iconName) =>
       profileFor(iconName).heightMeters;
+
+  /// All catalog keys (for audits / tests).
+  static Iterable<String> get catalogKeys => _profiles.keys;
 
   /// Base URL for textures / GLBs inside the Model WebView.
   /// Android stages assets to a real temp folder so `../gltf/` XHR works.

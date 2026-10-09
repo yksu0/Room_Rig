@@ -435,8 +435,9 @@
   }
 
   /**
-   * mode: 'fill' | 'ignoreDepth' | 'fillWidth' | 'uniform'
-   * Each furniture kind picks its own mode — models are separate GLBs.
+   * mode from MeshProfile.fitMode:
+   *   'uniform' | 'width' | 'height' | 'wallOpening'
+   * Targets come from the Dart catalog (metres) — not per-kind hardcodes here.
    */
   function fitObject(root, targetW, targetD, targetH, mode) {
     const box = new THREE.Box3().setFromObject(root);
@@ -446,76 +447,31 @@
     const sx = targetW / Math.max(size.x, 1e-4);
     const sy = targetH > 0 ? targetH / Math.max(size.y, 1e-4) : sx;
     const sz = targetD / Math.max(size.z, 1e-4);
-    if (mode === 'fill') {
-      root.scale.set(sx * 0.98, sy * 0.98, sz * 0.98);
-    } else if (mode === 'ignoreDepth') {
+    if (mode === 'wallOpening' || mode === 'ignoreDepth') {
       root.scale.setScalar(Math.min(sx, sy) * 0.98);
-    } else if (mode === 'fillWidth') {
+    } else if (mode === 'width' || mode === 'fillWidth') {
       root.scale.setScalar(sx * 0.98);
+    } else if (mode === 'height') {
+      root.scale.setScalar(sy * 0.95);
+    } else if (mode === 'fill') {
+      // Legacy — avoid for furniture (stretches into slabs).
+      root.scale.set(sx * 0.98, sy * 0.98, sz * 0.98);
     } else {
-      // uniform: keep authored proportions, stay inside the cell
       root.scale.setScalar(Math.min(sx, sz, sy) * 0.92);
     }
     recenterOnFloor(root);
   }
 
-  /** Per-kind fit — monitor rules must not reshapes beds/sofas. */
-  function fitFurnitureModel(model, kind, fitW, fitD, h, mount) {
-    if (mount === 'wall') {
-      // Doors/windows: fit clear width × opening height (never wall thickness).
-      // Door ~1.9m — adult-sized without overshooting the shell.
-      const along = kind === 'door' ? Math.max(fitW, 0.85) : Math.max(fitW, 0.35);
-      const openH = kind === 'door' ? Math.min(Math.max(h, 1.85), 1.95) : h;
-      fitObject(model, along, fitD, openH, 'ignoreDepth');
-      return;
-    }
-    switch (kind) {
-      case 'desk':
-        // Kenney desk/drawer faces -Z; chair sits on +Z — flip so the knee
-        // opening faces the seat. Uniform scale keeps legs/apron (no slab).
-        alignToFootprint(model, fitW, fitD);
-        model.rotation.y += Math.PI;
-        fitObject(model, fitW, fitD, h, 'uniform');
-        break;
-      case 'table':
-        alignToFootprint(model, fitW, fitD);
-        fitObject(model, fitW, fitD, h, 'uniform');
-        break;
-      case 'monitor':
-      case 'tv':
-        // Do not alignToFootprint — that spun screens to face sideways.
-        // Kenney computerScreen faces -Z; Orbit yaw 0 = +Z toward the chair.
-        model.rotation.y += Math.PI;
-        fitObject(model, fitW, fitD, h, 'fillWidth');
-        break;
-      case 'pc': {
-        const box0 = new THREE.Box3().setFromObject(model);
-        const sz0 = new THREE.Vector3();
-        box0.getSize(sz0);
-        model.scale.setScalar((h / Math.max(sz0.y, 1e-4)) * 0.95);
-        recenterOnFloor(model);
-        break;
-      }
-      case 'lamp':
-      case 'floorlamp':
-        fitObject(model, fitW, fitD, h, 'uniform');
-        break;
-      case 'bed':
-      case 'sofa':
-      case 'chair':
-      case 'wardrobe':
-      case 'shelf':
-      case 'bookshelf':
-      case 'plant':
-      case 'fan':
-      case 'purifier':
-      case 'heater':
-        // Keep Kenney facing; uniform scale so we don't stretch/spin large props.
-        fitObject(model, fitW, fitD, h, 'uniform');
-        break;
-      default:
-        fitObject(model, fitW, fitD, h, 'uniform');
-    }
+  /** Apply MeshProfile fit fields from the scene payload. */
+  function fitFurnitureModel(model, it, fitW, fitD, h) {
+    const mode = (it.fit || 'uniform').toLowerCase();
+    const tw = it.tw != null ? +it.tw : fitW;
+    const td = it.td != null ? +it.td : fitD;
+    const th = it.th != null ? +it.th : h;
+    const biasDeg = +it.yawBias || 0;
+    if (it.alignFoot) alignToFootprint(model, tw, td);
+    if (biasDeg) model.rotation.y += THREE.MathUtils.degToRad(biasDeg);
+    fitObject(model, tw, td, th, mode);
   }
 
   function enableShadows(obj, cast) {
@@ -605,7 +561,7 @@
           const src = await loadGltf(it.model);
           model = src.clone(true);
           enableShadows(model, !it.opening);
-          fitFurnitureModel(model, kind, fitW, fitD, h, mount);
+          fitFurnitureModel(model, it, fitW, fitD, h);
         } catch (e) {
           console.warn('GLB failed', it.model, e);
         }
