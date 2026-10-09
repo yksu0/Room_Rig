@@ -21,6 +21,7 @@ import '../services/benchmark_validator.dart';
 import '../services/ergonomics_optimizer.dart';
 import '../services/ergonomics_simulator.dart';
 import '../services/layout_collision.dart';
+import '../services/layout_optimizer_common.dart';
 import '../services/layout_snap_guides.dart';
 import '../services/lighting_optimizer.dart';
 import '../services/lighting_simulator.dart';
@@ -247,7 +248,14 @@ class AppState extends ChangeNotifier {
 
   void _loadPreset(RoomPreset preset) {
     final data = RoomPresets.getPreset(preset);
-    _furniture = RigCatalog.retainV1(List.from(data.furniture.map((f) => f.copyWith())));
+    var items = RigCatalog.retainV1(List.from(data.furniture.map((f) => f.copyWith())));
+    // Seat monitor / PC / lamp on the work desk immediately — not only after Improve.
+    items = LayoutOptimizerCommon.mountDeskTopItems(
+      items,
+      gridCols: data.gridCols,
+      gridRows: data.gridRows,
+    );
+    _furniture = items;
     _selectedPreset = preset;
     _activeRoomLayout = RoomLayoutModel.fromPreset(data, _furniture);
     _activeRoomId = 'room_${DateTime.now().millisecondsSinceEpoch}';

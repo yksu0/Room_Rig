@@ -162,17 +162,16 @@ class RoomPresets {
           gridCols: 6,
           gridRows: 8,
           furniture: [
-            FurnitureItem(id: 'desk', name: 'Gaming Desk', iconName: 'desk', category: 'ergonomics', gridX: 1, gridY: 1, width: 2, height: 1, ergonomicsImpact: 0.6, lightingImpact: -0.1, cost: 299, description: 'Spacious desk designed for multi-monitor setups.'),
-            FurnitureItem(id: 'chair', name: 'Gaming Chair', iconName: 'chair', category: 'ergonomics', gridX: 1, gridY: 2, yawDegrees: 180, ergonomicsImpact: 0.8, airflowImpact: -0.2, cost: 349, description: 'Ergonomic bucket-seat design with lumbar support.'),
+            FurnitureItem(id: 'desk', name: 'Gaming Desk', iconName: 'desk', category: 'ergonomics', gridX: 1, gridY: 1, width: 2.4, height: 1.0, ergonomicsImpact: 0.6, lightingImpact: -0.1, cost: 299, description: 'Spacious desk designed for multi-monitor setups.'),
+            FurnitureItem(id: 'chair', name: 'Gaming Chair', iconName: 'chair', category: 'ergonomics', gridX: 1.6, gridY: 2.1, yawDegrees: 180, ergonomicsImpact: 0.8, airflowImpact: -0.2, cost: 349, description: 'Ergonomic bucket-seat design with lumbar support.'),
+            FurnitureItem(id: 'monitor', name: 'Gaming Monitor', iconName: 'monitor', category: 'ergonomics', gridX: 1.7, gridY: 1.05, width: 0.7, height: 0.35, yawDegrees: 180, ergonomicsImpact: 0.7, cost: 329, description: 'Primary display — sits on the back edge of the desk.'),
+            FurnitureItem(id: 'pc', name: 'PC Tower', iconName: 'pc', category: 'airflow', gridX: 3.0, gridY: 1.1, width: 0.35, height: 0.45, airflowImpact: -0.4, lightingImpact: 0.1, cost: 1500, description: 'Main processing powerhouse; sits on the desk beside the monitor.'),
+            FurnitureItem(id: 'lamp', name: 'RGB Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: 1.15, gridY: 1.15, width: 0.3, height: 0.3, lightingImpact: 0.45, cost: 49, description: 'Task light on the desk, opposite the PC.'),
             FurnitureItem(id: 'bed', name: 'Bed', iconName: 'bed', category: 'neutral', gridX: 3, gridY: 4, width: 2, height: 2, airflowImpact: -0.3, ergonomicsImpact: -0.2, cost: 599, description: 'Essential sleeping comfort zone; obstructs some airflow.'),
-            FurnitureItem(id: 'pc', name: 'PC Tower', iconName: 'pc', category: 'airflow', gridX: 0, gridY: 1, width: 0.45, height: 0.5, airflowImpact: -0.4, lightingImpact: 0.1, cost: 1500, description: 'Main processing powerhouse; generates exhaust heat.'),
             FurnitureItem(id: 'ac', name: 'AC Unit', iconName: 'ac', category: 'airflow', gridX: 5, gridY: 0, airflowImpact: 0.9, cost: 450, description: 'Generates cold air streams to cool down the room rig.'),
             FurnitureItem(id: 'window', name: 'Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, lightingImpact: 0.8, airflowImpact: 0.5, cost: 300, description: 'Provides natural light and ambient ventilation.'),
             FurnitureItem(id: 'door', name: 'Entry Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, height: 1, airflowImpact: 0.35, ergonomicsImpact: 0.2, cost: 220, description: 'Primary room entrance; keep approach path clear.'),
             FurnitureItem(id: 'shelf', name: 'Shelf', iconName: 'shelf', category: 'neutral', gridX: 5, gridY: 3, airflowImpact: -0.2, cost: 119, description: 'Storage unit; blockages can redirect airflow path.'),
-            // Open floor between the desk and the shelf. It used to sit at
-            // (4, 5), fully inside the bed, which left it stuck: every drag
-            // still overlapped the bed, so collision resolution snapped it back.
             FurnitureItem(id: 'fan', name: 'Stand Fan', iconName: 'fan', category: 'airflow', gridX: 4, gridY: 2, airflowImpact: 0.55, cost: 45, description: 'Oscillating pedestal fan; sweeps ~45° to push air around the room.'),
           ],
         );
@@ -184,16 +183,14 @@ class RoomPresets {
           gridCols: 6,
           gridRows: 8,
           furniture: [
-            FurnitureItem(id: 'desk', name: 'Standing Desk', iconName: 'desk', category: 'ergonomics', gridX: 0, gridY: 1, width: 2, height: 1, ergonomicsImpact: 0.9, lightingImpact: 0.1, cost: 499, description: 'Dual-motor standing desk for healthy posture transitions.'),
-            FurnitureItem(id: 'chair', name: 'Ergonomic Chair', iconName: 'chair', category: 'ergonomics', gridX: 0, gridY: 2, yawDegrees: 180, ergonomicsImpact: 0.9, cost: 699, description: 'High-back mesh design, optimal comfort and posture alignment.'),
-            // Beside the desk rather than on top of it — at (1, 1) it was
-            // fully inside the desk footprint, so it could never be dragged.
-            FurnitureItem(id: 'monitor', name: 'Monitor', iconName: 'monitor', category: 'ergonomics', gridX: 2, gridY: 1, ergonomicsImpact: 0.7, cost: 129, description: 'Positions the screen at eye level on the desk.'),
+            FurnitureItem(id: 'desk', name: 'Standing Desk', iconName: 'desk', category: 'ergonomics', gridX: 0, gridY: 1, width: 2.2, height: 1.0, ergonomicsImpact: 0.9, lightingImpact: 0.1, cost: 499, description: 'Dual-motor standing desk for healthy posture transitions.'),
+            FurnitureItem(id: 'chair', name: 'Ergonomic Chair', iconName: 'chair', category: 'ergonomics', gridX: 0.5, gridY: 2.1, yawDegrees: 180, ergonomicsImpact: 0.9, cost: 699, description: 'High-back mesh design, optimal comfort and posture alignment.'),
+            FurnitureItem(id: 'monitor', name: 'Monitor', iconName: 'monitor', category: 'ergonomics', gridX: 0.65, gridY: 1.05, width: 0.7, height: 0.35, yawDegrees: 180, ergonomicsImpact: 0.7, cost: 129, description: 'Positions the screen at eye level on the desk.'),
+            FurnitureItem(id: 'lamp', name: 'Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: 1.7, gridY: 1.15, width: 0.3, height: 0.3, lightingImpact: 0.6, cost: 59, description: 'Focused task lighting to avoid screen glare.'),
             FurnitureItem(id: 'window', name: 'Large Window', iconName: 'window', category: 'lighting', gridX: 3, gridY: 0, width: 2, lightingImpact: 0.9, airflowImpact: 0.7, cost: 400, description: 'Wide exterior window for maximum natural light spread.'),
             FurnitureItem(id: 'door', name: 'Office Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, height: 1, airflowImpact: 0.3, ergonomicsImpact: 0.25, cost: 180, description: 'Entry door — leave a clear approach aisle.'),
             FurnitureItem(id: 'plant', name: 'Plant', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 2, airflowImpact: 0.3, ergonomicsImpact: 0.2, cost: 39, description: 'Breathes life into the office and purifies ambient air.'),
             FurnitureItem(id: 'bookshelf', name: 'Bookshelf', iconName: 'shelf', category: 'neutral', gridX: 4, gridY: 3, width: 2, airflowImpact: -0.3, cost: 179, description: 'Heavy storage shelving; obstructs direct ventilation lines.'),
-            FurnitureItem(id: 'lamp', name: 'Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: 2, gridY: 2, lightingImpact: 0.6, cost: 59, description: 'Focused task lighting to avoid screen glare.'),
             FurnitureItem(id: 'sofa', name: 'Sofa', iconName: 'sofa', category: 'neutral', gridX: 1, gridY: 5, width: 2, airflowImpact: -0.3, ergonomicsImpact: 0.2, cost: 499, description: 'Secondary comfortable seating area for relaxation breaks.'),
           ],
         );

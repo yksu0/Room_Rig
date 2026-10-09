@@ -412,21 +412,28 @@
    * ignoreDepth: Kenney wall-kit GLBs are often deep (full wall slabs); using
    * a thin target depth was crushing door/window meshes smaller than the cut.
    */
-  function fitObject(root, targetW, targetD, targetH, ignoreDepth) {
+  /**
+   * Fit [root] into a target box.
+   * fillBox: non-uniform scale so footprint/height match (desks/tables — avoid
+   * tiny Kenney desks that leave monitors floating beside the grid cell).
+   * ignoreDepth: wall kits — fit W×H only.
+   * default: uniform min scale into the box.
+   */
+  function fitObject(root, targetW, targetD, targetH, ignoreDepth, fillBox) {
     const box = new THREE.Box3().setFromObject(root);
     const size = new THREE.Vector3();
     box.getSize(size);
     if (size.x < 1e-4 || size.y < 1e-4 || size.z < 1e-4) return;
     const sx = targetW / Math.max(size.x, 1e-4);
     const sy = targetH > 0 ? targetH / Math.max(size.y, 1e-4) : sx;
-    let s;
-    if (ignoreDepth) {
-      s = Math.min(sx, sy) * 0.98;
+    const sz = targetD / Math.max(size.z, 1e-4);
+    if (fillBox) {
+      root.scale.set(sx * 0.98, sy * 0.98, sz * 0.98);
+    } else if (ignoreDepth) {
+      root.scale.setScalar(Math.min(sx, sy) * 0.98);
     } else {
-      const sz = targetD / Math.max(size.z, 1e-4);
-      s = Math.min(sx, sz, sy) * 0.92;
+      root.scale.setScalar(Math.min(sx, sz, sy) * 0.92);
     }
-    root.scale.setScalar(s);
     const box2 = new THREE.Box3().setFromObject(root);
     root.position.x -= (box2.min.x + box2.max.x) * 0.5;
     root.position.y -= box2.min.y;
@@ -477,6 +484,18 @@
     };
   }
 
+  function deskHostTopY(wrap) {
+    wrap.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(wrap);
+    if (!isFinite(box.max.y) || box.isEmpty()) return null;
+    return box.max.y;
+  }
+
+  function xzOverlap(a, b) {
+    return a.min.x < b.max.x && a.max.x > b.min.x &&
+      a.min.z < b.max.z && a.max.z > b.min.z;
+  }
+
   async function setFurniture(items) {
     while (furnitureRoot.children.length) furnitureRoot.remove(furnitureRoot.children[0]);
     const measuredCuts = [];
@@ -486,9 +505,12 @@
       const h = Math.max(0.2, +it.h || 0.9);
       const wrap = new THREE.Group();
       const mount = it.mount || 'floor';
+      const kind = (it.kind || '').toLowerCase();
       wrap.position.set(+it.x || 0, +it.y || 0, +it.z || 0);
       wrap.rotation.y = THREE.MathUtils.degToRad(+it.yaw || 0);
       wrap.userData.itemId = it.id;
+      wrap.userData.mount = mount;
+      wrap.userData.kind = kind;
 
       let model = null;
       if (it.model) {
@@ -498,9 +520,12 @@
           enableShadows(model, !it.opening);
           if (mount === 'wall') {
             // Fit width × height only — wall-kit depth must not shrink the mesh.
-            fitObject(model, Math.max(w, 0.35), d, h, true);
+            fitObject(model, Math.max(w, 0.35), d, h, true, false);
+          } else if (kind === 'desk' || kind === 'table') {
+            // Stretch to the grid footprint so desk-top gear sits on the surface.
+            fitObject(model, w, d, h, false, true);
           } else {
-            fitObject(model, w, d, h, false);
+            fitObject(model, w, d, h, false, false);
           }
         } catch (e) {
           console.warn('GLB failed', it.model, e);
@@ -538,6 +563,31 @@
       }
     });
     await Promise.all(jobs);
+
+    // Seat desk-top items on the measured desk/table top (not a fixed 0.74
+    // constant that drifts when mesh scale changes).
+    const hosts = [];
+    const deskItems = [];
+    for (const wrap of furnitureRoot.children) {
+      const k = wrap.userData.kind || '';
+      if (wrap.userData.mount === 'desk') deskItems.push(wrap);
+      if (k === 'desk' || k === 'table') hosts.push(wrap);
+    }
+    for (const item of deskItems) {
+      item.updateWorldMatrix(true, true);
+      const ib = new THREE.Box3().setFromObject(item);
+      let bestY = null;
+      for (const host of hosts) {
+        host.updateWorldMatrix(true, true);
+        const hb = new THREE.Box3().setFromObject(host);
+        if (!xzOverlap(ib, hb)) continue;
+        const top = deskHostTopY(host);
+        if (top == null) continue;
+        if (bestY == null || top > bestY) bestY = top;
+      }
+      if (bestY != null) item.position.y = bestY + 0.005;
+    }
+
     const n = (items || []).length;
     const withModel = (items || []).filter((i) => i.model).length;
     hud.textContent = n + ' items · ' + withModel + ' GLBs · exterior + openings';

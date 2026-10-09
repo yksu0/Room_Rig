@@ -695,6 +695,23 @@ class LayoutOptimizerCommon {
         }
         item = item.copyWith(width: width, height: depth);
         next[i] = item;
+      } else if (hay.contains('monitor') ||
+          hay.contains('display') ||
+          item.iconName == 'monitor') {
+        // Default 1×1 footprint is larger than the desk depth and floats off.
+        item = item.copyWith(
+          width: math.min(item.width, 0.75),
+          height: math.min(item.height, 0.4),
+        );
+        next[i] = item;
+      } else if (hay.contains('pc') ||
+          hay.contains('tower') ||
+          item.iconName == 'pc') {
+        item = item.copyWith(
+          width: math.min(item.width, 0.4),
+          height: math.min(item.height, 0.5),
+        );
+        next[i] = item;
       } else if (hay.contains('plant')) {
         item = item.copyWith(
           width: math.min(item.width, 0.5),
@@ -704,8 +721,8 @@ class LayoutOptimizerCommon {
       } else if ((hay.contains('lamp') || item.iconName == 'lamp') &&
           !hay.contains('floor')) {
         item = item.copyWith(
-          width: math.min(item.width, 0.4),
-          height: math.min(item.height, 0.4),
+          width: math.min(item.width, 0.35),
+          height: math.min(item.height, 0.35),
         );
         next[i] = item;
       }
@@ -919,8 +936,9 @@ class LayoutOptimizerCommon {
           }
         }
         final pcsOnHost = alreadyOnHost.where((o) => _deskItemRank(o) == 4).length;
-        if (pcsOnHost >= 1 || !fitsOnDesk) {
-          // Extra / oversized towers: floor flush to the same wall, still indoors.
+        // Only park on the floor when the tower cannot fit the desk top.
+        // A second tower still tries the desk first (beside the first).
+        if (!fitsOnDesk) {
           preferX = switch (workFace) {
             'east' => 0.0,
             'west' => roomMaxX,
@@ -929,7 +947,11 @@ class LayoutOptimizerCommon {
           preferY = host.gridY.clamp(0.0, roomMaxY);
           break;
         }
-        if (monitor != null) {
+        if (pcsOnHost >= 1) {
+          // Prefer the free back-corner opposite the first tower.
+          preferX = hiX;
+          preferY = backY.clamp(loY, hiY);
+        } else if (monitor != null) {
           final alongWall = _besideAlongWall(
             monitor: monitor,
             item: item,

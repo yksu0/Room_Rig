@@ -274,7 +274,8 @@ class SurfaceMounts {
     if (host == null) {
       final cx = f.gridX + f.width / 2;
       final cy = f.gridY + f.height / 2;
-      var best = 0.4;
+      // Nearby floor-side towers still snap onto the desk (was 0.4 — too tight).
+      var best = 1.25;
       for (final h in furniture) {
         if (h.id == f.id || !isDeskHost(h)) continue;
         final dx = math.max(h.gridX - cx, math.max(0.0, cx - (h.gridX + h.width)));
