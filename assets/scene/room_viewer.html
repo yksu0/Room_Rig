@@ -451,7 +451,7 @@
     } else if (mode === 'ignoreDepth') {
       root.scale.setScalar(Math.min(sx, sy) * 0.98);
     } else if (mode === 'fillWidth') {
-      root.scale.setScalar(sx * 0.90);
+      root.scale.setScalar(sx * 0.94);
     } else {
       // uniform: keep authored proportions, stay inside the cell
       root.scale.setScalar(Math.min(sx, sz, sy) * 0.92);
@@ -474,8 +474,7 @@
       case 'monitor':
       case 'tv':
         // Do not alignToFootprint — that spun screens to face sideways.
-        // Kenney computerScreen faces -Z; Orbit yaw 0 = +Z, so +180° local.
-        model.rotation.y += Math.PI;
+        // Kenney computerScreen already faces +Z; yaw 0 = toward the chair.
         fitObject(model, fitW, fitD, h, 'fillWidth');
         break;
       case 'pc': {
