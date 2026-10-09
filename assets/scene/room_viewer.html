@@ -462,7 +462,10 @@
   /** Per-kind fit — monitor rules must not reshapes beds/sofas. */
   function fitFurnitureModel(model, kind, fitW, fitD, h, mount) {
     if (mount === 'wall') {
-      fitObject(model, Math.max(fitW, 0.35), fitD, h, 'ignoreDepth');
+      // Doors/windows: fit clear width × opening height (never wall thickness).
+      const along = kind === 'door' ? Math.max(fitW, 0.9) : Math.max(fitW, 0.35);
+      const openH = kind === 'door' ? Math.max(h, 2.0) : h;
+      fitObject(model, along, fitD, openH, 'ignoreDepth');
       return;
     }
     switch (kind) {
@@ -578,15 +581,17 @@
       const d = Math.max(0.2, +it.d || 0.8);
       const h = Math.max(0.2, +it.h || 0.9);
       const yawDeg = +it.yaw || 0;
+      const mount = it.mount || 'floor';
+      const kind = (it.kind || '').toLowerCase();
       // Match Orbit (FurnitureShapes): canonical mesh is long along X / faces +Z;
       // odd 90° yaws swap local W↔D so the world AABB stays on the grid cell.
+      // Wall mounts must NOT swap — it.w is clear width along the wall, it.d is
+      // thickness; swapping crushed doors/windows to ~wall-depth scale.
       const yawSteps = Math.round(yawDeg / 90);
-      const swapAxes = Math.abs(yawSteps) % 2 === 1;
+      const swapAxes = mount !== 'wall' && Math.abs(yawSteps) % 2 === 1;
       const fitW = swapAxes ? d : w;
       const fitD = swapAxes ? w : d;
       const wrap = new THREE.Group();
-      const mount = it.mount || 'floor';
-      const kind = (it.kind || '').toLowerCase();
       wrap.position.set(+it.x || 0, +it.y || 0, +it.z || 0);
       wrap.rotation.y = THREE.MathUtils.degToRad(yawDeg);
       wrap.userData.itemId = it.id;
