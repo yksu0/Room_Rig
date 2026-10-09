@@ -1005,7 +1005,12 @@ class LayoutOptimizerCommon {
             preferOpposite: true,
           );
           preferX = alongWall.$1;
-          preferY = alongWall.$2;
+          // Keep lamp on the wall/back edge — never between screen and chair.
+          preferY = backY.clamp(loY, hiY);
+          if (workFace == 'east' || workFace == 'west') {
+            preferX = backX.clamp(loX, hiX);
+            preferY = alongWall.$2;
+          }
         } else {
           preferX = hiX;
           preferY = backY.clamp(loY, hiY);
