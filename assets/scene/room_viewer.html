@@ -413,6 +413,21 @@
    * a thin target depth was crushing door/window meshes smaller than the cut.
    */
   /**
+   * Orbit assumes canonical meshes are long along +X and face +Z. Kenney GLBs
+   * are often long along Z — rotate into that convention before fitting.
+   */
+  function alignCanonicalAxes(root) {
+    root.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    if (size.z > size.x * 1.05) {
+      root.rotation.y += Math.PI / 2;
+      root.updateMatrixWorld(true);
+    }
+  }
+
+  /**
    * Fit [root] into a target box.
    * fillBox: non-uniform scale so footprint/height match (desks/tables — avoid
    * tiny Kenney desks that leave monitors floating beside the grid cell).
@@ -503,11 +518,18 @@
       const w = Math.max(0.2, +it.w || 0.8);
       const d = Math.max(0.2, +it.d || 0.8);
       const h = Math.max(0.2, +it.h || 0.9);
+      const yawDeg = +it.yaw || 0;
+      // Match Orbit (FurnitureShapes): canonical mesh is long along X / faces +Z;
+      // odd 90° yaws swap local W↔D so the world AABB stays on the grid cell.
+      const yawSteps = Math.round(yawDeg / 90);
+      const swapAxes = Math.abs(yawSteps) % 2 === 1;
+      const fitW = swapAxes ? d : w;
+      const fitD = swapAxes ? w : d;
       const wrap = new THREE.Group();
       const mount = it.mount || 'floor';
       const kind = (it.kind || '').toLowerCase();
       wrap.position.set(+it.x || 0, +it.y || 0, +it.z || 0);
-      wrap.rotation.y = THREE.MathUtils.degToRad(+it.yaw || 0);
+      wrap.rotation.y = THREE.MathUtils.degToRad(yawDeg);
       wrap.userData.itemId = it.id;
       wrap.userData.mount = mount;
       wrap.userData.kind = kind;
@@ -521,17 +543,17 @@
           if (mount === 'wall') {
             // Fit width × height only — wall-kit depth must not shrink the mesh.
             fitObject(model, Math.max(w, 0.35), d, h, true, false);
-          } else if (kind === 'desk' || kind === 'table') {
-            // Stretch to the grid footprint so desk-top gear sits on the surface.
-            fitObject(model, w, d, h, false, true);
           } else {
-            fitObject(model, w, d, h, false, false);
+            alignCanonicalAxes(model);
+            // Desks/tables fill the Orbit cell; others keep uniform scale.
+            const fill = kind === 'desk' || kind === 'table';
+            fitObject(model, fitW, fitD, h, false, fill);
           }
         } catch (e) {
           console.warn('GLB failed', it.model, e);
         }
       }
-      if (!model) model = placeholderMesh(it.kind || 'box', w, d, h);
+      if (!model) model = placeholderMesh(it.kind || 'box', fitW, fitD, h);
       wrap.add(model);
 
       if (it.selected) {
