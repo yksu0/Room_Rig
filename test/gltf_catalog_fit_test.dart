@@ -22,9 +22,9 @@ void main() {
     }
   });
 
-  test('Kenney screen/desk carry +180° local bias toward Orbit +Z', () {
-    expect(GltfCatalog.profileFor('monitor').localYawBiasDegrees, 180);
-    expect(GltfCatalog.profileFor('tv').localYawBiasDegrees, 180);
+  test('Kenney desk bias +180; screens use yaw 0 (no extra flip)', () {
     expect(GltfCatalog.profileFor('desk').localYawBiasDegrees, 180);
+    expect(GltfCatalog.profileFor('monitor').localYawBiasDegrees, 0);
+    expect(GltfCatalog.profileFor('tv').localYawBiasDegrees, 0);
   });
 }

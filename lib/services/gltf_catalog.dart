@@ -253,8 +253,9 @@ class GltfCatalog {
       // ~27–32\" class display on a gaming desk.
       targetWidthMeters: 0.75,
       targetDepthMeters: 0.22,
-      // Kenney screen faces -Z; Orbit yaw 0 = +Z toward the chair.
-      localYawBiasDegrees: 180,
+      // Kenney computerScreen already faces Orbit +Z (yaw 0 → chair).
+      // A +180 bias pointed the panel at the wall.
+      localYawBiasDegrees: 0,
     ),
     'tv': const MeshProfile(
       iconName: 'tv',
@@ -265,7 +266,7 @@ class GltfCatalog {
       fitMode: MeshFitMode.width,
       targetWidthMeters: 1.1,
       targetDepthMeters: 0.28,
-      localYawBiasDegrees: 180,
+      localYawBiasDegrees: 0,
     ),
     'pc': const MeshProfile(
       iconName: 'pc',
@@ -278,15 +279,17 @@ class GltfCatalog {
       targetDepthMeters: 0.45,
     ),
     // CC0 HVAC pack under assets/gltf/hvac/ (see SOURCES.md).
+    // Placeholder cage/blower GLB — not a household pedestal; keep modest until
+    // a CC0 stand-fan drop-in lands (see assets/gltf/SOURCES.md).
     'fan': const MeshProfile(
       iconName: 'fan',
       assetPath: '$hvacDir/stand_fan.glb',
-      heightMeters: 1.15,
+      heightMeters: 0.85,
       role: MeshSimRole.emitter,
       airflowSolid: 0.15,
       fitMode: MeshFitMode.height,
-      targetWidthMeters: 0.45,
-      targetDepthMeters: 0.45,
+      targetWidthMeters: 0.32,
+      targetDepthMeters: 0.32,
     ),
     'purifier': const MeshProfile(
       iconName: 'purifier',
