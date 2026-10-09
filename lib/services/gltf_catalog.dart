@@ -132,6 +132,8 @@ class MeshProfile {
         'alignFoot': alignFootprint,
         if (targetWidthMeters != null) 'tw': targetWidthMeters,
         if (targetDepthMeters != null) 'td': targetDepthMeters,
+        'role': role.name,
+        if (role == MeshSimRole.emitter) 'emit': true,
       };
 }
 

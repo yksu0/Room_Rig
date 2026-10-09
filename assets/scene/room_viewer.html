@@ -84,19 +84,93 @@
   const exteriorRoot = new THREE.Group();
   scene.add(exteriorRoot);
 
-  const hemi = new THREE.HemisphereLight(0xddeeff, 0x5a6a3a, 0.7);
+  const hemi = new THREE.HemisphereLight(0xddeeff, 0x5a6a3a, 0.45);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff1c8, 1.35);
+  // Outdoor sun is fill only — indoor shadows come from room bulbs, not exterior.
+  const sun = new THREE.DirectionalLight(0xfff1c8, 0.35);
   sun.position.set(8, 14, -6);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.bias = -0.0003;
+  sun.castShadow = false;
   scene.add(sun);
-  const fill = new THREE.DirectionalLight(0x88c0ff, 0.28);
+  const fill = new THREE.DirectionalLight(0x88c0ff, 0.18);
   fill.position.set(-6, 4, 4);
   scene.add(fill);
-  const ceilingGlow = new THREE.PointLight(0xfff0d8, 0.45, 18, 2);
+  // Fallback room light when no lamp / ceiling fixture is placed.
+  const ceilingGlow = new THREE.PointLight(0xfff0d8, 1.1, 14, 1.6);
+  ceilingGlow.castShadow = true;
+  ceilingGlow.shadow.mapSize.set(1024, 1024);
+  ceilingGlow.shadow.bias = -0.0015;
+  ceilingGlow.shadow.normalBias = 0.02;
   scene.add(ceilingGlow);
+  const interiorLightRoot = new THREE.Group();
+  scene.add(interiorLightRoot);
+
+  /** Kinds that act as indoor bulbs (shadow casters). */
+  const BULB_KINDS = {
+    lamp: { intensity: 1.35, distance: 5.5, heightFrac: 0.88, color: 0xffe6b8 },
+    floorlamp: { intensity: 1.5, distance: 7, heightFrac: 0.92, color: 0xfff0d0 },
+    ceilinglight: { intensity: 1.85, distance: 9, heightFrac: 0.15, color: 0xfff5e6 },
+  };
+
+  function clearInteriorLights() {
+    while (interiorLightRoot.children.length) {
+      const c = interiorLightRoot.children[0];
+      interiorLightRoot.remove(c);
+      if (c.dispose) c.dispose();
+    }
+  }
+
+  function makeBulbLight(cfg) {
+    const pl = new THREE.PointLight(cfg.color, cfg.intensity, cfg.distance, 1.7);
+    pl.castShadow = true;
+    pl.shadow.mapSize.set(512, 512);
+    pl.shadow.bias = -0.0015;
+    pl.shadow.normalBias = 0.025;
+    pl.shadow.camera.near = 0.08;
+    pl.shadow.camera.far = cfg.distance;
+    return pl;
+  }
+
+  /** Drive indoor shadows from placed bulbs; sun stays fill-only. */
+  function syncInteriorLights(items) {
+    clearInteriorLights();
+    const list = items || [];
+    let bulbCount = 0;
+    const maxShadows = 3;
+    for (const it of list) {
+      const kind = (it.kind || '').toLowerCase();
+      const cfg = BULB_KINDS[kind];
+      const isEmit = it.emit === true || it.role === 'emitter' || !!cfg;
+      if (!cfg && !isEmit) continue;
+      // Heat / airflow emitters (PC, AC, fan) glow weakly but do not cast shadows.
+      if (!cfg) continue;
+      if (bulbCount >= maxShadows) break;
+      const wrap = furnitureRoot.children.find((c) => c.userData.itemId === it.id);
+      let x = +it.x || 0;
+      let y = (+it.y || 0) + (+it.h || 0.4) * (cfg.heightFrac || 0.8);
+      let z = +it.z || 0;
+      if (wrap) {
+        wrap.updateWorldMatrix(true, true);
+        const box = new THREE.Box3().setFromObject(wrap);
+        if (!box.isEmpty()) {
+          x = (box.min.x + box.max.x) * 0.5;
+          z = (box.min.z + box.max.z) * 0.5;
+          y = box.min.y + (box.max.y - box.min.y) * (cfg.heightFrac || 0.8);
+          if (kind === 'ceilinglight') y = Math.min(y, roomH - 0.08);
+        }
+      }
+      const pl = makeBulbLight(cfg);
+      pl.position.set(x, y, z);
+      interiorLightRoot.add(pl);
+      bulbCount++;
+    }
+    const hasBulbs = bulbCount > 0;
+    ceilingGlow.visible = !hasBulbs;
+    ceilingGlow.castShadow = !hasBulbs;
+    ceilingGlow.intensity = hasBulbs ? 0 : 1.1;
+    // Keep a little outdoor wash; never let it own the shadow map.
+    sun.intensity = hasBulbs ? 0.22 : 0.35;
+    sun.castShadow = false;
+  }
 
   const texLoader = new THREE.TextureLoader();
   let floorMap = null;
@@ -246,7 +320,9 @@
         }
         roomRoot.add(glass);
 
-        const sunIn = new THREE.SpotLight(0xfff2cc, 0.85, 10, Math.PI / 4.5, 0.45, 1);
+        // Daylight wash through glass — no castShadow (indoor bulbs own shadows).
+        const sunIn = new THREE.SpotLight(0xfff2cc, 0.35, 10, Math.PI / 4.5, 0.45, 1);
+        sunIn.castShadow = false;
         if (alongX) {
           sunIn.position.set((op.along0 + op.along1) / 2, (op.y0 + op.y1) / 2, fixed - inwardSign * 1.2);
           sunIn.target.position.set((op.along0 + op.along1) / 2, 0.9, fixed + inwardSign * 1.5);
@@ -314,10 +390,7 @@
     lookAt.set(w * 0.5, h * 0.32, d * 0.5);
     ceilingGlow.position.set(w * 0.5, h - 0.15, d * 0.5);
     sun.position.set(w * 0.5 + 6, h + 10, d * 0.5 - 8);
-    sun.shadow.camera.left = -Math.max(w, d) * 1.2;
-    sun.shadow.camera.right = Math.max(w, d) * 1.2;
-    sun.shadow.camera.top = Math.max(w, d) * 1.2;
-    sun.shadow.camera.bottom = -Math.max(w, d) * 1.2;
+    sun.castShadow = false;
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(w, d),
@@ -623,9 +696,13 @@
       if (bestY != null) item.position.y = bestY + 0.005;
     }
 
+    syncInteriorLights(items);
+
     const n = (items || []).length;
     const withModel = (items || []).filter((i) => i.model).length;
-    hud.textContent = n + ' items · ' + withModel + ' GLBs · exterior + openings';
+    const bulbs = interiorLightRoot.children.length;
+    hud.textContent = n + ' items · ' + withModel + ' GLBs · ' +
+      (bulbs ? bulbs + ' room bulbs' : 'ceiling fill') + ' · shadows indoor';
     return measuredCuts;
   }
 

@@ -15,6 +15,10 @@ void main() {
       expect(fit['th'], p.heightMeters);
       expect(fit.containsKey('yawBias'), isTrue);
       expect(fit.containsKey('alignFoot'), isTrue);
+      expect(fit['role'], p.role.name);
+      if (p.role == MeshSimRole.emitter) {
+        expect(fit['emit'], isTrue, reason: '$key emitter should flag emit');
+      }
       if (p.fitMode == MeshFitMode.wallOpening) {
         expect(
           p.clearWidthMeters ?? p.targetWidthMeters,
