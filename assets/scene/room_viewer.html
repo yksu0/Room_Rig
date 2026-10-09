@@ -23,7 +23,7 @@
 </head>
 <body>
   <canvas id="c"></canvas>
-  <div id="hud">1-finger orbit · 2-finger pan · pinch zoom</div>
+  <div id="hud">LMB orbit · RMB pan · scroll zoom</div>
   <div id="err"></div>
   <div id="minimap" style="display:none;position:absolute;right:10px;bottom:10px;z-index:2;width:108px;height:86px;border-radius:10px;border:1px solid #2C3348;background:rgba(17,20,28,0.82);overflow:hidden;pointer-events:none;">
     <canvas id="mm" width="108" height="86"></canvas>
@@ -451,7 +451,7 @@
     } else if (mode === 'ignoreDepth') {
       root.scale.setScalar(Math.min(sx, sy) * 0.98);
     } else if (mode === 'fillWidth') {
-      root.scale.setScalar(sx * 0.94);
+      root.scale.setScalar(sx * 0.98);
     } else {
       // uniform: keep authored proportions, stay inside the cell
       root.scale.setScalar(Math.min(sx, sz, sy) * 0.92);
@@ -467,14 +467,21 @@
     }
     switch (kind) {
       case 'desk':
+        // Kenney desk/drawer faces -Z; chair sits on +Z — flip so the knee
+        // opening faces the seat. Uniform scale keeps legs/apron (no slab).
+        alignToFootprint(model, fitW, fitD);
+        model.rotation.y += Math.PI;
+        fitObject(model, fitW, fitD, h, 'uniform');
+        break;
       case 'table':
         alignToFootprint(model, fitW, fitD);
-        fitObject(model, fitW, fitD, h, 'fill');
+        fitObject(model, fitW, fitD, h, 'uniform');
         break;
       case 'monitor':
       case 'tv':
         // Do not alignToFootprint — that spun screens to face sideways.
-        // Kenney computerScreen already faces +Z; yaw 0 = toward the chair.
+        // Kenney computerScreen faces -Z; Orbit yaw 0 = +Z toward the chair.
+        model.rotation.y += Math.PI;
         fitObject(model, fitW, fitD, h, 'fillWidth');
         break;
       case 'pc': {
@@ -707,7 +714,7 @@
       yaw = 0.55; pitch = -0.55; distance = Math.max(roomW, roomD) * 0.55 + 1.6;
     }
     clampLookAt();
-    hud.textContent = '1-finger orbit · 2-finger pan · pinch zoom';
+    hud.textContent = 'LMB orbit · RMB pan · scroll zoom';
   }
 
   function focusItem(id) {
@@ -718,12 +725,12 @@
     pitch = 0.42;
     exploreMode = 'orbit';
     clampLookAt();
-    hud.textContent = 'Focused · 1-finger orbit · 2-finger pan';
+    hud.textContent = 'Focused · LMB orbit · RMB pan';
   }
 
   function setExploreMode(mode) {
     exploreMode = 'orbit';
-    hud.textContent = '1-finger orbit · 2-finger pan · pinch zoom';
+    hud.textContent = 'LMB orbit · RMB pan · scroll zoom';
   }
 
   function setMiniMap(on) {
@@ -766,9 +773,10 @@
     camera.updateProjectionMatrix();
   }
 
-  // Multi-touch: 1 pointer = orbit, 2+ = pan + pinch zoom.
+  // Desktop: LMB orbit, RMB/MMB pan, wheel zoom.
+  // Touch: 1-finger orbit, 2-finger pan + pinch zoom.
   const activePtrs = new Map();
-  let gesture = null; // 'orbit' | 'panzoom'
+  let gesture = null; // 'orbit' | 'pan' | 'panzoom'
   let lastX = 0, lastY = 0;
   let lastMidX = 0, lastMidY = 0, lastPinch = 0;
 
@@ -777,7 +785,9 @@
   function beginGesture() {
     const pts = ptrList();
     if (pts.length === 1) {
-      gesture = 'orbit';
+      const btn = pts[0].button;
+      // 0 = left orbit; 1 = middle pan; 2 = right pan (touch button is 0).
+      gesture = (btn === 2 || btn === 1) ? 'pan' : 'orbit';
       lastX = pts[0].x; lastY = pts[0].y;
     } else if (pts.length >= 2) {
       gesture = 'panzoom';
@@ -804,20 +814,26 @@
     clampLookAt();
   }
 
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('pointerdown', (e) => {
-    activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button });
     try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
     beginGesture();
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!activePtrs.has(e.pointerId)) return;
-    activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const prev = activePtrs.get(e.pointerId);
+    activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY, button: prev.button });
     const pts = ptrList();
     if (pts.length === 1 && gesture === 'orbit') {
       const dx = pts[0].x - lastX, dy = pts[0].y - lastY;
       lastX = pts[0].x; lastY = pts[0].y;
       yaw -= dx * 0.008;
       pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch + dy * 0.006));
+    } else if (pts.length === 1 && gesture === 'pan') {
+      const dx = pts[0].x - lastX, dy = pts[0].y - lastY;
+      lastX = pts[0].x; lastY = pts[0].y;
+      panLookAt(dx, dy);
     } else if (pts.length >= 2) {
       if (gesture !== 'panzoom') beginGesture();
       const midX = (pts[0].x + pts[1].x) * 0.5;
