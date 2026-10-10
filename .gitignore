@@ -81,4 +81,6 @@ AGENTS.local.md
 # Local debug captures / empty scratch folders
 /debug_*.png
 /debug_*.xml
+/tmp_screenshot*
+/scripts/_strip_coauthor_msg.py
 /nu8/
