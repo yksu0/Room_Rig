@@ -98,8 +98,15 @@ class SurfaceMounts {
   /// Desk surface height — same metre as Model `MeshProfile` for `desk`.
   static double get deskTop => GltfCatalog.profileFor('desk').heightMeters;
 
-  static bool isWindow(FurnitureItem f) =>
-      _hay(f).contains('window') || f.iconName == 'window';
+  static bool isWindow(FurnitureItem f) {
+    final hay = _hay(f);
+    // smartBlinds / curtains sit in the window plane — same wall span path.
+    return hay.contains('window') ||
+        f.iconName == 'window' ||
+        f.iconName == 'smartBlinds' ||
+        hay.contains('blind') ||
+        hay.contains('curtain');
+  }
 
   static bool isDoor(FurnitureItem f) => _hay(f).contains('door') || f.iconName == 'door';
 

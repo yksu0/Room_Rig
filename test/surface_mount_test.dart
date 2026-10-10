@@ -43,6 +43,12 @@ void main() {
       expect(mount(_item(id: 'window', x: 2, y: 0)).surface, MountSurface.wall);
       expect(mount(_item(id: 'door', x: 0, y: 6)).surface, MountSurface.wall);
       expect(mount(_item(id: 'ac', name: 'AC Unit', x: 5, y: 0)).surface, MountSurface.wall);
+      expect(mount(_item(id: 'intake', x: 0, y: 3)).surface, MountSurface.wall);
+      expect(mount(_item(id: 'exhaust', x: 5, y: 3)).surface, MountSurface.wall);
+      expect(
+        mount(_item(id: 'blinds', name: 'Smart Blinds', icon: 'smartBlinds', x: 2, y: 0)).surface,
+        MountSurface.wall,
+      );
 
       for (final id in const ['desk', 'chair', 'bed', 'pc', 'shelf', 'fan', 'sofa']) {
         expect(
@@ -164,6 +170,53 @@ void main() {
       expect(north.gridY, 0);
       expect(north.width, closeTo(SurfaceMounts.openingAlongCells(north), 0.05));
       expect(north.height, lessThan(north.width));
+    });
+
+    test('every wall fitting keeps the same clear length on all four walls', () {
+      const icons = ['window', 'smartBlinds', 'door', 'ac', 'intake', 'exhaust'];
+      const cols = 8;
+      const rows = 8;
+
+      for (final icon in icons) {
+        final along = SurfaceMounts.openingAlongCells(_item(id: icon, icon: icon));
+        expect(along, greaterThan(0.2), reason: '$icon needs a catalogue clear width');
+
+        double spanLen(WallSpan s) => (s.x1 - s.x0).abs() + (s.z1 - s.z0).abs();
+
+        final north = SurfaceMounts.spanFor(
+          _item(id: icon, icon: icon, x: 3, y: 0, w: 0.2, h: 0.2),
+          gridCols: cols,
+          gridRows: rows,
+        );
+        final south = SurfaceMounts.spanFor(
+          _item(id: icon, icon: icon, x: 3, y: rows - 0.2, w: 0.2, h: 0.2),
+          gridCols: cols,
+          gridRows: rows,
+        );
+        final west = SurfaceMounts.spanFor(
+          _item(id: icon, icon: icon, x: 0, y: 3, w: 0.2, h: 0.2),
+          gridCols: cols,
+          gridRows: rows,
+        );
+        final east = SurfaceMounts.spanFor(
+          _item(id: icon, icon: icon, x: cols - 0.2, y: 3, w: 0.2, h: 0.2),
+          gridCols: cols,
+          gridRows: rows,
+        );
+
+        expect(north.wall, RoomWall.north, reason: icon);
+        expect(south.wall, RoomWall.south, reason: icon);
+        expect(west.wall, RoomWall.west, reason: icon);
+        expect(east.wall, RoomWall.east, reason: icon);
+
+        for (final span in [north, south, west, east]) {
+          expect(
+            spanLen(span),
+            closeTo(along, 0.05),
+            reason: '$icon on ${span.wall} must use clear width, not the thin axis',
+          );
+        }
+      }
     });
 
     test('every shipped preset fitting resolves to the wall it touches', () {
