@@ -1250,9 +1250,13 @@
       const h = +data.roomH || 2.7;
       const openings = data.openings || [];
       rebuildRoom(w, d, h, openings);
-      if (data.yaw != null) yaw = +data.yaw;
-      if (data.pitch != null) pitch = +data.pitch;
-      if (data.distance != null) distance = +data.distance;
+      // Preserve the live orbit unless Flutter explicitly asks to apply camera
+      // (select / MOVE / furniture refresh must not snap the view).
+      if (data.applyCamera) {
+        if (data.yaw != null) yaw = +data.yaw;
+        if (data.pitch != null) pitch = +data.pitch;
+        if (data.distance != null) distance = +data.distance;
+      }
       if (data.assetBase) assetBase = data.assetBase;
       lastItems = data.items || [];
       if (data.exploreMode) setExploreMode(data.exploreMode);

@@ -221,10 +221,12 @@ class RoomModelSceneState extends State<RoomModelScene> {
     final selectedChanged = oldWidget.selectedId != widget.selectedId;
     final pendingChanged =
         oldWidget.pendingPlacementId != widget.pendingPlacementId;
-    final cameraOrShell = oldWidget.room != widget.room ||
-        oldWidget.yaw != widget.yaw ||
+    // Model orbit lives in the WebView. Flutter yaw/pitch/distance are only
+    // applied when those props actually change — never on select/MOVE alone.
+    final cameraChanged = oldWidget.yaw != widget.yaw ||
         oldWidget.pitch != widget.pitch ||
-        oldWidget.distance != widget.distance ||
+        oldWidget.distance != widget.distance;
+    final shellChanged = oldWidget.room != widget.room ||
         oldWidget.exploreChrome != widget.exploreChrome ||
         oldWidget.showMiniMap != widget.showMiniMap ||
         oldWidget.pendingPreset != widget.pendingPreset ||
@@ -237,7 +239,8 @@ class RoomModelSceneState extends State<RoomModelScene> {
 
     if (widget.liveDrag &&
         furnitureChanged &&
-        !cameraOrShell &&
+        !cameraChanged &&
+        !shellChanged &&
         !selectedChanged &&
         !pendingChanged) {
       _pushLivePoses();
@@ -246,8 +249,9 @@ class RoomModelSceneState extends State<RoomModelScene> {
     if (furnitureChanged ||
         selectedChanged ||
         pendingChanged ||
-        cameraOrShell) {
-      _pushScene();
+        cameraChanged ||
+        shellChanged) {
+      _pushScene(applyCamera: cameraChanged);
     }
   }
 
@@ -264,7 +268,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
     }
   }
 
-  Map<String, dynamic> _scenePayload() {
+  Map<String, dynamic> _scenePayload({bool applyCamera = false}) {
     final cols = widget.room.gridCols;
     final rows = widget.room.gridRows;
     final roomW = RoomScale.metersFromCells(cols);
@@ -431,9 +435,14 @@ class RoomModelSceneState extends State<RoomModelScene> {
       'exploreMode': 'orbit',
       'miniMap': widget.showMiniMap,
       'moveMode': widget.moveMode || widget.pendingPlacementId != null,
-      if (widget.yaw != null) 'yaw': widget.yaw,
-      if (widget.pitch != null) 'pitch': widget.pitch,
-      if (widget.distance != null) 'distance': widget.distance,
+      // Only when Flutter intentionally changed camera props — select/MOVE must
+      // not clobber the WebView orbit the user already framed.
+      if (applyCamera) ...{
+        'applyCamera': true,
+        if (widget.yaw != null) 'yaw': widget.yaw,
+        if (widget.pitch != null) 'pitch': widget.pitch,
+        if (widget.distance != null) 'distance': widget.distance,
+      },
     };
 
     final preset = widget.pendingPreset;
@@ -535,9 +544,9 @@ class RoomModelSceneState extends State<RoomModelScene> {
     await _runJs('window.setDragFeedback(${jsonEncode(payload)});');
   }
 
-  Future<void> _pushScene() async {
+  Future<void> _pushScene({bool applyCamera = false}) async {
     if (!_ready) return;
-    final payload = _scenePayload();
+    final payload = _scenePayload(applyCamera: applyCamera);
     final preset = widget.pendingPreset;
     final focusToken = widget.focusToken;
 
