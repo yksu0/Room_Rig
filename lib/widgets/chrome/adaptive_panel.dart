@@ -48,7 +48,9 @@ class AdaptivePanelSpec {
 }
 
 /// Window-size helper (Material compact / medium / expanded).
-/// Rails stay off until portrait lock is removed in [main.dart].
+///
+/// App chrome letterboxing / side nav lives in [AppLayout] (`main.dart`).
+/// Supporting-pane side rails stay sheet-based until Rig hosts them.
 class AdaptivePanelLayout {
   /// Approximate expanded-width aspect (wide + short).
   static const double expandedMinAspect = 1.25;
@@ -56,12 +58,9 @@ class AdaptivePanelLayout {
   /// Medium width lower bound in logical pixels (Material ~600dp).
   static const double mediumMinWidth = 600;
 
-  /// When true, panes render as side rails instead of modal sheets.
-  /// Always false while portrait is locked — wiring is ready for Phase 5.
+  /// When true, panes would render as side rails instead of modal sheets.
+  /// Still sheet-only — Rig has not mounted rail hosts yet.
   static bool useExpandedRails(BoxConstraints constraints) {
-    // Intentionally gated off: unlock orientations first, then return:
-    // constraints.maxWidth >= mediumMinWidth &&
-    // constraints.maxWidth / constraints.maxHeight >= expandedMinAspect;
     return false;
   }
 
