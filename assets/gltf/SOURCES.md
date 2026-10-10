@@ -14,7 +14,7 @@ Prefer **`.glb`** (or `.gltf` + textures). Room Rig maps files in `lib/services/
 | Rig icon | File in repo | Source |
 |----------|--------------|--------|
 | **ac** | `air_condition.glb` (trial) / `ac_condenser.glb` (fallback) | [Sketchfab – Air conditioning (CC-BY)](https://skfb.ly/6SuD9) · fallback [3dassets condenser](https://3dassets.dev/assets/cyberpunk-apartment-and-neon-block-aircon-condenser-bo-b44b253e) |
-| **intake** / **exhaust** | `vents.glb` (trial) / `extract_fan_grille.glb` (fallback) | [Sketchfab – Vents](https://skfb.ly/onXFH) · fallback [3dassets grille](https://3dassets.dev/assets/cyberpunk-apartment-and-neon-block-fan-grille-0c64ed5b) |
+| **intake** / **exhaust** | `vent.glb` (trial, ~7 MB) / `extract_fan_grille.glb` (fallback) | Sketchfab download · fallback [3dassets grille](https://3dassets.dev/assets/cyberpunk-apartment-and-neon-block-fan-grille-0c64ed5b) |
 | **fan** | `fan.glb` (trial, ~18 MB) / `stand_fan.glb` (fallback) | Sketchfab download · fallback [3dassets balloon fan](https://3dassets.dev/assets/hot-air-balloon-festival-balloon-inflation-fan-71e7967c) |
 | **purifier** | `air_scrubber.glb` | [3dassets – Air Scrubber](https://3dassets.dev/assets/cyberpunk-apartment-and-neon-block-air-scrubber-unit-5544e0ee) |
 | **heater** | `radiator.glb` | [3dassets – Radiator](https://3dassets.dev/assets/dental-practice-and-surgery-radiator-019b3a52) |

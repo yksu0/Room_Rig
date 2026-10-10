@@ -358,8 +358,8 @@ class GltfCatalog {
     ),
     'intake': const MeshProfile(
       iconName: 'intake',
-      // Sketchfab trial: vents.glb (~13 MB) — shared with exhaust.
-      assetPath: '$hvacDir/vents.glb',
+      // Sketchfab trial: vent.glb (~7 MB) — shared with exhaust.
+      assetPath: '$hvacDir/vent.glb',
       heightMeters: 0.32,
       role: MeshSimRole.emitter,
       airflowSolid: 0,
@@ -375,7 +375,7 @@ class GltfCatalog {
     ),
     'exhaust': const MeshProfile(
       iconName: 'exhaust',
-      assetPath: '$hvacDir/vents.glb',
+      assetPath: '$hvacDir/vent.glb',
       heightMeters: 0.32,
       role: MeshSimRole.emitter,
       airflowSolid: 0,
