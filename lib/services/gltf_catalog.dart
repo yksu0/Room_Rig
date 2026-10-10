@@ -307,18 +307,17 @@ class GltfCatalog {
       targetWidthMeters: 0.35,
       targetDepthMeters: 0.50,
     ),
-    // CC0 HVAC pack under assets/gltf/hvac/ (see SOURCES.md).
-    // Placeholder cage/blower GLB — not a household pedestal; keep modest until
-    // a CC0 stand-fan drop-in lands (see assets/gltf/SOURCES.md).
+    // HVAC GLBs under assets/gltf/hvac/ (see SOURCES.md).
+    // Sketchfab trial: fan.glb — large (~18 MB); swap back to stand_fan.glb if slow.
     'fan': const MeshProfile(
       iconName: 'fan',
-      assetPath: '$hvacDir/stand_fan.glb',
-      heightMeters: 0.85,
+      assetPath: '$hvacDir/fan.glb',
+      heightMeters: 1.05,
       role: MeshSimRole.emitter,
       airflowSolid: 0.15,
       fitMode: MeshFitMode.height,
-      targetWidthMeters: 0.32,
-      targetDepthMeters: 0.32,
+      targetWidthMeters: 0.42,
+      targetDepthMeters: 0.42,
     ),
     'purifier': const MeshProfile(
       iconName: 'purifier',
@@ -342,7 +341,8 @@ class GltfCatalog {
     ),
     'ac': const MeshProfile(
       iconName: 'ac',
-      assetPath: '$hvacDir/ac_condenser.glb',
+      // Sketchfab trial: air_condition.glb (~4 MB). Keep ac_condenser.glb as fallback.
+      assetPath: '$hvacDir/air_condition.glb',
       heightMeters: 0.62,
       role: MeshSimRole.emitter,
       airflowSolid: 0.25,
@@ -358,7 +358,8 @@ class GltfCatalog {
     ),
     'intake': const MeshProfile(
       iconName: 'intake',
-      assetPath: '$hvacDir/extract_fan_grille.glb',
+      // Sketchfab trial: vents.glb (~13 MB) — shared with exhaust.
+      assetPath: '$hvacDir/vents.glb',
       heightMeters: 0.32,
       role: MeshSimRole.emitter,
       airflowSolid: 0,
@@ -374,7 +375,7 @@ class GltfCatalog {
     ),
     'exhaust': const MeshProfile(
       iconName: 'exhaust',
-      assetPath: '$hvacDir/extract_fan_grille.glb',
+      assetPath: '$hvacDir/vents.glb',
       heightMeters: 0.32,
       role: MeshSimRole.emitter,
       airflowSolid: 0,
