@@ -503,6 +503,13 @@ class MultiObjectiveOptimizer {
       gridCols: gridCols,
       gridRows: gridRows,
     );
+    // Desk yaw/AABB can change in orientation — remount so tops do not mash.
+    mounted = LayoutOptimizerCommon.mountDeskTopItems(
+      mounted,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    mounted = LayoutOptimizerCommon.separateDeskTopOverlaps(mounted);
     mounted = LayoutOptimizerCommon.clampItemsToRoomBounds(
       items: mounted,
       gridCols: gridCols,
