@@ -6,6 +6,7 @@
 // (see AirflowSimulator._buildBoxes and LightingSimulator._buildLights) so the
 // Rig can never draw a wall AC in a spot the physics treats as floor.
 import 'dart:math' as math;
+import '../services/gltf_catalog.dart';
 import 'room_model.dart';
 
 enum MountSurface { floor, wall, ceiling, desk }
@@ -73,7 +74,7 @@ class SurfaceMount {
   bool get isDesk => surface == MountSurface.desk;
 
   /// Floor-standing items are the only ones that contest floor space. A wall AC
-  /// at 1.4–2.3 m has to be free to sit above a desk, and a monitor on that desk
+  /// niche has to be free to sit above a desk, and a monitor on that desk
   /// lives on the work surface rather than as a second floor block.
   bool get occupiesFloor => surface == MountSurface.floor;
 
@@ -84,15 +85,28 @@ class SurfaceMounts {
   SurfaceMounts._();
 
   // Matched to AirflowSimulator._buildBoxes.
-  static const windowBottom = 0.9;
-  static const windowTop = 2.1;
-  static const doorTop = 2.1;
-  static const ventBottom = 1.4;
-  static const ventTop = 2.3;
-  static const deskTop = 0.74;
+  // Keep bands aligned with GltfCatalog clear opening heights.
+  static const windowBottom = 0.95;
+  static const windowTop = 2.05;
+  static double get doorTop => GltfCatalog.profileFor('door').openingHeightMeters;
+  // Niche fittings — keep vertical span close to the GLB height so wall
+  // holes are not sky-sized. AC ~0.62 m; grille vents ~0.32 m.
+  static const ventBottom = 1.85;
+  static const ventTop = 2.17;
+  static const acBottom = 1.55;
+  static const acTop = 2.17;
+  /// Desk surface height — same metre as Model `MeshProfile` for `desk`.
+  static double get deskTop => GltfCatalog.profileFor('desk').heightMeters;
 
-  static bool isWindow(FurnitureItem f) =>
-      _hay(f).contains('window') || f.iconName == 'window';
+  static bool isWindow(FurnitureItem f) {
+    final hay = _hay(f);
+    // smartBlinds / curtains sit in the window plane — same wall span path.
+    return hay.contains('window') ||
+        f.iconName == 'window' ||
+        f.iconName == 'smartBlinds' ||
+        hay.contains('blind') ||
+        hay.contains('curtain');
+  }
 
   static bool isDoor(FurnitureItem f) => _hay(f).contains('door') || f.iconName == 'door';
 
@@ -269,7 +283,8 @@ class SurfaceMounts {
     if (host == null) {
       final cx = f.gridX + f.width / 2;
       final cy = f.gridY + f.height / 2;
-      var best = 0.4;
+      // Nearby floor-side towers still snap onto the desk (was 0.4 — too tight).
+      var best = 1.25;
       for (final h in furniture) {
         if (h.id == f.id || !isDeskHost(h)) continue;
         final dx = math.max(h.gridX - cx, math.max(0.0, cx - (h.gridX + h.width)));
@@ -327,11 +342,12 @@ class SurfaceMounts {
 
     if (isDeskTopItem(f) && furniture != null && hostUnder(f, furniture) != null) {
       const rise = 0.42;
-      return const SurfaceMount(
+      final top = deskTop;
+      return SurfaceMount(
         surface: MountSurface.desk,
         style: MountStyle.deskItem,
-        bottomY: deskTop,
-        topY: deskTop + rise,
+        bottomY: top,
+        topY: top + rise,
       );
     }
 
@@ -348,8 +364,13 @@ class SurfaceMounts {
       top = doorTop;
     } else if (isVent(f)) {
       style = MountStyle.vent;
-      bottom = ventBottom;
-      top = ventTop;
+      // Wall AC uses isVent(); grille-sized vents share the same style when
+      // named as vents without the AC icon — prefer AC band for ac icons.
+      final acLike = f.iconName == 'ac' ||
+          f.iconName == 'acUnit' ||
+          f.id.toLowerCase().startsWith('ac');
+      bottom = acLike ? acBottom : ventBottom;
+      top = acLike ? acTop : ventTop;
     } else if (isIntake(f)) {
       style = MountStyle.intake;
       bottom = ventBottom;
@@ -405,17 +426,22 @@ class SurfaceMounts {
     }
   }
 
-  /// Distance from the item to each wall, in grid units.
+  /// Distance from the item centre to each wall, in grid units.
+  ///
+  /// Centre-based (not AABB edges) so a north-wall AC whose catalogue width
+  /// slightly past the east edge still resolves to north, not east.
   static Map<RoomWall, double> wallDistances(
     FurnitureItem f, {
     required int gridCols,
     required int gridRows,
   }) {
+    final cx = f.gridX + f.width * 0.5;
+    final cy = f.gridY + f.height * 0.5;
     return {
-      RoomWall.north: f.gridY,
-      RoomWall.south: gridRows - (f.gridY + f.height),
-      RoomWall.west: f.gridX,
-      RoomWall.east: gridCols - (f.gridX + f.width),
+      RoomWall.north: cy,
+      RoomWall.south: gridRows - cy,
+      RoomWall.west: cx,
+      RoomWall.east: gridCols - cx,
     };
   }
 
@@ -452,19 +478,61 @@ class SurfaceMounts {
     return best;
   }
 
+  /// Clear opening length along the wall (cells).
+  ///
+  /// Catalogue clear width wins so Orbit stays consistent on every wall and
+  /// leftover wide footprints from older builds do not keep stretching panes.
+  static double openingAlongCells(FurnitureItem f) {
+    final fromCatalog = GltfCatalog.profileFor(f.iconName).footprintWidthCells;
+    if (fromCatalog != null && fromCatalog > 0) return fromCatalog;
+    return math.max(f.width, f.height);
+  }
+
+  /// Wall thickness / stand-off in cells (shorter footprint edge).
+  static double openingDepthCells(FurnitureItem f) {
+    final fromCatalog = GltfCatalog.profileFor(f.iconName).footprintDepthCells;
+    if (fromCatalog != null && fromCatalog > 0) return fromCatalog;
+    final depth = math.min(f.width, f.height);
+    return depth > 0.05 ? depth : 0.25;
+  }
+
+  /// Width = along-wall on N/S, depth into room on E/W — keeps Orbit spans correct.
+  static FurnitureItem orientOpeningFootprint(FurnitureItem f, RoomWall wall) {
+    final along = openingAlongCells(f);
+    final depth = openingDepthCells(f);
+    switch (wall) {
+      case RoomWall.north:
+      case RoomWall.south:
+        if ((f.width - along).abs() < 0.02 && (f.height - depth).abs() < 0.02) {
+          return f;
+        }
+        return f.copyWith(width: along, height: depth);
+      case RoomWall.east:
+      case RoomWall.west:
+        if ((f.width - depth).abs() < 0.02 && (f.height - along).abs() < 0.02) {
+          return f;
+        }
+        return f.copyWith(width: depth, height: along);
+    }
+  }
+
   static WallSpan spanFor(
     FurnitureItem f, {
     required int gridCols,
     required int gridRows,
   }) {
     final wall = nearestWall(f, gridCols: gridCols, gridRows: gridRows);
+    final along = openingAlongCells(f);
+    final cx = f.gridX + f.width * 0.5;
+    final cz = f.gridY + f.height * 0.5;
+    final half = along * 0.5;
     switch (wall) {
       case RoomWall.north:
         return WallSpan(
           wall: wall,
-          x0: f.gridX,
+          x0: (cx - half).clamp(0.0, gridCols.toDouble()),
           z0: 0,
-          x1: f.gridX + f.width,
+          x1: (cx + half).clamp(0.0, gridCols.toDouble()),
           z1: 0,
           inwardX: 0,
           inwardZ: 1,
@@ -472,9 +540,9 @@ class SurfaceMounts {
       case RoomWall.south:
         return WallSpan(
           wall: wall,
-          x0: f.gridX,
+          x0: (cx - half).clamp(0.0, gridCols.toDouble()),
           z0: gridRows.toDouble(),
-          x1: f.gridX + f.width,
+          x1: (cx + half).clamp(0.0, gridCols.toDouble()),
           z1: gridRows.toDouble(),
           inwardX: 0,
           inwardZ: -1,
@@ -483,9 +551,9 @@ class SurfaceMounts {
         return WallSpan(
           wall: wall,
           x0: 0,
-          z0: f.gridY,
+          z0: (cz - half).clamp(0.0, gridRows.toDouble()),
           x1: 0,
-          z1: f.gridY + f.height,
+          z1: (cz + half).clamp(0.0, gridRows.toDouble()),
           inwardX: 1,
           inwardZ: 0,
         );
@@ -493,9 +561,9 @@ class SurfaceMounts {
         return WallSpan(
           wall: wall,
           x0: gridCols.toDouble(),
-          z0: f.gridY,
+          z0: (cz - half).clamp(0.0, gridRows.toDouble()),
           x1: gridCols.toDouble(),
-          z1: f.gridY + f.height,
+          z1: (cz + half).clamp(0.0, gridRows.toDouble()),
           inwardX: -1,
           inwardZ: 0,
         );
@@ -515,17 +583,18 @@ class SurfaceMounts {
     }
 
     final wall = nearestWall(f, gridCols: gridCols, gridRows: gridRows, preferred: preferred);
+    final oriented = orientOpeningFootprint(f, wall);
     switch (wall) {
       case RoomWall.north:
-        return f.gridY == 0 ? f : f.copyWith(gridY: 0);
+        return oriented.gridY == 0 ? oriented : oriented.copyWith(gridY: 0);
       case RoomWall.south:
-        final y = gridRows - f.height;
-        return f.gridY == y ? f : f.copyWith(gridY: y);
+        final y = gridRows - oriented.height;
+        return oriented.gridY == y ? oriented : oriented.copyWith(gridY: y);
       case RoomWall.west:
-        return f.gridX == 0 ? f : f.copyWith(gridX: 0);
+        return oriented.gridX == 0 ? oriented : oriented.copyWith(gridX: 0);
       case RoomWall.east:
-        final x = gridCols - f.width;
-        return f.gridX == x ? f : f.copyWith(gridX: x);
+        final x = gridCols - oriented.width;
+        return oriented.gridX == x ? oriented : oriented.copyWith(gridX: x);
     }
   }
 }

@@ -695,6 +695,29 @@ class LayoutOptimizerCommon {
         }
         item = item.copyWith(width: width, height: depth);
         next[i] = item;
+      } else if (hay.contains('monitor') ||
+          hay.contains('display') ||
+          item.iconName == 'monitor') {
+        // Keep Orbit's silhouette. Only clamp when the footprint cannot fit
+        // the desk — never flatten a normal 1×1 / ~0.9×0.6 monitor.
+        if (item.width > host.width - 0.05 || item.height > host.height - 0.05) {
+          item = item.copyWith(
+            width: math.min(item.width, math.max(0.7, host.width - 0.15)),
+            height: math.min(item.height, math.max(0.45, host.height - 0.15)),
+          );
+          next[i] = item;
+        }
+      } else if (hay.contains('pc') ||
+          hay.contains('tower') ||
+          item.iconName == 'pc') {
+        // Preserve tower proportions (Orbit uses ~0.45×0.5).
+        if (item.width > host.width - 0.05 || item.height > host.height - 0.05) {
+          item = item.copyWith(
+            width: math.min(item.width, 0.5),
+            height: math.min(item.height, 0.55),
+          );
+          next[i] = item;
+        }
       } else if (hay.contains('plant')) {
         item = item.copyWith(
           width: math.min(item.width, 0.5),
@@ -704,8 +727,8 @@ class LayoutOptimizerCommon {
       } else if ((hay.contains('lamp') || item.iconName == 'lamp') &&
           !hay.contains('floor')) {
         item = item.copyWith(
-          width: math.min(item.width, 0.4),
-          height: math.min(item.height, 0.4),
+          width: math.min(item.width, 0.35),
+          height: math.min(item.height, 0.35),
         );
         next[i] = item;
       }
@@ -830,11 +853,13 @@ class LayoutOptimizerCommon {
         ItemPlacementRules.isTv(f)) {
       return 0;
     }
+    // PC before lamp — otherwise the lamp claims the beside-monitor slot and
+    // the tower falls through to the floor.
     if (hay.contains('pc') || hay.contains('tower') || hay.contains('computer')) {
-      return 4;
+      return 1;
     }
     if (hay.contains('plant')) return 5;
-    return 1; // lamp
+    return 2; // lamp
   }
 
   /// Desk-top slots relative to [workFace] (chair side):
@@ -909,7 +934,7 @@ class LayoutOptimizerCommon {
           preferX = backX.clamp(loX, hiX);
           preferY = (loY + (hiY - loY) * 0.35).clamp(loY, hiY);
         }
-      case 4: // PC — wall edge, beside monitor along the wall (never toward chair)
+      case 1: // PC — wall edge, beside monitor along the wall (never toward chair)
         FurnitureItem? monitor;
         for (final o in alreadyOnHost) {
           final oh = '${o.id} ${o.name} ${o.iconName}'.toLowerCase();
@@ -918,9 +943,9 @@ class LayoutOptimizerCommon {
             break;
           }
         }
-        final pcsOnHost = alreadyOnHost.where((o) => _deskItemRank(o) == 4).length;
-        if (pcsOnHost >= 1 || !fitsOnDesk) {
-          // Extra / oversized towers: floor flush to the same wall, still indoors.
+        final pcsOnHost = alreadyOnHost.where((o) => _deskItemRank(o) == 1).length;
+        // Only park on the floor when the tower cannot fit the desk top.
+        if (!fitsOnDesk) {
           preferX = switch (workFace) {
             'east' => 0.0,
             'west' => roomMaxX,
@@ -929,7 +954,10 @@ class LayoutOptimizerCommon {
           preferY = host.gridY.clamp(0.0, roomMaxY);
           break;
         }
-        if (monitor != null) {
+        if (pcsOnHost >= 1) {
+          preferX = hiX;
+          preferY = backY.clamp(loY, hiY);
+        } else if (monitor != null) {
           final alongWall = _besideAlongWall(
             monitor: monitor,
             item: item,
@@ -977,7 +1005,12 @@ class LayoutOptimizerCommon {
             preferOpposite: true,
           );
           preferX = alongWall.$1;
-          preferY = alongWall.$2;
+          // Keep lamp on the wall/back edge — never between screen and chair.
+          preferY = backY.clamp(loY, hiY);
+          if (workFace == 'east' || workFace == 'west') {
+            preferX = backX.clamp(loX, hiX);
+            preferY = alongWall.$2;
+          }
         } else {
           preferX = hiX;
           preferY = backY.clamp(loY, hiY);
@@ -1018,7 +1051,7 @@ class LayoutOptimizerCommon {
       for (final (x, y) in candidates) {
         final candidate = item.copyWith(gridX: x, gridY: y);
         if (blocksOpening(candidate)) continue;
-        if (rank == 4 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
+        if (rank == 1 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
           continue;
         }
         final clash = alreadyOnHost.any(
@@ -1039,7 +1072,7 @@ class LayoutOptimizerCommon {
         };
         final candidate = item.copyWith(gridX: x, gridY: y);
         if (blocksOpening(candidate)) continue;
-        if (rank == 4 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
+        if (rank == 1 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
           continue;
         }
         final clash = alreadyOnHost.any(
@@ -1049,6 +1082,29 @@ class LayoutOptimizerCommon {
         );
         if (!clash) return clampRoom(x, y);
       }
+    }
+
+    // PC that fits the desk must stay on the desk — never drop to the floor.
+    if (rank == 1 && fitsOnDesk) {
+      for (final (x, y) in <(double, double)>[
+        (hiX, backY.clamp(loY, hiY)),
+        (loX, backY.clamp(loY, hiY)),
+        (hiX, loY),
+        (loX, loY),
+        (hiX, hiY),
+        (loX, hiY),
+      ]) {
+        final candidate = item.copyWith(gridX: x, gridY: y);
+        if (blocksOpening(candidate)) continue;
+        if (_onWorkFaceSideOfDesk(candidate, host, workFace)) continue;
+        final clash = alreadyOnHost.any(
+          (o) =>
+              LayoutCollision.overlaps(candidate, o) &&
+              SurfaceMounts.deskTopFootprintsConflict(candidate, o),
+        );
+        if (!clash) return clampRoom(x, y);
+      }
+      return clampRoom(hiX, backY.clamp(loY, hiY));
     }
 
     // Floor beside desk — flush to the same wall, always inside the room.
@@ -1095,7 +1151,7 @@ class LayoutOptimizerCommon {
           y >= host.gridY - 0.01 &&
           x + item.width <= host.gridX + host.width + 0.01 &&
           y + item.height <= host.gridY + host.height + 0.01;
-      if (rank == 4 && onDesk && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
+      if (rank == 1 && onDesk && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
         continue;
       }
       final clash = alreadyOnHost.any(
@@ -1307,10 +1363,10 @@ class LayoutOptimizerCommon {
           );
         }
       } else if (hay.contains('shelf') || hay.contains('book') || hay.contains('wardrobe')) {
-        // Tall storage flush to a wall/corner — never mid-room (interior guides).
+        // Tall storage on a wall/corner — keep fully inside the grid (no overflow).
         final onRight = door == null || door.gridX < cols * 0.5;
         var sx = onRight ? (cols - f.width).clamp(0.0, cols - f.width) : 0.0;
-        var sy = (rows - f.height - 0.15).clamp(0.0, rows - f.height);
+        var sy = (rows - f.height).clamp(0.0, rows - f.height);
         // Prefer a free corner if the default is already claimed.
         if (desk != null) {
           final deskPose = targets[desk.id];

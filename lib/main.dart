@@ -8,13 +8,16 @@ import 'services/furniture_sprites.dart';
 import 'theme/app_theme.dart';
 import 'widgets/room_icons.dart';
 import 'screens/home_screen.dart';
-import 'screens/scanner_screen_selector.dart';
+import 'screens/scan_focus_placeholder_screen.dart';
 import 'screens/rig_customizer_screen.dart';
 import 'screens/benchmark_screen.dart';
 import 'screens/upgrades_screen.dart';
+import 'widgets/room_model_scene_pointer_guard.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Portrait-only for now. AdaptivePanelLayout.useExpandedRails unlocks
+  // supporting-pane side rails when multi-orientation is enabled (Phase 5).
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -53,7 +56,10 @@ class RoomRigApp extends StatelessWidget {
     return MaterialApp(
       title: 'Room Rig',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark,
+      // Transparent so AR measure can show native camera through Scan.
+      // Each tab Scaffold sets its own opaque backgroundColor.
+      theme: AppTheme.dark.copyWith(scaffoldBackgroundColor: Colors.transparent),
+      navigatorObservers: [RoomModelScenePointerGuard()],
       home: const _MainShell(),
     );
   }
@@ -69,7 +75,8 @@ class _MainShell extends StatefulWidget {
 class _MainShellState extends State<_MainShell> {
   static const _screens = [
     HomeScreen(),
-    ScannerScreen(),
+    // `model` branch: Scan parked — focus Rig/Bench real GLB rooms.
+    ScanFocusPlaceholderScreen(),
     RigCustomizerScreen(),
     BenchmarkScreen(),
     UpgradesScreen(),
@@ -122,22 +129,24 @@ class _RigNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final items = [
       (RoomSvg.home, 'Hub'),
-      (RoomSvg.scan, 'Scan'),
+      (RoomSvg.scan, 'Scan*'),
       (RoomSvg.tune, 'Rig'),
       (RoomSvg.speedometer, 'Bench'),
       (RoomSvg.upgrade, 'Upgrades'),
     ];
 
+    final bottom = MediaQuery.paddingOf(context).bottom;
     return Container(
-      height: 72,
+      height: 76 + bottom,
+      padding: EdgeInsets.only(bottom: bottom),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: const Border(top: BorderSide(color: AppColors.border, width: 1)),
+        color: AppColors.surface.withValues(alpha: 0.96),
+        border: const Border(top: BorderSide(color: AppColors.borderSubtle, width: 1)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 24,
+            offset: const Offset(0, -6),
           ),
         ],
       ),
@@ -147,45 +156,45 @@ class _RigNavBar extends StatelessWidget {
           final item = entry.value;
           final isSelected = i == currentIndex;
           return Expanded(
-            child: GestureDetector(
-              onTap: () {
-                context.read<AppState>().setTab(i);
-              },
-              behavior: HitTestBehavior.opaque,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(
-                      color: isSelected ? AppColors.cyan : Colors.transparent,
-                      width: 2,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => context.read<AppState>().setTab(i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      top: BorderSide(
+                        color: isSelected ? AppColors.cyan : Colors.transparent,
+                        width: 2.5,
+                      ),
                     ),
                   ),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    AnimatedScale(
-                      scale: isSelected ? 1.15 : 1.0,
-                      duration: const Duration(milliseconds: 200),
-                      child: SvgIcon(
-                        item.$1,
-                        size: 22,
-                        color: isSelected ? AppColors.cyan : AppColors.textMuted,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AnimatedScale(
+                        scale: isSelected ? 1.1 : 1.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: SvgIcon(
+                          item.$1,
+                          size: 22,
+                          color: isSelected ? AppColors.cyan : AppColors.textMuted,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      item.$2,
-                      style: TextStyle(
-                        color: isSelected ? AppColors.cyan : AppColors.textMuted,
-                        fontSize: 10,
-                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                        letterSpacing: 0.3,
+                      const SizedBox(height: 6),
+                      Text(
+                        item.$2,
+                        style: TextStyle(
+                          color: isSelected ? AppColors.cyan : AppColors.textMuted,
+                          fontSize: 11,
+                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                          letterSpacing: 0.2,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

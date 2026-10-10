@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Room Rig Model Scene</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #6FA8D6; }
+    #c { width: 100%; height: 100%; display: block; touch-action: none; }
+    #hud {
+      position: absolute; left: 10px; bottom: 10px; z-index: 2;
+      color: #EAF2FF; font: 600 11px/1.3 Outfit, system-ui, sans-serif;
+      background: rgba(17,20,28,0.72); padding: 8px 10px; border-radius: 10px;
+      border: 1px solid #2C3348; pointer-events: none;
+    }
+    #err {
+      position: absolute; inset: 12px; z-index: 3; display: none;
+      color: #FF4D4D; font: 600 13px Outfit, system-ui, sans-serif;
+      background: rgba(17,20,28,0.9); padding: 14px; border-radius: 12px;
+      border: 1px solid rgba(255,77,77,0.4); white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="hud">LMB orbit · RMB pan · scroll zoom</div>
+  <div id="err"></div>
+  <div id="minimap" style="display:none;position:absolute;right:10px;bottom:10px;z-index:2;width:108px;height:86px;border-radius:10px;border:1px solid #2C3348;background:rgba(17,20,28,0.82);overflow:hidden;pointer-events:none;">
+    <canvas id="mm" width="108" height="86"></canvas>
+  </div>
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/GLTFLoader.js"></script>
+  <script>
+(function () {
+  const canvas = document.getElementById('c');
+  const errEl = document.getElementById('err');
+  const hud = document.getElementById('hud');
+
+  function showError(msg) {
+    errEl.style.display = 'block';
+    errEl.textContent = msg;
+    console.error(msg);
+  }
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.setClearColor(0x87B8E0, 1);
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x9EC4E6, 18, 55);
+  scene.background = new THREE.Color(0x87B8E0);
+
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 120);
+  let yaw = 0.65, pitch = 0.28, distance = 3.4;
+  let lookAt = new THREE.Vector3(2.1, 0.9, 1.8);
+  let roomW = 4.2, roomD = 3.6, roomH = 2.7;
+  let pendingOpenings = [];
+  let exploreMode = 'orbit';
+  let showMiniMap = false;
+  let lastItems = [];
+  let hasUserFramed = false;
+  // Default works for staged temp dirs (Android) and web. Flutter may override.
+  let assetBase = '../gltf/';
+
+  function resolveAsset(url) {
+    if (!url) return url;
+    if (/^(https?:|file:|blob:)/i.test(url)) return url;
+    if (url.indexOf('../gltf/') === 0) return assetBase + url.slice('../gltf/'.length);
+    if (url.indexOf('gltf/') === 0) return assetBase + url.slice('gltf/'.length);
+    return url;
+  }
+  const mmCanvas = document.getElementById('mm');
+  const mmCtx = mmCanvas ? mmCanvas.getContext('2d') : null;
+  const miniMapEl = document.getElementById('minimap');
+
+  const loader = new THREE.GLTFLoader();
+  const gltfCache = new Map();
+  const furnitureRoot = new THREE.Group();
+  scene.add(furnitureRoot);
+  const roomRoot = new THREE.Group();
+  scene.add(roomRoot);
+  const exteriorRoot = new THREE.Group();
+  scene.add(exteriorRoot);
+
+  const hemi = new THREE.HemisphereLight(0xddeeff, 0x5a6a3a, 0.45);
+  scene.add(hemi);
+  // Outdoor sun is fill only — indoor shadows come from room bulbs, not exterior.
+  const sun = new THREE.DirectionalLight(0xfff1c8, 0.35);
+  sun.position.set(8, 14, -6);
+  sun.castShadow = false;
+  scene.add(sun);
+  const fill = new THREE.DirectionalLight(0x88c0ff, 0.18);
+  fill.position.set(-6, 4, 4);
+  scene.add(fill);
+  // Primary indoor shadow caster — always at ceiling height (not desk lamps).
+  const ceilingGlow = new THREE.PointLight(0xfff5e6, 1.35, 16, 1.35);
+  ceilingGlow.castShadow = true;
+  ceilingGlow.shadow.mapSize.set(1024, 1024);
+  ceilingGlow.shadow.bias = -0.0008;
+  ceilingGlow.shadow.normalBias = 0.03;
+  scene.add(ceilingGlow);
+  const interiorLightRoot = new THREE.Group();
+  scene.add(interiorLightRoot);
+
+  /** Local glow only — desk / floor lamps must not steal the shadow map. */
+  const LOCAL_LAMPS = {
+    lamp: { intensity: 0.85, distance: 3.2, heightFrac: 0.9, color: 0xffe6b8 },
+    floorlamp: { intensity: 1.0, distance: 4.5, heightFrac: 0.93, color: 0xfff0d0 },
+  };
+
+  function clearInteriorLights() {
+    while (interiorLightRoot.children.length) {
+      const c = interiorLightRoot.children[0];
+      if (c.target && c.target.parent) c.target.parent.remove(c.target);
+      interiorLightRoot.remove(c);
+    }
+  }
+
+  function ceilingLightY() {
+    return Math.max(1.4, roomH - 0.1);
+  }
+
+  function configureCeilingShadow(light) {
+    const reach = Math.max(roomH + 0.6, Math.max(roomW, roomD) * 1.15);
+    light.distance = reach;
+    light.castShadow = true;
+    light.shadow.mapSize.set(1024, 1024);
+    light.shadow.bias = -0.0008;
+    light.shadow.normalBias = 0.03;
+    light.shadow.camera.near = 0.12;
+    light.shadow.camera.far = reach;
+  }
+
+  /**
+   * Shadows always originate near the ceiling. Desk/floor lamps only add glow.
+   * Placed ceiling fixtures move the shadow origin to their XY at ceiling Y.
+   */
+  function syncInteriorLights(items) {
+    clearInteriorLights();
+    const list = items || [];
+    const ceilY = ceilingLightY();
+    const ceilingFixtures = [];
+    const localLamps = [];
+    for (const it of list) {
+      const kind = (it.kind || '').toLowerCase();
+      const mount = (it.mount || '').toLowerCase();
+      if (kind === 'ceilinglight' || mount === 'ceiling') {
+        ceilingFixtures.push(it);
+      } else if (LOCAL_LAMPS[kind]) {
+        localLamps.push({ it, kind });
+      }
+    }
+
+    let shadowSources = 0;
+    if (ceilingFixtures.length) {
+      ceilingGlow.visible = false;
+      ceilingGlow.castShadow = false;
+      ceilingGlow.intensity = 0;
+      for (const it of ceilingFixtures.slice(0, 2)) {
+        const wrap = furnitureRoot.children.find((c) => c.userData.itemId === it.id);
+        let x = +it.x || roomW * 0.5;
+        let z = +it.z || roomD * 0.5;
+        if (wrap) {
+          wrap.updateWorldMatrix(true, true);
+          const box = new THREE.Box3().setFromObject(wrap);
+          if (!box.isEmpty()) {
+            x = (box.min.x + box.max.x) * 0.5;
+            z = (box.min.z + box.max.z) * 0.5;
+          }
+        }
+        // Downward spot from true ceiling height — matches fixture elevation.
+        const spot = new THREE.SpotLight(0xfff5e6, 1.9, 0, Math.PI / 2.15, 0.45, 1.15);
+        spot.position.set(x, ceilY, z);
+        spot.target.position.set(x, 0.02, z);
+        configureCeilingShadow(spot);
+        spot.distance = Math.max(roomH + 0.8, Math.max(roomW, roomD) * 1.1);
+        spot.shadow.camera.far = spot.distance;
+        interiorLightRoot.add(spot);
+        interiorLightRoot.add(spot.target);
+        shadowSources++;
+      }
+    } else {
+      // No ceiling fixture — room fill still sits on the ceiling plane.
+      ceilingGlow.position.set(roomW * 0.5, ceilY, roomD * 0.5);
+      ceilingGlow.visible = true;
+      ceilingGlow.intensity = 1.35;
+      configureCeilingShadow(ceilingGlow);
+      shadowSources = 1;
+    }
+
+    // Task / floor lamps: local warm glow only (no castShadow).
+    for (const { it, kind } of localLamps.slice(0, 4)) {
+      const cfg = LOCAL_LAMPS[kind];
+      const wrap = furnitureRoot.children.find((c) => c.userData.itemId === it.id);
+      let x = +it.x || 0;
+      let y = (+it.y || 0) + (+it.h || 0.4) * cfg.heightFrac;
+      let z = +it.z || 0;
+      if (wrap) {
+        wrap.updateWorldMatrix(true, true);
+        const box = new THREE.Box3().setFromObject(wrap);
+        if (!box.isEmpty()) {
+          x = (box.min.x + box.max.x) * 0.5;
+          z = (box.min.z + box.max.z) * 0.5;
+          y = box.min.y + (box.max.y - box.min.y) * cfg.heightFrac;
+        }
+      }
+      const pl = new THREE.PointLight(cfg.color, cfg.intensity, cfg.distance, 2);
+      pl.castShadow = false;
+      pl.position.set(x, y, z);
+      interiorLightRoot.add(pl);
+    }
+
+    sun.intensity = shadowSources ? 0.2 : 0.35;
+    sun.castShadow = false;
+  }
+
+  const texLoader = new THREE.TextureLoader();
+  let floorMap = null;
+  let wallMap = null;
+
+  function loadTex(url, repeatX, repeatY) {
+    return new Promise((resolve) => {
+      texLoader.load(url, (t) => {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(repeatX, repeatY);
+        t.encoding = THREE.sRGBEncoding;
+        resolve(t);
+      }, undefined, () => resolve(null));
+    });
+  }
+
+  function boxMat(color, rough, metal, map) {
+    return new THREE.MeshStandardMaterial({
+      color: color, roughness: rough, metalness: metal, map: map || null,
+    });
+  }
+
+  function clearGroup(g) {
+    while (g.children.length) {
+      const c = g.children[0];
+      g.remove(c);
+      if (c.geometry) c.geometry.dispose();
+    }
+  }
+
+  function rebuildExterior(w, d) {
+    clearGroup(exteriorRoot);
+    const ground = new THREE.Mesh(
+      new THREE.CircleGeometry(Math.max(w, d) * 2.8, 64),
+      new THREE.MeshStandardMaterial({ color: 0x4f7a45, roughness: 0.95 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(w / 2, -0.02, d / 2);
+    ground.receiveShadow = true;
+    exteriorRoot.add(ground);
+
+    // Simple sky dome tint (inside-out sphere)
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(40, 24, 16),
+      new THREE.MeshBasicMaterial({ color: 0x87B8E0, side: THREE.BackSide })
+    );
+    sky.position.set(w / 2, 0, d / 2);
+    exteriorRoot.add(sky);
+
+    // Outdoor patio strip beyond the south wall (+Z)
+    const patio = new THREE.Mesh(
+      new THREE.PlaneGeometry(w + 1.2, 2.4),
+      new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.9 })
+    );
+    patio.rotation.x = -Math.PI / 2;
+    patio.position.set(w / 2, 0.001, d + 1.15);
+    patio.receiveShadow = true;
+    exteriorRoot.add(patio);
+  }
+
+  /** Build a wall along +X or +Z with rectangular openings cut as gaps. */
+  function buildWallWithOpenings({
+    alongX, // true => wall runs on X at fixed Z
+    length, fixed, height, thick, openings, inwardSign, wallMat, glassMat,
+  }) {
+    // openings: [{ along0, along1, y0, y1, glass, through }]
+    // through=true (door/window): cut shell + glass/daylight.
+    // through=false niche (AC/vents): cut shell + opaque grille fill (no exterior).
+    const segs = [{ a0: 0, a1: length }];
+    const sorted = (openings || []).slice().sort((a, b) => a.along0 - b.along0);
+    sorted.forEach((op) => {
+      const next = [];
+      segs.forEach((s) => {
+        const o0 = Math.max(s.a0, op.along0);
+        const o1 = Math.min(s.a1, op.along1);
+        if (o1 <= o0 + 0.015) { next.push(s); return; }
+        if (o0 > s.a0 + 0.015) next.push({ a0: s.a0, a1: o0 });
+        if (o1 < s.a1 - 0.015) next.push({ a0: o1, a1: s.a1 });
+      });
+      segs.length = 0;
+      segs.push.apply(segs, next);
+    });
+
+    segs.forEach((s) => {
+      const len = s.a1 - s.a0;
+      if (len < 0.03) return;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(
+        alongX ? len : thick,
+        height,
+        alongX ? thick : len
+      ), wallMat.clone());
+      if (alongX) {
+        m.position.set((s.a0 + s.a1) / 2, height / 2, fixed);
+      } else {
+        m.position.set(fixed, height / 2, (s.a0 + s.a1) / 2);
+      }
+      m.castShadow = true;
+      m.receiveShadow = true;
+      roomRoot.add(m);
+    });
+
+    const nicheMat = new THREE.MeshStandardMaterial({
+      color: 0x3a3f46, roughness: 0.55, metalness: 0.25, side: THREE.DoubleSide,
+    });
+
+    // Fill above/below openings + glass (through) or opaque niche grille
+    sorted.forEach((op) => {
+      const len = op.along1 - op.along0;
+      if (len < 0.04) return;
+      // Sill / header
+      if (op.y0 > 0.04) {
+        const sill = new THREE.Mesh(
+          new THREE.BoxGeometry(alongX ? len : thick, op.y0, alongX ? thick : len),
+          wallMat.clone()
+        );
+        if (alongX) sill.position.set((op.along0 + op.along1) / 2, op.y0 / 2, fixed);
+        else sill.position.set(fixed, op.y0 / 2, (op.along0 + op.along1) / 2);
+        sill.castShadow = true;
+        sill.receiveShadow = true;
+        roomRoot.add(sill);
+      }
+      if (op.y1 < height - 0.04) {
+        const hh = height - op.y1;
+        const head = new THREE.Mesh(
+          new THREE.BoxGeometry(alongX ? len : thick, hh, alongX ? thick : len),
+          wallMat.clone()
+        );
+        if (alongX) head.position.set((op.along0 + op.along1) / 2, op.y1 + hh / 2, fixed);
+        else head.position.set(fixed, op.y1 + hh / 2, (op.along0 + op.along1) / 2);
+        head.castShadow = true;
+        head.receiveShadow = true;
+        roomRoot.add(head);
+      }
+      const oh = Math.max(0.08, op.y1 - op.y0);
+      const isThrough = op.through === true || op.kind === 'through';
+      const isNiche = op.through === false || op.kind === 'niche';
+      if (isThrough && op.glass) {
+        const glass = new THREE.Mesh(
+          new THREE.PlaneGeometry(alongX ? len * 0.96 : oh, alongX ? oh : len * 0.96),
+          glassMat
+        );
+        if (alongX) {
+          glass.position.set((op.along0 + op.along1) / 2, (op.y0 + op.y1) / 2, fixed + inwardSign * 0.01);
+        } else {
+          glass.rotation.y = Math.PI / 2;
+          glass.position.set(fixed + inwardSign * 0.01, (op.y0 + op.y1) / 2, (op.along0 + op.along1) / 2);
+        }
+        roomRoot.add(glass);
+
+        // Daylight wash through glass — no castShadow (indoor bulbs own shadows).
+        const sunIn = new THREE.SpotLight(0xfff2cc, 0.35, 10, Math.PI / 4.5, 0.45, 1);
+        sunIn.castShadow = false;
+        if (alongX) {
+          sunIn.position.set((op.along0 + op.along1) / 2, (op.y0 + op.y1) / 2, fixed - inwardSign * 1.2);
+          sunIn.target.position.set((op.along0 + op.along1) / 2, 0.9, fixed + inwardSign * 1.5);
+        } else {
+          sunIn.position.set(fixed - inwardSign * 1.2, (op.y0 + op.y1) / 2, (op.along0 + op.along1) / 2);
+          sunIn.target.position.set(fixed + inwardSign * 1.5, 0.9, (op.along0 + op.along1) / 2);
+        }
+        roomRoot.add(sunIn);
+        roomRoot.add(sunIn.target);
+      } else if (isNiche) {
+        // Opaque recess so AC / vents do not punch a sky hole.
+        const niche = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            alongX ? len * 0.98 : thick * 0.55,
+            oh * 0.98,
+            alongX ? thick * 0.55 : len * 0.98
+          ),
+          nicheMat
+        );
+        if (alongX) {
+          niche.position.set(
+            (op.along0 + op.along1) / 2,
+            (op.y0 + op.y1) / 2,
+            fixed + inwardSign * thick * 0.15
+          );
+        } else {
+          niche.position.set(
+            fixed + inwardSign * thick * 0.15,
+            (op.y0 + op.y1) / 2,
+            (op.along0 + op.along1) / 2
+          );
+        }
+        niche.castShadow = true;
+        niche.receiveShadow = true;
+        roomRoot.add(niche);
+        // Simple louver stripes (read as grille)
+        const stripeN = Math.max(2, Math.min(6, Math.floor(oh / 0.06)));
+        for (let i = 0; i < stripeN; i++) {
+          const t = (i + 0.5) / stripeN;
+          const sy = op.y0 + oh * t;
+          const bar = new THREE.Mesh(
+            new THREE.BoxGeometry(
+              alongX ? len * 0.9 : 0.012,
+              0.012,
+              alongX ? 0.012 : len * 0.9
+            ),
+            new THREE.MeshStandardMaterial({ color: 0x6a7078, roughness: 0.4, metalness: 0.45 })
+          );
+          if (alongX) {
+            bar.position.set((op.along0 + op.along1) / 2, sy, fixed + inwardSign * thick * 0.42);
+          } else {
+            bar.position.set(fixed + inwardSign * thick * 0.42, sy, (op.along0 + op.along1) / 2);
+          }
+          roomRoot.add(bar);
+        }
+      }
+    });
+  }
+
+  function rebuildRoom(w, d, h, openings) {
+    roomW = w; roomD = d; roomH = h;
+    pendingOpenings = openings || [];
+    clearGroup(roomRoot);
+    rebuildExterior(w, d);
+    lookAt.set(w * 0.5, h * 0.32, d * 0.5);
+    ceilingGlow.position.set(w * 0.5, Math.max(1.4, h - 0.1), d * 0.5);
+    configureCeilingShadow(ceilingGlow);
+    sun.position.set(w * 0.5 + 6, h + 10, d * 0.5 - 8);
+    sun.castShadow = false;
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      boxMat(0xc4a574, 0.78, 0.05, floorMap)
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(w / 2, 0, d / 2);
+    floor.receiveShadow = true;
+    roomRoot.add(floor);
+
+    const wallMat = boxMat(0xe8e4dc, 0.92, 0.0, wallMap);
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0xb8d8f0,
+      transparent: true,
+      opacity: 0.28,
+      roughness: 0.05,
+      metalness: 0,
+      transmission: 0.85,
+      thickness: 0.04,
+      side: THREE.DoubleSide,
+    });
+    // Fallback if Physical unsupported
+    if (!glassMat.transmission && glassMat.transmission !== 0) {
+      /* keep */
+    }
+
+    const thick = 0.1;
+    const byWall = { north: [], south: [], west: [], east: [] };
+    pendingOpenings.forEach((op) => {
+      const wall = op.wall || 'south';
+      if (!byWall[wall]) return;
+      byWall[wall].push({
+        along0: +op.along0 || 0,
+        along1: +op.along1 || 0.9,
+        y0: +op.y0 || 0,
+        y1: +op.y1 || 2.1,
+        glass: !!op.glass,
+        through: op.through === true || op.kind === 'through',
+        kind: op.kind || (op.glass ? 'through' : (op.through === false ? 'niche' : 'through')),
+      });
+    });
+
+    // Place wall *centers* outside the floor so only the interior face sits on
+    // the room edge. Centering on 0/w/d buried half the thickness in the room
+    // and made flush shelves / beds clip into the plaster.
+    // north z=0 inward +Z; south z=d inward -Z; west x=0 inward +X; east x=w inward -X
+    const halfT = thick * 0.5;
+    buildWallWithOpenings({
+      alongX: true, length: w, fixed: -halfT, height: h, thick,
+      openings: byWall.north, inwardSign: 1, wallMat, glassMat,
+    });
+    buildWallWithOpenings({
+      alongX: true, length: w, fixed: d + halfT, height: h, thick,
+      openings: byWall.south, inwardSign: -1, wallMat, glassMat,
+    });
+    buildWallWithOpenings({
+      alongX: false, length: d, fixed: -halfT, height: h, thick,
+      openings: byWall.west, inwardSign: 1, wallMat, glassMat,
+    });
+    buildWallWithOpenings({
+      alongX: false, length: d, fixed: w + halfT, height: h, thick,
+      openings: byWall.east, inwardSign: -1, wallMat, glassMat,
+    });
+
+    const ceil = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, d),
+      boxMat(0xf2f0ea, 0.95, 0.0)
+    );
+    ceil.rotation.x = Math.PI / 2;
+    ceil.position.set(w / 2, h, d / 2);
+    ceil.receiveShadow = true;
+    roomRoot.add(ceil);
+
+    [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]].forEach(([u, v]) => {
+      const fixture = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.12, 0.04, 24),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff2cc, emissiveIntensity: 0.85, roughness: 0.4 })
+      );
+      fixture.position.set(w * u, h - 0.02, d * v);
+      roomRoot.add(fixture);
+    });
+  }
+
+  function loadGltf(url) {
+    url = resolveAsset(url);
+    if (gltfCache.has(url)) return gltfCache.get(url);
+    const p = new Promise((resolve, reject) => {
+      loader.load(url, (g) => resolve(g.scene), undefined, reject);
+    });
+    gltfCache.set(url, p);
+    return p;
+  }
+
+  /**
+   * Rotate 90° only when the mesh long-axis disagrees with this item's
+   * footprint — never a global "everything long on X" rule (that spun beds).
+   */
+  function alignToFootprint(root, targetW, targetD) {
+    root.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    if (size.x < 1e-4 || size.z < 1e-4) return;
+    const meshLongX = size.x >= size.z * 1.05;
+    const meshLongZ = size.z >= size.x * 1.05;
+    const footLongX = targetW >= targetD * 1.05;
+    const footLongZ = targetD >= targetW * 1.05;
+    if ((meshLongZ && footLongX) || (meshLongX && footLongZ)) {
+      root.rotation.y += Math.PI / 2;
+      root.updateMatrixWorld(true);
+    }
+  }
+
+  function recenterOnFloor(root) {
+    const box2 = new THREE.Box3().setFromObject(root);
+    root.position.x -= (box2.min.x + box2.max.x) * 0.5;
+    root.position.y -= box2.min.y;
+    root.position.z -= (box2.min.z + box2.max.z) * 0.5;
+  }
+
+  /**
+   * mode from MeshProfile.fitMode:
+   *   'uniform' | 'width' | 'height' | 'wallOpening'
+   * Targets come from the Dart catalog (metres) — not per-kind hardcodes here.
+   */
+  function fitObject(root, targetW, targetD, targetH, mode) {
+    const box = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    if (size.x < 1e-4 || size.y < 1e-4 || size.z < 1e-4) return;
+    const sx = targetW / Math.max(size.x, 1e-4);
+    const sy = targetH > 0 ? targetH / Math.max(size.y, 1e-4) : sx;
+    const sz = targetD / Math.max(size.z, 1e-4);
+    if (mode === 'wallOpening' || mode === 'ignoreDepth') {
+      root.scale.setScalar(Math.min(sx, sy) * 0.98);
+    } else if (mode === 'width' || mode === 'fillWidth') {
+      root.scale.setScalar(sx * 0.98);
+    } else if (mode === 'height') {
+      root.scale.setScalar(sy * 0.95);
+    } else if (mode === 'fill') {
+      // Legacy — avoid for furniture (stretches into slabs).
+      root.scale.set(sx * 0.98, sy * 0.98, sz * 0.98);
+    } else {
+      root.scale.setScalar(Math.min(sx, sz, sy) * 0.92);
+    }
+    recenterOnFloor(root);
+  }
+
+  /** Apply MeshProfile fit fields from the scene payload. */
+  function fitFurnitureModel(model, it, fitW, fitD, h) {
+    const mode = (it.fit || 'uniform').toLowerCase();
+    const tw = it.tw != null ? +it.tw : fitW;
+    const td = it.td != null ? +it.td : fitD;
+    const th = it.th != null ? +it.th : h;
+    const biasDeg = +it.yawBias || 0;
+    const mount = (it.mount || '').toLowerCase();
+    // Wall openings always align long-axis to local +X (along-wall after wrap yaw).
+    // Otherwise Kenney wallWindow/doorway stay long on Z and look stretched on E/W walls.
+    if (it.alignFoot || mode === 'wallopening' || mount === 'wall') {
+      alignToFootprint(model, Math.max(tw, 0.2), Math.max(td > 0 ? td : 0.14, 0.08));
+    }
+    if (biasDeg) model.rotation.y += THREE.MathUtils.degToRad(biasDeg);
+    fitObject(model, tw, td, th, mode);
+  }
+
+  function enableShadows(obj, cast) {
+    obj.traverse((c) => {
+      if (c.isMesh) {
+        c.castShadow = cast !== false;
+        c.receiveShadow = true;
+      }
+    });
+  }
+
+  function placeholderMesh(kind, w, d, h) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(w * 0.92, h * 0.9, d * 0.92),
+      new THREE.MeshStandardMaterial({ color: 0x5a6a88, roughness: 0.65, metalness: 0.08 })
+    );
+    body.position.y = h * 0.45;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    g.add(body);
+    return g;
+  }
+
+  /** Project a wall-mounted wrap's world AABB onto the wall opening axes. */
+  function measureWallOpening(wrap, wall, pad) {
+    wrap.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(wrap);
+    if (!isFinite(box.min.x) || box.isEmpty()) return null;
+    const p = pad || 0.02;
+    let along0, along1;
+    if (wall === 'north' || wall === 'south') {
+      along0 = box.min.x - p;
+      along1 = box.max.x + p;
+    } else {
+      along0 = box.min.z - p;
+      along1 = box.max.z + p;
+    }
+    return {
+      along0,
+      along1,
+      y0: Math.max(0, box.min.y - p * 0.5),
+      y1: box.max.y + p * 0.5,
+    };
+  }
+
+  function deskHostTopY(wrap) {
+    wrap.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(wrap);
+    if (!isFinite(box.max.y) || box.isEmpty()) return null;
+    return box.max.y;
+  }
+
+  function xzOverlap(a, b) {
+    return a.min.x < b.max.x && a.max.x > b.min.x &&
+      a.min.z < b.max.z && a.max.z > b.min.z;
+  }
+
+  async function setFurniture(items) {
+    while (furnitureRoot.children.length) furnitureRoot.remove(furnitureRoot.children[0]);
+    const measuredCuts = [];
+    const jobs = (items || []).map(async (it) => {
+      const w = Math.max(0.2, +it.w || 0.8);
+      const d = Math.max(0.2, +it.d || 0.8);
+      const h = Math.max(0.2, +it.h || 0.9);
+      const yawDeg = +it.yaw || 0;
+      const mount = it.mount || 'floor';
+      const kind = (it.kind || '').toLowerCase();
+      // Match Orbit (FurnitureShapes): canonical mesh is long along X / faces +Z;
+      // odd 90° yaws swap local W↔D so the world AABB stays on the grid cell.
+      // Wall mounts must NOT swap — it.w is clear width along the wall, it.d is
+      // thickness; swapping crushed doors/windows to ~wall-depth scale.
+      const yawSteps = Math.round(yawDeg / 90);
+      const swapAxes = mount !== 'wall' && Math.abs(yawSteps) % 2 === 1;
+      const fitW = swapAxes ? d : w;
+      const fitD = swapAxes ? w : d;
+      const wrap = new THREE.Group();
+      wrap.position.set(+it.x || 0, +it.y || 0, +it.z || 0);
+      wrap.rotation.y = THREE.MathUtils.degToRad(yawDeg);
+      wrap.userData.itemId = it.id;
+      wrap.userData.mount = mount;
+      wrap.userData.kind = kind;
+
+      let model = null;
+      if (it.model) {
+        try {
+          const src = await loadGltf(it.model);
+          model = src.clone(true);
+          enableShadows(model, !it.opening);
+          fitFurnitureModel(model, it, fitW, fitD, h);
+        } catch (e) {
+          console.warn('GLB failed', it.model, e);
+        }
+      }
+      if (!model) model = placeholderMesh(it.kind || 'box', fitW, fitD, h);
+      wrap.add(model);
+
+      if (it.selected) {
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(Math.max(w, d) * 0.55, Math.max(w, d) * 0.62, 48),
+          new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.015;
+        wrap.add(ring);
+      }
+      furnitureRoot.add(wrap);
+
+      // After fit, size the shell hole from the real mesh bounds.
+      if (mount === 'wall' && it.wall && (it.opening || it.cutKind)) {
+        const m = measureWallOpening(wrap, it.wall, it.cutKind === 'niche' ? 0.015 : 0.02);
+        if (m) {
+          measuredCuts.push({
+            wall: it.wall,
+            along0: m.along0,
+            along1: m.along1,
+            y0: m.y0,
+            y1: m.y1,
+            glass: !!it.glass || it.kind === 'window' || it.kind === 'smartBlinds',
+            through: it.cutKind !== 'niche',
+            kind: it.cutKind || (it.opening ? 'through' : 'niche'),
+          });
+        }
+      }
+    });
+    await Promise.all(jobs);
+
+    // Seat desk-top items on the measured desk/table top (not a fixed 0.74
+    // constant that drifts when mesh scale changes).
+    const hosts = [];
+    const deskItems = [];
+    for (const wrap of furnitureRoot.children) {
+      const k = wrap.userData.kind || '';
+      if (wrap.userData.mount === 'desk') deskItems.push(wrap);
+      if (k === 'desk' || k === 'table') hosts.push(wrap);
+    }
+    for (const item of deskItems) {
+      item.updateWorldMatrix(true, true);
+      const ib = new THREE.Box3().setFromObject(item);
+      let bestY = null;
+      for (const host of hosts) {
+        host.updateWorldMatrix(true, true);
+        const hb = new THREE.Box3().setFromObject(host);
+        if (!xzOverlap(ib, hb)) continue;
+        const top = deskHostTopY(host);
+        if (top == null) continue;
+        if (bestY == null || top > bestY) bestY = top;
+      }
+      if (bestY != null) item.position.y = bestY + 0.005;
+    }
+
+    syncInteriorLights(items);
+
+    const n = (items || []).length;
+    const withModel = (items || []).filter((i) => i.model).length;
+    const ceilLit = ceilingGlow.visible ||
+      interiorLightRoot.children.some((c) => c.isSpotLight || (c.isPointLight && c.castShadow));
+    hud.textContent = n + ' items · ' + withModel + ' GLBs · shadows @ ceiling' +
+      (ceilLit ? '' : ' (pending)');
+    return measuredCuts;
+  }
+
+  // Pitch: negative = below lookAt looking up (ceiling); ~1.45 = top-down.
+  const PITCH_MIN = -0.85;
+  const PITCH_MAX = 1.42;
+  const DIST_MIN = 0.85;
+  const DIST_MAX = 18;
+
+  function clampLookAt() {
+    const m = 0.15;
+    lookAt.x = Math.max(m, Math.min(roomW - m, lookAt.x));
+    lookAt.z = Math.max(m, Math.min(roomD - m, lookAt.z));
+    lookAt.y = Math.max(0.05, Math.min(roomH - 0.05, lookAt.y));
+  }
+
+  /** Place orbit rig so the camera sits at [cam] looking at [target] (interior). */
+  function frameFrom(camX, camY, camZ, targetX, targetY, targetZ) {
+    lookAt.set(targetX, targetY, targetZ);
+    const dx = camX - targetX;
+    const dy = camY - targetY;
+    const dz = camZ - targetZ;
+    let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist < 1e-3) dist = 1;
+    distance = Math.max(DIST_MIN, Math.min(DIST_MAX, dist));
+    pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, Math.asin(dy / dist)));
+    yaw = Math.atan2(dx, dz);
+  }
+
+  function updateCamera() {
+    const cp = Math.cos(pitch), sp = Math.sin(pitch);
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
+    camera.position.set(
+      lookAt.x + distance * cp * sy,
+      lookAt.y + distance * sp,
+      lookAt.z + distance * cp * cy
+    );
+    camera.lookAt(lookAt);
+  }
+
+  function findDoorItem() {
+    return (lastItems || []).find((it) => {
+      const k = (it.kind || it.id || '').toLowerCase();
+      return k === 'door' || k.indexOf('door') >= 0;
+    }) || null;
+  }
+
+  /**
+   * All presets keep the camera inside the room envelope so Check shows
+   * furniture / interior walls — not the exterior shell.
+   */
+  function applyPreset(name) {
+    exploreMode = 'orbit';
+    const cx = roomW * 0.5;
+    const cz = roomD * 0.5;
+    const inset = Math.min(0.55, Math.min(roomW, roomD) * 0.18);
+    const eyeY = Math.min(1.55, Math.max(1.15, roomH * 0.52));
+    const midY = Math.min(1.15, roomH * 0.42);
+
+    if (name === 'birdseye') {
+      // Just under the ceiling, looking straight down at the floor plan.
+      frameFrom(cx, roomH - 0.22, cz, cx, 0.08, cz);
+    } else if (name === 'cornerA') {
+      // Inside near (−X,−Z), looking across the room.
+      frameFrom(inset, eyeY, inset, cx, midY, cz);
+    } else if (name === 'cornerB') {
+      // Opposite interior corner.
+      frameFrom(roomW - inset, eyeY, roomD - inset, cx, midY, cz);
+    } else if (name === 'eyeLevel') {
+      // Standing along the near wall, eye-height, facing the room center.
+      frameFrom(cx, eyeY, inset, cx, eyeY * 0.85, roomD - inset * 1.2);
+    } else if (name === 'door') {
+      const door = findDoorItem();
+      let camX = cx, camZ = inset, targetX = cx, targetZ = cz;
+      if (door) {
+        const wall = (door.wall || '').toLowerCase();
+        const dx = +door.x || cx;
+        const dz = +door.z || cz;
+        if (wall === 'south' || (!wall && dz > roomD * 0.55)) {
+          camX = dx; camZ = Math.min(roomD - inset, dz - 0.35);
+          targetX = cx; targetZ = inset * 1.4;
+        } else if (wall === 'north' || (!wall && dz < roomD * 0.45)) {
+          camX = dx; camZ = Math.max(inset, dz + 0.35);
+          targetX = cx; targetZ = roomD - inset * 1.4;
+        } else if (wall === 'west' || (!wall && dx < roomW * 0.45)) {
+          camX = Math.max(inset, dx + 0.35); camZ = dz;
+          targetX = roomW - inset * 1.4; targetZ = cz;
+        } else {
+          camX = Math.min(roomW - inset, dx - 0.35); camZ = dz;
+          targetX = inset * 1.4; targetZ = cz;
+        }
+      }
+      frameFrom(camX, eyeY, camZ, targetX, midY, targetZ);
+    } else if (name === 'ceiling') {
+      // Low center, looking up at the ceiling plane.
+      frameFrom(cx, 0.75, cz, cx, roomH - 0.08, cz);
+    } else {
+      frameFrom(inset * 1.4, eyeY, inset * 1.4, cx, midY, cz);
+    }
+    hasUserFramed = true;
+    clampLookAt();
+    updateCamera();
+    hud.textContent = 'Interior · LMB orbit · RMB pan · scroll zoom';
+  }
+
+  function focusItem(id) {
+    const it = lastItems.find((x) => x.id === id);
+    if (!it) return;
+    lookAt.set(+it.x || 0, (+it.y || 0) + (+it.h || 0.8) * 0.45, +it.z || 0);
+    distance = Math.max(2.8, Math.min(10, Math.max(+it.w || 1, +it.d || 1) * 3.2 + 2.2));
+    pitch = 0.42;
+    exploreMode = 'orbit';
+    clampLookAt();
+    hud.textContent = 'Focused · LMB orbit · RMB pan';
+  }
+
+  function setExploreMode(mode) {
+    exploreMode = 'orbit';
+    hud.textContent = 'LMB orbit · RMB pan · scroll zoom';
+  }
+
+  function setMiniMap(on) {
+    showMiniMap = !!on;
+    if (miniMapEl) miniMapEl.style.display = showMiniMap ? 'block' : 'none';
+  }
+
+  function drawMiniMap() {
+    if (!showMiniMap || !mmCtx) return;
+    const w = mmCanvas.width, h = mmCanvas.height;
+    mmCtx.clearRect(0, 0, w, h);
+    mmCtx.fillStyle = '#1B2030';
+    mmCtx.fillRect(0, 0, w, h);
+    const pad = 8;
+    const sx = (w - pad * 2) / Math.max(roomW, 0.1);
+    const sz = (h - pad * 2) / Math.max(roomD, 0.1);
+    const s = Math.min(sx, sz);
+    const ox = (w - roomW * s) * 0.5;
+    const oz = (h - roomD * s) * 0.5;
+    mmCtx.strokeStyle = '#2C3348';
+    mmCtx.strokeRect(ox, oz, roomW * s, roomD * s);
+    for (const it of lastItems) {
+      const iw = Math.max(0.15, +it.w || 0.4) * s;
+      const id = Math.max(0.15, +it.d || 0.4) * s;
+      mmCtx.fillStyle = it.selected ? '#00E5FF' : '#5A6280';
+      mmCtx.fillRect(ox + (+it.x - (+it.w || 0.4) * 0.5) * s, oz + (+it.z - (+it.d || 0.4) * 0.5) * s, iw, id);
+    }
+    const cam = camera.position;
+    mmCtx.fillStyle = '#2EE68A';
+    mmCtx.beginPath();
+    mmCtx.arc(ox + cam.x * s, oz + cam.z * s, 3.5, 0, Math.PI * 2);
+    mmCtx.fill();
+  }
+
+  function resize() {
+    const w = canvas.clientWidth || window.innerWidth;
+    const h = canvas.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / Math.max(h, 1);
+    camera.updateProjectionMatrix();
+  }
+
+  // Desktop: LMB orbit, RMB/MMB pan, wheel zoom.
+  // Touch: 1-finger orbit, 2-finger pan + pinch zoom.
+  const activePtrs = new Map();
+  let gesture = null; // 'orbit' | 'pan' | 'panzoom'
+  let lastX = 0, lastY = 0;
+  let lastMidX = 0, lastMidY = 0, lastPinch = 0;
+
+  function ptrList() { return Array.from(activePtrs.values()); }
+
+  function beginGesture() {
+    const pts = ptrList();
+    if (pts.length === 1) {
+      const btn = pts[0].button;
+      // 0 = left orbit; 1 = middle pan; 2 = right pan (touch button is 0).
+      gesture = (btn === 2 || btn === 1) ? 'pan' : 'orbit';
+      lastX = pts[0].x; lastY = pts[0].y;
+    } else if (pts.length >= 2) {
+      gesture = 'panzoom';
+      lastMidX = (pts[0].x + pts[1].x) * 0.5;
+      lastMidY = (pts[0].y + pts[1].y) * 0.5;
+      lastPinch = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+    } else {
+      gesture = null;
+    }
+  }
+
+  const _panRight = new THREE.Vector3();
+  const _panUp = new THREE.Vector3();
+  function panLookAt(dx, dy) {
+    // Screen-space pan (like OrbitControls): vertical drag raises the pivot
+    // so you can slide up toward the ceiling without leaving orbit mode.
+    updateCamera();
+    const h = canvas.clientHeight || 1;
+    const panScale = distance * Math.tan((camera.fov * Math.PI / 180) * 0.5) * 2 / h;
+    _panRight.setFromMatrixColumn(camera.matrixWorld, 0);
+    _panUp.setFromMatrixColumn(camera.matrixWorld, 1);
+    lookAt.addScaledVector(_panRight, -dx * panScale);
+    lookAt.addScaledVector(_panUp, dy * panScale);
+    clampLookAt();
+  }
+
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('pointerdown', (e) => {
+    activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button });
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    beginGesture();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!activePtrs.has(e.pointerId)) return;
+    const prev = activePtrs.get(e.pointerId);
+    activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY, button: prev.button });
+    const pts = ptrList();
+    if (pts.length === 1 && gesture === 'orbit') {
+      const dx = pts[0].x - lastX, dy = pts[0].y - lastY;
+      lastX = pts[0].x; lastY = pts[0].y;
+      yaw -= dx * 0.008;
+      pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitch + dy * 0.006));
+    } else if (pts.length === 1 && gesture === 'pan') {
+      const dx = pts[0].x - lastX, dy = pts[0].y - lastY;
+      lastX = pts[0].x; lastY = pts[0].y;
+      panLookAt(dx, dy);
+    } else if (pts.length >= 2) {
+      if (gesture !== 'panzoom') beginGesture();
+      const midX = (pts[0].x + pts[1].x) * 0.5;
+      const midY = (pts[0].y + pts[1].y) * 0.5;
+      const pinch = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+      const mdx = midX - lastMidX, mdy = midY - lastMidY;
+      panLookAt(mdx, mdy);
+      if (lastPinch > 0) {
+        distance = Math.max(DIST_MIN, Math.min(DIST_MAX, distance * (lastPinch / pinch)));
+      }
+      lastMidX = midX; lastMidY = midY; lastPinch = pinch;
+    }
+  });
+  function endPointer(e) {
+    activePtrs.delete(e.pointerId);
+    beginGesture();
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('pointerout', (e) => {
+    if (e.pointerType === 'touch') endPointer(e);
+  });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    distance = Math.max(DIST_MIN, Math.min(DIST_MAX, distance + e.deltaY * 0.01));
+  }, { passive: false });
+
+  async function applyScene(payload) {
+    try {
+      const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
+      const w = +data.roomW || 4.2;
+      const d = +data.roomD || 3.6;
+      const h = +data.roomH || 2.7;
+      const openings = data.openings || [];
+      rebuildRoom(w, d, h, openings);
+      if (data.yaw != null) yaw = +data.yaw;
+      if (data.pitch != null) pitch = +data.pitch;
+      if (data.distance != null) distance = +data.distance;
+      if (data.assetBase) assetBase = data.assetBase;
+      lastItems = data.items || [];
+      if (data.exploreMode) setExploreMode(data.exploreMode);
+      if (data.preset) {
+        applyPreset(data.preset);
+      } else if (!hasUserFramed) {
+        // First paint: interior corner, not the old exterior orbit.
+        applyPreset('cornerA');
+      }
+      if (data.focusId) focusItem(data.focusId);
+      if (data.miniMap != null) setMiniMap(!!data.miniMap);
+      const measured = await setFurniture(data.items || []);
+      // Second pass: shrink/grow shell cuts to the fitted GLB bounds.
+      if (measured && measured.length) {
+        const clamped = measured.map((op) => {
+          const maxAlong = (op.wall === 'north' || op.wall === 'south') ? w : d;
+          return {
+            ...op,
+            along0: Math.max(0, Math.min(maxAlong, op.along0)),
+            along1: Math.max(0, Math.min(maxAlong, op.along1)),
+            y0: Math.max(0, Math.min(h, op.y0)),
+            y1: Math.max(0.05, Math.min(h, op.y1)),
+          };
+        }).filter((op) => op.along1 - op.along0 > 0.08 && op.y1 - op.y0 > 0.08);
+        if (clamped.length) rebuildRoom(w, d, h, clamped);
+      }
+    } catch (e) {
+      showError('Scene update failed: ' + e);
+    }
+  }
+
+  window.setRoomScene = applyScene;
+  window.applyCameraPreset = applyPreset;
+  window.setExploreMode = setExploreMode;
+  window.focusItem = focusItem;
+  window.setMiniMap = setMiniMap;
+  window.addEventListener('message', (ev) => {
+    if (ev && ev.data) applyScene(ev.data);
+  });
+
+  Promise.all([
+    loadTex(resolveAsset('../gltf/wood_floor_diff.jpg'), 3, 3),
+    loadTex(resolveAsset('../gltf/plaster_wall_diff.jpg'), 2.2, 1.4),
+  ]).then(([f, w]) => {
+    floorMap = f;
+    wallMap = w;
+    rebuildRoom(roomW, roomD, roomH, []);
+    try {
+      if (window.RoomRigChannel && RoomRigChannel.postMessage) {
+        RoomRigChannel.postMessage(JSON.stringify({ type: 'ready' }));
+      }
+    } catch (_) {}
+  }).catch(() => rebuildRoom(roomW, roomD, roomH, []));
+
+  function frame() {
+    resize();
+    updateCamera();
+    drawMiniMap();
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  frame();
+})();
+  </script>
+</body>
+</html>

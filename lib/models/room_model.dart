@@ -1,4 +1,6 @@
 // lib/models/room_model.dart
+// Preset footprints come from GltfCatalog.orbitFootprint so Orbit matches Model.
+import '../services/gltf_catalog.dart';
 
 enum RoomPreset {
   gamingSetup,
@@ -152,9 +154,56 @@ class RoomData {
 }
 
 class RoomPresets {
+  /// Footprint (cells) from MeshProfile metres; wall depth falls back to 1 cell.
+  static FurnitureItem _f({
+    required String id,
+    required String name,
+    required String iconName,
+    required String category,
+    required double gridX,
+    required double gridY,
+    double yawDegrees = 0,
+    double airflowImpact = 0,
+    double lightingImpact = 0,
+    double ergonomicsImpact = 0,
+    double cost = 100,
+    String description = 'Active Room Component',
+    double fallbackWidth = 1,
+    double fallbackDepth = 1,
+  }) {
+    final fp = GltfCatalog.orbitFootprint(
+      iconName,
+      fallbackWidth: fallbackWidth,
+      fallbackDepth: fallbackDepth,
+    );
+    return FurnitureItem(
+      id: id,
+      name: name,
+      iconName: iconName,
+      category: category,
+      gridX: gridX,
+      gridY: gridY,
+      width: fp.width,
+      height: fp.depth,
+      yawDegrees: yawDegrees,
+      airflowImpact: airflowImpact,
+      lightingImpact: lightingImpact,
+      ergonomicsImpact: ergonomicsImpact,
+      cost: cost,
+      description: description,
+    );
+  }
+
   static RoomData getPreset(RoomPreset preset) {
     switch (preset) {
-      case RoomPreset.gamingSetup:
+      case RoomPreset.gamingSetup: {
+        // Pack PC | monitor | lamp along the desk back — three footprints fill ~2 cells.
+        const deskX = 1.0;
+        const deskY = 1.0;
+        final pcFp = GltfCatalog.orbitFootprint('pc');
+        final monFp = GltfCatalog.orbitFootprint('monitor');
+        final shelfFp = GltfCatalog.orbitFootprint('shelf');
+        const cols = 6.0;
         return RoomData(
           name: 'Gaming Setup',
           subtitle: 'High-performance gaming room with RGB everything',
@@ -162,21 +211,38 @@ class RoomPresets {
           gridCols: 6,
           gridRows: 8,
           furniture: [
-            FurnitureItem(id: 'desk', name: 'Gaming Desk', iconName: 'desk', category: 'ergonomics', gridX: 1, gridY: 1, width: 2, height: 1, ergonomicsImpact: 0.6, lightingImpact: -0.1, cost: 299, description: 'Spacious desk designed for multi-monitor setups.'),
-            FurnitureItem(id: 'chair', name: 'Gaming Chair', iconName: 'chair', category: 'ergonomics', gridX: 1, gridY: 2, yawDegrees: 180, ergonomicsImpact: 0.8, airflowImpact: -0.2, cost: 349, description: 'Ergonomic bucket-seat design with lumbar support.'),
-            FurnitureItem(id: 'bed', name: 'Bed', iconName: 'bed', category: 'neutral', gridX: 3, gridY: 4, width: 2, height: 2, airflowImpact: -0.3, ergonomicsImpact: -0.2, cost: 599, description: 'Essential sleeping comfort zone; obstructs some airflow.'),
-            FurnitureItem(id: 'pc', name: 'PC Tower', iconName: 'pc', category: 'airflow', gridX: 0, gridY: 1, width: 0.45, height: 0.5, airflowImpact: -0.4, lightingImpact: 0.1, cost: 1500, description: 'Main processing powerhouse; generates exhaust heat.'),
-            FurnitureItem(id: 'ac', name: 'AC Unit', iconName: 'ac', category: 'airflow', gridX: 5, gridY: 0, airflowImpact: 0.9, cost: 450, description: 'Generates cold air streams to cool down the room rig.'),
-            FurnitureItem(id: 'window', name: 'Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, lightingImpact: 0.8, airflowImpact: 0.5, cost: 300, description: 'Provides natural light and ambient ventilation.'),
-            FurnitureItem(id: 'door', name: 'Entry Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, height: 1, airflowImpact: 0.35, ergonomicsImpact: 0.2, cost: 220, description: 'Primary room entrance; keep approach path clear.'),
-            FurnitureItem(id: 'shelf', name: 'Shelf', iconName: 'shelf', category: 'neutral', gridX: 5, gridY: 3, airflowImpact: -0.2, cost: 119, description: 'Storage unit; blockages can redirect airflow path.'),
-            // Open floor between the desk and the shelf. It used to sit at
-            // (4, 5), fully inside the bed, which left it stuck: every drag
-            // still overlapped the bed, so collision resolution snapped it back.
-            FurnitureItem(id: 'fan', name: 'Stand Fan', iconName: 'fan', category: 'airflow', gridX: 4, gridY: 2, airflowImpact: 0.55, cost: 45, description: 'Oscillating pedestal fan; sweeps ~45° to push air around the room.'),
+            _f(id: 'desk', name: 'Gaming Desk', iconName: 'desk', category: 'ergonomics', gridX: deskX, gridY: deskY, ergonomicsImpact: 0.6, lightingImpact: -0.1, cost: 299, description: 'Spacious desk designed for multi-monitor setups.'),
+            _f(id: 'chair', name: 'Gaming Chair', iconName: 'chair', category: 'ergonomics', gridX: 1, gridY: 2, yawDegrees: 180, ergonomicsImpact: 0.8, airflowImpact: -0.2, cost: 349, description: 'Ergonomic bucket-seat design with lumbar support.'),
+            _f(id: 'pc', name: 'PC Tower', iconName: 'pc', category: 'airflow', gridX: deskX, gridY: deskY, airflowImpact: -0.4, lightingImpact: 0.1, cost: 1500, description: 'Main processing powerhouse; sits on the desk beside the monitor.'),
+            _f(id: 'monitor', name: 'Gaming Monitor', iconName: 'monitor', category: 'ergonomics', gridX: deskX + pcFp.width, gridY: deskY, yawDegrees: 0, ergonomicsImpact: 0.7, cost: 329, description: 'Primary display — sits on the back edge of the desk.'),
+            _f(id: 'lamp', name: 'RGB Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: deskX + pcFp.width + monFp.width, gridY: deskY, lightingImpact: 0.45, cost: 49, description: 'Task light on the back corner — clear of the screen.'),
+            _f(id: 'bed', name: 'Bed', iconName: 'bed', category: 'neutral', gridX: 3, gridY: 4, airflowImpact: -0.3, ergonomicsImpact: -0.2, cost: 599, description: 'Essential sleeping comfort zone; obstructs some airflow.'),
+            // North wall — keep inside cols (catalogue AC width ~1.5 cells).
+            _f(
+              id: 'ac',
+              name: 'AC Unit',
+              iconName: 'ac',
+              category: 'airflow',
+              gridX: cols - GltfCatalog.orbitFootprint('ac').width,
+              gridY: 0,
+              airflowImpact: 0.9,
+              cost: 450,
+              description: 'Generates cold air streams to cool down the room rig.',
+            ),
+            _f(id: 'window', name: 'Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, lightingImpact: 0.8, airflowImpact: 0.5, cost: 300, description: 'Provides natural light and ambient ventilation.'),
+            _f(id: 'door', name: 'Entry Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, airflowImpact: 0.35, ergonomicsImpact: 0.2, cost: 220, description: 'Primary room entrance; keep approach path clear.'),
+            // Fully inside the east wall (old gridX: 5 overflowed width past cols).
+            _f(id: 'shelf', name: 'Shelf', iconName: 'shelf', category: 'neutral', gridX: cols - shelfFp.width, gridY: 3, airflowImpact: -0.2, cost: 119, description: 'Storage unit; blockages can redirect airflow path.'),
+            _f(id: 'fan', name: 'Stand Fan', iconName: 'fan', category: 'airflow', gridX: 4, gridY: 2, airflowImpact: 0.55, cost: 45, description: 'Oscillating pedestal fan; sweeps ~45° to push air around the room.'),
           ],
         );
-      case RoomPreset.homeOffice:
+      }
+      case RoomPreset.homeOffice: {
+        const deskX = 0.0;
+        const deskY = 1.0;
+        const cols = 6.0;
+        final monFp = GltfCatalog.orbitFootprint('monitor');
+        final shelfFp = GltfCatalog.orbitFootprint('shelf');
         return RoomData(
           name: 'Home Office',
           subtitle: 'Productive workspace optimized for deep work',
@@ -184,19 +250,18 @@ class RoomPresets {
           gridCols: 6,
           gridRows: 8,
           furniture: [
-            FurnitureItem(id: 'desk', name: 'Standing Desk', iconName: 'desk', category: 'ergonomics', gridX: 0, gridY: 1, width: 2, height: 1, ergonomicsImpact: 0.9, lightingImpact: 0.1, cost: 499, description: 'Dual-motor standing desk for healthy posture transitions.'),
-            FurnitureItem(id: 'chair', name: 'Ergonomic Chair', iconName: 'chair', category: 'ergonomics', gridX: 0, gridY: 2, yawDegrees: 180, ergonomicsImpact: 0.9, cost: 699, description: 'High-back mesh design, optimal comfort and posture alignment.'),
-            // Beside the desk rather than on top of it — at (1, 1) it was
-            // fully inside the desk footprint, so it could never be dragged.
-            FurnitureItem(id: 'monitor', name: 'Monitor', iconName: 'monitor', category: 'ergonomics', gridX: 2, gridY: 1, ergonomicsImpact: 0.7, cost: 129, description: 'Positions the screen at eye level on the desk.'),
-            FurnitureItem(id: 'window', name: 'Large Window', iconName: 'window', category: 'lighting', gridX: 3, gridY: 0, width: 2, lightingImpact: 0.9, airflowImpact: 0.7, cost: 400, description: 'Wide exterior window for maximum natural light spread.'),
-            FurnitureItem(id: 'door', name: 'Office Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, height: 1, airflowImpact: 0.3, ergonomicsImpact: 0.25, cost: 180, description: 'Entry door — leave a clear approach aisle.'),
-            FurnitureItem(id: 'plant', name: 'Plant', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 2, airflowImpact: 0.3, ergonomicsImpact: 0.2, cost: 39, description: 'Breathes life into the office and purifies ambient air.'),
-            FurnitureItem(id: 'bookshelf', name: 'Bookshelf', iconName: 'shelf', category: 'neutral', gridX: 4, gridY: 3, width: 2, airflowImpact: -0.3, cost: 179, description: 'Heavy storage shelving; obstructs direct ventilation lines.'),
-            FurnitureItem(id: 'lamp', name: 'Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: 2, gridY: 2, lightingImpact: 0.6, cost: 59, description: 'Focused task lighting to avoid screen glare.'),
-            FurnitureItem(id: 'sofa', name: 'Sofa', iconName: 'sofa', category: 'neutral', gridX: 1, gridY: 5, width: 2, airflowImpact: -0.3, ergonomicsImpact: 0.2, cost: 499, description: 'Secondary comfortable seating area for relaxation breaks.'),
+            _f(id: 'desk', name: 'Standing Desk', iconName: 'desk', category: 'ergonomics', gridX: deskX, gridY: deskY, ergonomicsImpact: 0.9, lightingImpact: 0.1, cost: 499, description: 'Dual-motor standing desk for healthy posture transitions.'),
+            _f(id: 'chair', name: 'Ergonomic Chair', iconName: 'chair', category: 'ergonomics', gridX: 0, gridY: 2, yawDegrees: 180, ergonomicsImpact: 0.9, cost: 699, description: 'High-back mesh design, optimal comfort and posture alignment.'),
+            _f(id: 'monitor', name: 'Monitor', iconName: 'monitor', category: 'ergonomics', gridX: deskX, gridY: deskY, yawDegrees: 0, ergonomicsImpact: 0.7, cost: 129, description: 'Positions the screen at eye level on the desk.'),
+            _f(id: 'lamp', name: 'Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: deskX + monFp.width, gridY: deskY, lightingImpact: 0.6, cost: 59, description: 'Task light on the back corner — clear of the screen.'),
+            _f(id: 'window', name: 'Large Window', iconName: 'window', category: 'lighting', gridX: 3, gridY: 0, lightingImpact: 0.9, airflowImpact: 0.7, cost: 400, description: 'Wide exterior window for maximum natural light spread.'),
+            _f(id: 'door', name: 'Office Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, airflowImpact: 0.3, ergonomicsImpact: 0.25, cost: 180, description: 'Entry door — leave a clear approach aisle.'),
+            _f(id: 'plant', name: 'Plant', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 2, airflowImpact: 0.3, ergonomicsImpact: 0.2, cost: 39, description: 'Breathes life into the office and purifies ambient air.'),
+            _f(id: 'bookshelf', name: 'Bookshelf', iconName: 'shelf', category: 'neutral', gridX: cols - shelfFp.width, gridY: 3, airflowImpact: -0.3, cost: 179, description: 'Heavy storage shelving; obstructs direct ventilation lines.'),
+            _f(id: 'sofa', name: 'Sofa', iconName: 'sofa', category: 'neutral', gridX: 1, gridY: 5, airflowImpact: -0.3, ergonomicsImpact: 0.2, cost: 499, description: 'Secondary comfortable seating area for relaxation breaks.'),
           ],
         );
+      }
       case RoomPreset.studioApartment:
         return RoomData(
           name: 'Studio Apartment',
@@ -205,14 +270,14 @@ class RoomPresets {
           gridCols: 6,
           gridRows: 8,
           furniture: [
-            FurnitureItem(id: 'bed', name: 'Murphy Bed', iconName: 'bed', category: 'neutral', gridX: 4, gridY: 0, width: 2, height: 2, airflowImpact: -0.2, ergonomicsImpact: 0.3, cost: 999, description: 'Foldable wall bed; optimizes space efficiency.'),
-            FurnitureItem(id: 'sofa', name: 'Compact Sofa', iconName: 'sofa', category: 'neutral', gridX: 1, gridY: 3, width: 2, yawDegrees: 180, ergonomicsImpact: 0.4, cost: 349, description: 'Space-saving sofa, provides essential lounging comfort.'),
-            FurnitureItem(id: 'table', name: 'Table', iconName: 'desk', category: 'neutral', gridX: 0, gridY: 1, width: 2, height: 1, cost: 180, description: 'Lounge table — holds TV, plant, or a small lamp'),
-            FurnitureItem(id: 'desk', name: 'Fold Desk', iconName: 'desk', category: 'ergonomics', gridX: 3, gridY: 4, ergonomicsImpact: 0.5, cost: 149, description: 'Collapsible wall-mount desk to maximize walking path clearance.'),
-            FurnitureItem(id: 'window', name: 'Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, width: 2, lightingImpact: 0.9, airflowImpact: 0.8, cost: 300, description: 'Provides natural light and ambient ventilation.'),
-            FurnitureItem(id: 'door', name: 'Studio Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, height: 1, airflowImpact: 0.3, ergonomicsImpact: 0.2, cost: 200, description: 'Entry door for the studio layout.'),
-            FurnitureItem(id: 'plant', name: 'Plant', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 5, airflowImpact: 0.3, cost: 29, description: 'Aesthetic touch that improves airflow freshness.'),
-            FurnitureItem(id: 'lamp', name: 'Floor Lamp', iconName: 'floorLamp', category: 'lighting', gridX: 0, gridY: 4, lightingImpact: 0.5, cost: 89, description: 'Diffused corner illumination to visually widen the space.'),
+            _f(id: 'bed', name: 'Murphy Bed', iconName: 'bed', category: 'neutral', gridX: 4, gridY: 0, airflowImpact: -0.2, ergonomicsImpact: 0.3, cost: 999, description: 'Foldable wall bed; optimizes space efficiency.'),
+            _f(id: 'sofa', name: 'Compact Sofa', iconName: 'sofa', category: 'neutral', gridX: 1, gridY: 3, yawDegrees: 180, ergonomicsImpact: 0.4, cost: 349, description: 'Space-saving sofa, provides essential lounging comfort.'),
+            _f(id: 'table', name: 'Table', iconName: 'table', category: 'neutral', gridX: 0, gridY: 1, cost: 180, description: 'Lounge table — holds TV, plant, or a small lamp'),
+            _f(id: 'desk', name: 'Fold Desk', iconName: 'desk', category: 'ergonomics', gridX: 3, gridY: 4, ergonomicsImpact: 0.5, cost: 149, description: 'Collapsible wall-mount desk to maximize walking path clearance.'),
+            _f(id: 'window', name: 'Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, lightingImpact: 0.9, airflowImpact: 0.8, cost: 300, description: 'Provides natural light and ambient ventilation.'),
+            _f(id: 'door', name: 'Studio Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, airflowImpact: 0.3, ergonomicsImpact: 0.2, cost: 200, description: 'Entry door for the studio layout.'),
+            _f(id: 'plant', name: 'Plant', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 5, airflowImpact: 0.3, cost: 29, description: 'Aesthetic touch that improves airflow freshness.'),
+            _f(id: 'lamp', name: 'Floor Lamp', iconName: 'floorLamp', category: 'lighting', gridX: 0, gridY: 4, lightingImpact: 0.5, cost: 89, description: 'Diffused corner illumination to visually widen the space.'),
           ],
         );
       case RoomPreset.minimalistBedroom:
@@ -223,12 +288,12 @@ class RoomPresets {
           gridCols: 6,
           gridRows: 8,
           furniture: [
-            FurnitureItem(id: 'bed', name: 'Low Bed Frame', iconName: 'bed', category: 'neutral', gridX: 1, gridY: 2, width: 3, height: 2, ergonomicsImpact: 0.6, airflowImpact: 0.1, cost: 650, description: 'Low-profile frame to keep vertical space open and calm.'),
-            FurnitureItem(id: 'window', name: 'Wide Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, width: 2, lightingImpact: 1.0, airflowImpact: 0.7, cost: 450, description: 'Large architectural window providing maximum light exposure.'),
-            FurnitureItem(id: 'door', name: 'Bedroom Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, height: 1, airflowImpact: 0.25, ergonomicsImpact: 0.2, cost: 190, description: 'Bedroom entry — keep the swing and approach clear.'),
-            FurnitureItem(id: 'plant', name: 'Peace Lily', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 2, airflowImpact: 0.4, ergonomicsImpact: 0.3, cost: 35, description: 'Improves oxygen circulation in the sleeping zone.'),
-            FurnitureItem(id: 'lamp', name: 'Ambient Lamp', iconName: 'lamp', category: 'lighting', gridX: 0, gridY: 2, lightingImpact: 0.4, cost: 69, description: 'Warm-spectrum lighting helper to optimize circadian rhythm.'),
-            FurnitureItem(id: 'wardrobe', name: 'Wardrobe', iconName: 'wardrobe', category: 'neutral', gridX: 0, gridY: 4, height: 2, airflowImpact: -0.2, cost: 390, description: 'Sleek storage cabinet; blocks direct draft paths.'),
+            _f(id: 'bed', name: 'Low Bed Frame', iconName: 'bed', category: 'neutral', gridX: 1, gridY: 2, ergonomicsImpact: 0.6, airflowImpact: 0.1, cost: 650, description: 'Low-profile frame to keep vertical space open and calm.'),
+            _f(id: 'window', name: 'Wide Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, lightingImpact: 1.0, airflowImpact: 0.7, cost: 450, description: 'Large architectural window providing maximum light exposure.'),
+            _f(id: 'door', name: 'Bedroom Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, airflowImpact: 0.25, ergonomicsImpact: 0.2, cost: 190, description: 'Bedroom entry — keep the swing and approach clear.'),
+            _f(id: 'plant', name: 'Peace Lily', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 2, airflowImpact: 0.4, ergonomicsImpact: 0.3, cost: 35, description: 'Improves oxygen circulation in the sleeping zone.'),
+            _f(id: 'lamp', name: 'Ambient Lamp', iconName: 'lamp', category: 'lighting', gridX: 0, gridY: 2, lightingImpact: 0.4, cost: 69, description: 'Warm-spectrum lighting helper to optimize circadian rhythm.'),
+            _f(id: 'wardrobe', name: 'Wardrobe', iconName: 'wardrobe', category: 'neutral', gridX: 0, gridY: 4, airflowImpact: -0.2, cost: 390, description: 'Sleek storage cabinet; blocks direct draft paths.'),
           ],
         );
     }

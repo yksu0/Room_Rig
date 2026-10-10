@@ -4,6 +4,7 @@ import 'dart:math';
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
 import 'comfort_heuristics.dart';
+import 'gltf_catalog.dart';
 import 'layout_collision.dart';
 
 class ErgonomicsMetrics {
@@ -17,6 +18,10 @@ class ErgonomicsMetrics {
   final double doorProspect;
   /// 0-1: bed not in the door's straight inbound view (sleep privacy).
   final double bedPrivacy;
+  /// 0-1: desk/seat not square-on to the window (glare).
+  final double windowSideLight;
+  /// 0-1: floor furniture clear of wall AC / intake / exhaust faces.
+  final double hvacClearance;
   final double conflictRatio; // 0-1 overlaps / jammed clearances
 
   const ErgonomicsMetrics({
@@ -28,13 +33,15 @@ class ErgonomicsMetrics {
     required this.pathScore,
     this.doorProspect = 0.55,
     this.bedPrivacy = 0.6,
+    this.windowSideLight = 0.55,
+    this.hvacClearance = 0.55,
     required this.conflictRatio,
   });
 }
 
 class ErgonomicsZone {
   final double minX, minZ, maxX, maxZ;
-  final String kind; // pullback | aisle | conflict
+  final String kind; // pullback | aisle | conflict | hvac
   final double severity; // 0-1
 
   const ErgonomicsZone({
@@ -354,8 +361,10 @@ class ErgonomicsSimulator {
       pathScore = weightSum == 0 ? 0.55 : (weighted / weightSum).clamp(0.0, 1.0);
     }
 
-    final door = _findKind(furniture, _ErgoKind.door);
+    final door = _firstWhere(furniture, SurfaceMounts.isDoor) ??
+        _findKind(furniture, _ErgoKind.door);
     final bed = _findKind(furniture, _ErgoKind.bed);
+    final window = _firstWhere(furniture, SurfaceMounts.isWindow);
     final doorProspect = ComfortHeuristics.doorProspectScore(
       chair: chair,
       desk: desk,
@@ -367,18 +376,46 @@ class ErgonomicsSimulator {
       gridCols: roomWidth.round(),
       gridRows: roomDepth.round(),
     );
+    final windowSideLight = ComfortHeuristics.windowSideLightScore(
+      desk: desk,
+      chair: chair,
+      window: window,
+    );
+    final hvacClearance = ComfortHeuristics.hvacClearanceScore(furniture);
+
+    // HVAC keep-clear bands for the Bench overlay (wall AC / vents).
+    for (final f in furniture) {
+      if (!(SurfaceMounts.isVent(f) ||
+          SurfaceMounts.isIntake(f) ||
+          SurfaceMounts.isExhaust(f))) {
+        continue;
+      }
+      final pad = ComfortHeuristics.hvacClearanceCells;
+      zones.add(
+        ErgonomicsZone(
+          minX: (f.gridX - pad).clamp(0.0, roomWidth),
+          minZ: (f.gridY - pad).clamp(0.0, roomDepth),
+          maxX: (f.gridX + f.width + pad).clamp(0.0, roomWidth),
+          maxZ: (f.gridY + f.height + pad).clamp(0.0, roomDepth),
+          kind: 'hvac',
+          severity: 1.0 - hvacClearance,
+        ),
+      );
+    }
 
     // Weights track what a person notices: clear pull-back, short walks with
-    // fewer twists, gear in reach, entry visibility, and sleep-zone privacy.
+    // fewer twists, gear in reach, entry visibility, glare, HVAC clearance.
     final comfort = (
-            chairClearance * 16 +
-            deskAlign * 14 +
-            reachScore * 12 +
-            aisleScore * 9 +
-            pathScore * 16 +
-            doorProspect * 12 +
-            bedPrivacy * 11 +
-            (1 - conflictRatio) * 10)
+            chairClearance * 14 +
+            deskAlign * 12 +
+            reachScore * 11 +
+            aisleScore * 8 +
+            pathScore * 14 +
+            doorProspect * 11 +
+            bedPrivacy * 10 +
+            windowSideLight * 8 +
+            hvacClearance * 7 +
+            (1 - conflictRatio) * 5)
         .clamp(0.0, 100.0);
 
     return ErgonomicsSimSnapshot(
@@ -398,6 +435,8 @@ class ErgonomicsSimulator {
         pathScore: pathScore,
         doorProspect: doorProspect,
         bedPrivacy: bedPrivacy,
+        windowSideLight: windowSideLight,
+        hvacClearance: hvacClearance,
         conflictRatio: conflictRatio,
       ),
       optimized: optimized,
@@ -468,6 +507,21 @@ class ErgonomicsSimulator {
   }
 
   static ({double x, double z}) _edgePoint(FurnitureItem item, {required FurnitureItem toward}) {
+    // Wall door / window: leave from the inward face of the opening, not the
+    // wall-cell center (which can sit outside the walkable floor).
+    if (SurfaceMounts.isDoor(item) || SurfaceMounts.isWindow(item)) {
+      final span = SurfaceMounts.spanFor(
+        item,
+        gridCols: roomWidth.round().clamp(1, 64),
+        gridRows: roomDepth.round().clamp(1, 64),
+      );
+      final midX = (span.x0 + span.x1) * 0.5;
+      final midZ = (span.z0 + span.z1) * 0.5;
+      return (
+        x: (midX + span.inwardX * 0.35).clamp(0.05, roomWidth - 0.05),
+        z: (midZ + span.inwardZ * 0.35).clamp(0.05, roomDepth - 0.05),
+      );
+    }
     final cx = item.gridX + item.width * 0.5;
     final cz = item.gridY + item.height * 0.5;
     final tx = toward.gridX + toward.width * 0.5;
@@ -629,6 +683,16 @@ class ErgonomicsSimulator {
     return turns;
   }
 
+  static FurnitureItem? _firstWhere(
+    List<FurnitureItem> items,
+    bool Function(FurnitureItem) test,
+  ) {
+    for (final f in items) {
+      if (test(f)) return f;
+    }
+    return null;
+  }
+
   static FurnitureItem? _findKind(List<FurnitureItem> items, _ErgoKind kind) {
     for (final f in items) {
       if (_matchesKind(f, kind)) return f;
@@ -670,7 +734,7 @@ class ErgonomicsSimulator {
             hay.contains('computer') ||
             hay.contains('tower');
       case _ErgoKind.door:
-        return f.iconName == 'door' || hay.contains('door');
+        return SurfaceMounts.isDoor(f);
       case _ErgoKind.shelf:
         return f.iconName == 'shelf' ||
             hay.contains('shelf') ||
@@ -680,11 +744,26 @@ class ErgonomicsSimulator {
   }
 
   static bool _isReachGear(FurnitureItem f) {
+    if (SurfaceMounts.isDoor(f) ||
+        SurfaceMounts.isWindow(f) ||
+        SurfaceMounts.isVent(f) ||
+        SurfaceMounts.isIntake(f) ||
+        SurfaceMounts.isExhaust(f) ||
+        SurfaceMounts.isCeilingFixture(f)) {
+      return false;
+    }
     if (SurfaceMounts.isDeskTopItem(f)) return true;
+    final profile = GltfCatalog.profileForItem(f);
+    // Tall solid emitters (PC) or desk lamps count; open / glass do not.
+    if (profile.role == MeshSimRole.opening || profile.role == MeshSimRole.glass) {
+      return false;
+    }
     final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
     return hay.contains('monitor') ||
         hay.contains('pc') ||
-        (hay.contains('lamp') && !hay.contains('floor'));
+        f.iconName == 'pc' ||
+        (hay.contains('lamp') && !hay.contains('floor')) ||
+        (profile.role == MeshSimRole.emitter && profile.heightMeters <= 1.2);
   }
 
   static bool _rectsOverlap(

@@ -5,6 +5,7 @@ import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
 import 'benchmark_validation_card.dart';
+import 'chrome/bench_results_chrome.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
 import 'score_ring.dart';
@@ -46,11 +47,11 @@ class BenchStepTabs extends StatelessWidget {
                 onStepChanged(i);
               },
               child: Container(
-                margin: EdgeInsets.only(right: isLast ? 0 : 8),
-                padding: const EdgeInsets.symmetric(vertical: 10),
+                margin: EdgeInsets.only(right: isLast ? 0 : AppSpace.xs),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: selected ? accentColor.withValues(alpha: 0.12) : AppColors.card,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
                   border: Border.all(color: selected ? accentColor : AppColors.border),
                 ),
                 child: Text(
@@ -58,7 +59,7 @@ class BenchStepTabs extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: selected ? accentColor : AppColors.textMuted,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -91,17 +92,17 @@ class BenchChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: selected ? color.withValues(alpha: 0.15) : AppColors.card,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
           border: Border.all(color: selected ? color : AppColors.border),
         ),
         child: Text(
           label,
           style: TextStyle(
             color: selected ? color : AppColors.textMuted,
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -153,6 +154,58 @@ class BenchVariantChips extends StatelessWidget {
   }
 }
 
+/// Auto-Rig mix line + optional Try alternate (parity with Rig star dialog).
+class BenchAutoRigMixBar extends StatelessWidget {
+  final BenchLayouts? layouts;
+  final VoidCallback? onTryAlternate;
+
+  const BenchAutoRigMixBar({
+    super.key,
+    required this.layouts,
+    this.onTryAlternate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final L = layouts;
+    if (L == null) return const SizedBox.shrink();
+    final canAlt = onTryAlternate != null && L.canTryAlternate;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppSpace.sm),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              L.improvedCaption,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.4,
+              ),
+            ),
+          ),
+          if (canAlt) ...[
+            const SizedBox(width: AppSpace.xs),
+            TextButton(
+              onPressed: onTryAlternate,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.cyan,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                minimumSize: const Size(44, 40),
+              ),
+              child: const Text(
+                'Try alternate',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// Gradient primary action button (run bench, apply layout, etc.).
 class BenchPrimaryButton extends StatelessWidget {
   final String label;
@@ -177,20 +230,20 @@ class BenchPrimaryButton extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: disabled ? null : AppColors.accentGradient,
           color: disabled ? AppColors.card : null,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(color: disabled ? AppColors.border : Colors.transparent),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SvgIcon(icon, size: 18, color: disabled ? AppColors.textMuted : Colors.white),
-            const SizedBox(width: 8),
+            const SizedBox(width: AppSpace.xs),
             Text(
               label,
               style: TextStyle(
                 color: disabled ? AppColors.textMuted : Colors.white,
                 fontWeight: FontWeight.w800,
-                fontSize: 13,
+                fontSize: 14,
                 letterSpacing: 1.1,
               ),
             ),
@@ -401,12 +454,15 @@ class BenchScoreRingSpec {
   });
 }
 
-/// Results comparison header with trophy, badge, score rings, and validation.
+/// Results comparison: verdict-first, legend, rings, expandable validation.
 class BenchResultsCard extends StatelessWidget {
   final String title;
   final BenchmarkValidation validation;
   final List<BenchScoreRingSpec> rings;
   final String summaryText;
+  final Color? accentColor;
+  final List<String> whyReasons;
+  final VoidCallback? onOpenWhySheet;
 
   const BenchResultsCard({
     super.key,
@@ -414,52 +470,78 @@ class BenchResultsCard extends StatelessWidget {
     required this.validation,
     required this.rings,
     required this.summaryText,
+    this.accentColor,
+    this.whyReasons = const [],
+    this.onOpenWhySheet,
   });
 
   @override
   Widget build(BuildContext context) {
+    final accent = accentColor ?? AppColors.cyan;
     return GlassCard(
       borderColor: BenchResultBadge.colorFor(validation.verdict).withValues(alpha: 0.4),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          BenchVerdictHeader(
+            verdict: summaryText,
+            detail: title,
+            accent: accent,
             children: [
-              SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
+              const BenchLegend(caption: 'Score scale'),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  BenchResultBadge(validation: validation),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: rings
+                    .map(
+                      (r) => ScoreRing(
+                        score: r.score,
+                        size: r.size,
+                        color: r.color,
+                        label: r.label,
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 14),
+              BenchmarkValidationCard(validation: validation),
+              if (whyReasons.isNotEmpty || onOpenWhySheet != null) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: onOpenWhySheet ??
+                        () => showWhyScoreSheet(
+                              context,
+                              title: 'Why this score',
+                              reasons: whyReasons,
+                              accent: accent,
+                            ),
+                    icon: Icon(Icons.help_outline_rounded, size: 16, color: accent),
+                    label: Text('Why this score', style: TextStyle(color: accent)),
                   ),
                 ),
-              ),
-              BenchResultBadge(validation: validation),
+              ],
             ],
           ),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: rings
-                .map(
-                  (r) => ScoreRing(
-                    score: r.score,
-                    size: r.size,
-                    color: r.color,
-                    label: r.label,
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            summaryText,
-            style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13),
-          ),
-          const SizedBox(height: 14),
-          BenchmarkValidationCard(validation: validation),
         ],
       ),
     );

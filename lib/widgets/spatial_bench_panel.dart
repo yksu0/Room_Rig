@@ -13,12 +13,14 @@ import '../services/furniture_sprites.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
+import 'chrome/bench_results_chrome.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
+import 'room_model_scene.dart';
 import 'score_ring.dart';
 
 enum _SpatialStep { layout, analyze, results }
-enum _LayoutView { heatmap, room3d }
+enum _LayoutView { heatmap, room3d, model3d }
 
 class SpatialBenchPanel extends StatefulWidget {
   final ValueChanged<bool>? onOrbitDraggingChanged;
@@ -41,6 +43,8 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
   static const _defaultDistance = 16.0;
 
   bool _showResults = false;
+  double _compareScrub = 0;
+  bool _showHeatmap = true;
   bool _ready = false;
 
   BenchLayouts? _layouts;
@@ -333,6 +337,12 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
               color: AppColors.spatialColor,
               onTap: () => setState(() => _layoutView = _LayoutView.room3d),
             ),
+            BenchChip(
+              label: 'Model',
+              selected: _layoutView == _LayoutView.model3d,
+              color: AppColors.spatialColor,
+              onTap: () => setState(() => _layoutView = _LayoutView.model3d),
+            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -353,6 +363,14 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
               const SizedBox(height: 12),
               if (_layoutView == _LayoutView.heatmap)
                 _heatmapView(room: room, furniture: furniture, metrics: metrics)
+              else if (_layoutView == _LayoutView.model3d)
+                SizedBox(
+                  height: 300,
+                  child: RoomModelScene(
+                    room: room,
+                    furniture: furniture,
+                  ),
+                )
               else
                 SizedBox(
                   height: 280,
@@ -451,8 +469,37 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
           selected: _analyzeVariant,
           onChanged: (v) => setState(() => _analyzeVariant = v),
         ),
+        const SizedBox(height: 10),
+        BenchCompareScrub(
+          value: _compareScrub,
+          accent: AppColors.spatialColor,
+          onChanged: (v) {
+            setState(() {
+              _compareScrub = v;
+              _analyzeVariant = v < 0.5 ? BenchLayoutKind.myRoom : BenchLayoutKind.improved;
+            });
+          },
+        ),
+        const SizedBox(height: 8),
+        BenchLayerToggles(
+          showHeatmap: _showHeatmap,
+          onHeatmap: (v) => setState(() => _showHeatmap = v),
+        ),
+        const SizedBox(height: 8),
+        const BenchLegend(caption: 'Floor use'),
         const SizedBox(height: 12),
-        _heatmapView(room: room, furniture: furniture, metrics: metrics),
+        if (_showHeatmap)
+          _heatmapView(room: room, furniture: furniture, metrics: metrics)
+        else
+          SizedBox(
+            height: 120,
+            child: Center(
+              child: Text(
+                'Heat map hidden',
+                style: TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
         const SizedBox(height: 14),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -519,9 +566,13 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
     final opt = _improvedMetrics!;
     final sample = _sampleMetrics;
 
+    final spaceDelta = (opt.overallScore - base.overallScore).round();
+    final spaceLabel = spaceDelta >= 0 ? '+$spaceDelta' : '$spaceDelta';
     return BenchResultsCard(
       title: 'Walkway Space Bench',
+      accentColor: AppColors.spatialColor,
       validation: validation,
+      whyReasons: _layouts?.improvedReasons ?? const [],
       rings: [
         BenchScoreRingSpec(score: base.overallScore, color: AppColors.cyan, label: 'My Room'),
         BenchScoreRingSpec(score: opt.overallScore, color: AppColors.spatialColor, label: 'Improved'),
@@ -531,9 +582,9 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
           BenchScoreRingSpec(score: state.spatialScore, color: AppColors.green, label: 'Score'),
       ],
       summaryText:
+          'Space $spaceLabel · '
           'Walkable +${((opt.walkableRatio - base.walkableRatio) * 100).toStringAsFixed(0)} pts · '
-          'Aisle +${(opt.largestAisleCells - base.largestAisleCells).toStringAsFixed(1)} cells · '
-          'Space +${(opt.overallScore - base.overallScore).toStringAsFixed(0)}',
+          'Aisle +${(opt.largestAisleCells - base.largestAisleCells).toStringAsFixed(1)} cells',
     );
   }
 

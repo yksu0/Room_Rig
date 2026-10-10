@@ -2,10 +2,14 @@
 // Plan (top-down) and orbit (3D) silhouettes. Door / window / wall AC stay on
 // the wall-fitting painters. Everything else is a small cluster of boxes, built
 // facing +Z (yaw 0) and then turned with the item so rotate moves the mesh.
+//
+// Orbit mesh heights come from GltfCatalog MeshProfile.heightMeters so Model
+// and Orbit cannot drift apart.
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
+import '../services/gltf_catalog.dart';
 import '../theme/app_theme.dart';
 import 'room_orbit_projection.dart';
 
@@ -47,13 +51,60 @@ class FurnitureBox {
 class FurnitureShapes {
   FurnitureShapes._();
 
-  static const deskTopY = 0.74;
+  /// Desk surface height — same metre as `MeshProfile` for `desk`.
+  static double get deskTopY => GltfCatalog.profileFor('desk').heightMeters;
 
   static FurnitureKind kindOf(FurnitureItem item) => kindFrom(
         id: item.id,
         name: item.name,
         iconName: item.iconName,
       );
+
+  /// Catalog icon key for a [FurnitureKind] (Model + Orbit height lookup).
+  static String catalogIconFor(FurnitureKind kind) {
+    switch (kind) {
+      case FurnitureKind.desk:
+        return 'desk';
+      case FurnitureKind.table:
+        return 'table';
+      case FurnitureKind.chair:
+        return 'chair';
+      case FurnitureKind.monitor:
+        return 'monitor';
+      case FurnitureKind.pc:
+        return 'pc';
+      case FurnitureKind.bed:
+        return 'bed';
+      case FurnitureKind.sofa:
+        return 'sofa';
+      case FurnitureKind.wardrobe:
+        return 'wardrobe';
+      case FurnitureKind.shelf:
+        return 'shelf';
+      case FurnitureKind.plant:
+        return 'plant';
+      case FurnitureKind.tv:
+        return 'tv';
+      case FurnitureKind.portableAc:
+        return 'ac';
+      case FurnitureKind.fan:
+        return 'fan';
+      case FurnitureKind.heater:
+        return 'heater';
+      case FurnitureKind.taskLamp:
+        return 'lamp';
+      case FurnitureKind.floorLamp:
+        return 'floorLamp';
+      case FurnitureKind.ceilingLight:
+        return 'ceilingLight';
+      case FurnitureKind.purifier:
+        return 'purifier';
+      case FurnitureKind.smartBlinds:
+        return 'smartBlinds';
+      case FurnitureKind.generic:
+        return 'desk';
+    }
+  }
 
   static FurnitureKind kindFrom({
     required String id,
@@ -173,49 +224,17 @@ class FurnitureShapes {
   }
 
   /// Metres of visual height for the 3D mesh (added on top of [yBase]).
-  static double meshHeight(FurnitureKind kind) {
-    switch (kind) {
-      case FurnitureKind.desk:
-        return 0.78;
-      case FurnitureKind.table:
-        return 0.5;
-      case FurnitureKind.chair:
-        return 0.98;
-      case FurnitureKind.monitor:
-        return 0.48;
-      case FurnitureKind.pc:
-        return 0.52;
-      case FurnitureKind.bed:
-        return 0.55;
-      case FurnitureKind.sofa:
-        return 0.78;
-      case FurnitureKind.wardrobe:
-        return 2.05;
-      case FurnitureKind.shelf:
-        return 1.72;
-      case FurnitureKind.plant:
-        return 0.62;
-      case FurnitureKind.tv:
-        return 0.82;
-      case FurnitureKind.portableAc:
-        return 0.78;
-      case FurnitureKind.fan:
-        return 1.22;
-      case FurnitureKind.heater:
-        return 0.46;
-      case FurnitureKind.taskLamp:
-        return 0.52;
-      case FurnitureKind.floorLamp:
-        return 1.52;
-      case FurnitureKind.ceilingLight:
-        return 0.14;
-      case FurnitureKind.purifier:
-        return 0.72;
-      case FurnitureKind.smartBlinds:
-        return 1.45;
-      case FurnitureKind.generic:
-        return 0.9;
+  /// Delegates to [GltfCatalog] so Orbit matches Model.
+  static double meshHeight(FurnitureKind kind) =>
+      GltfCatalog.profileFor(catalogIconFor(kind)).heightMeters;
+
+  /// Prefer the item's iconName when present (more precise than kind alone).
+  static double meshHeightForItem(FurnitureItem item) {
+    final fromIcon = GltfCatalog.profileFor(item.iconName);
+    if (fromIcon.hasModel || GltfCatalog.catalogKeys.contains(item.iconName)) {
+      return fromIcon.heightMeters;
     }
+    return meshHeight(kindOf(item));
   }
 
   static List<FurnitureBox> boxes({
@@ -266,7 +285,8 @@ class FurnitureShapes {
     );
   }
 
-  /// Built facing +Z (front = larger z). Rear / backrest sits at small z.
+  /// Built facing +Z (front = larger z). Vertical extents scale to
+  /// [meshHeight] so Orbit silhouettes track MeshProfile metres.
   static List<FurnitureBox> _orientedBoxes({
     required FurnitureKind kind,
     required double x,
@@ -280,13 +300,14 @@ class FurnitureShapes {
     final x1 = x + width;
     final z1 = z + depth;
     final y = yBase;
+    final h = meshHeight(kind);
 
     List<FurnitureBox> box(double xa, double ya, double za, double xb, double yb, double zb, [double a = 0.55]) =>
         [FurnitureBox(xa, ya, za, xb, yb, zb, c(a))];
 
     switch (kind) {
       case FurnitureKind.desk:
-        const top = 0.74;
+        final top = h;
         const thick = 0.05;
         const leg = 0.07;
         return [
@@ -298,7 +319,7 @@ class FurnitureShapes {
           ...box(x1 - leg, 0, z1 - leg, x1, top - thick, z1, 0.42),
         ];
       case FurnitureKind.table:
-        const top = 0.46;
+        final top = h;
         const thick = 0.05;
         const leg = 0.07;
         return [
@@ -308,133 +329,135 @@ class FurnitureShapes {
           ...box(x, 0, z1 - leg, x + leg, top - thick, z1, 0.4),
           ...box(x1 - leg, 0, z1 - leg, x1, top - thick, z1, 0.4),
         ];
-      case FurnitureKind.chair:
-        final seat = 0.42;
+      case FurnitureKind.chair: {
+        final seat = h * 0.40;
         return [
           ...box(x + width * 0.16, 0, z + depth * 0.18, x + width * 0.28, seat - 0.04, z + depth * 0.30, 0.38),
           ...box(x1 - width * 0.28, 0, z + depth * 0.18, x1 - width * 0.16, seat - 0.04, z + depth * 0.30, 0.38),
           ...box(x + width * 0.16, 0, z1 - depth * 0.30, x + width * 0.28, seat - 0.04, z1 - depth * 0.16, 0.38),
           ...box(x1 - width * 0.28, 0, z1 - depth * 0.30, x1 - width * 0.16, seat - 0.04, z1 - depth * 0.16, 0.38),
           ...box(x + width * 0.14, seat - 0.07, z + depth * 0.16, x1 - width * 0.14, seat, z1 - depth * 0.10, 0.58),
-          ...box(x + width * 0.12, seat, z + depth * 0.06, x1 - width * 0.12, 0.96, z + depth * 0.28, 0.78),
-          ...box(x + width * 0.08, seat, z + depth * 0.22, x + width * 0.16, seat + 0.16, z1 - depth * 0.18, 0.5),
-          ...box(x1 - width * 0.16, seat, z + depth * 0.22, x1 - width * 0.08, seat + 0.16, z1 - depth * 0.18, 0.5),
+          ...box(x + width * 0.12, seat, z + depth * 0.06, x1 - width * 0.12, h * 0.92, z + depth * 0.28, 0.78),
+          ...box(x + width * 0.08, seat, z + depth * 0.22, x + width * 0.16, seat + h * 0.15, z1 - depth * 0.18, 0.5),
+          ...box(x1 - width * 0.16, seat, z + depth * 0.22, x1 - width * 0.08, seat + h * 0.15, z1 - depth * 0.18, 0.5),
         ];
+      }
       case FurnitureKind.monitor:
+        // Fill most of the Orbit cell so desk capacity reads as 2–3 slots.
         return [
-          ...box(x + width * 0.28, y, z + depth * 0.30, x1 - width * 0.28, y + 0.05, z1 - depth * 0.18, 0.42),
-          ...box(x + width * 0.46, y + 0.05, z + depth * 0.48, x1 - width * 0.46, y + 0.16, z1 - depth * 0.28, 0.5),
-          ...box(x + width * 0.06, y + 0.16, z + depth * 0.62, x1 - width * 0.06, y + 0.48, z1 - depth * 0.08, 0.82),
+          ...box(x + width * 0.18, y, z + depth * 0.18, x1 - width * 0.18, y + h * 0.08, z1 - depth * 0.10, 0.42),
+          ...box(x + width * 0.40, y + h * 0.08, z + depth * 0.28, x1 - width * 0.40, y + h * 0.26, z1 - depth * 0.16, 0.5),
+          ...box(x + width * 0.02, y + h * 0.26, z + depth * 0.22, x1 - width * 0.02, y + h, z1 - depth * 0.04, 0.82),
         ];
       case FurnitureKind.pc:
         return [
-          ...box(x + width * 0.22, y, z + depth * 0.12, x1 - width * 0.22, y + 0.50, z1 - depth * 0.12, 0.7),
-          ...box(x + width * 0.26, y + 0.08, z1 - depth * 0.16, x1 - width * 0.26, y + 0.44, z1 - depth * 0.10, 0.45),
-          ...box(x + width * 0.30, y + 0.42, z + depth * 0.16, x1 - width * 0.30, y + 0.48, z + depth * 0.40, 0.85),
+          ...box(x + width * 0.08, y, z + depth * 0.06, x1 - width * 0.08, y + h, z1 - depth * 0.06, 0.7),
+          ...box(x + width * 0.14, y + h * 0.16, z1 - depth * 0.14, x1 - width * 0.14, y + h * 0.88, z1 - depth * 0.04, 0.45),
+          ...box(x + width * 0.20, y + h * 0.84, z + depth * 0.10, x1 - width * 0.20, y + h * 0.96, z + depth * 0.36, 0.85),
         ];
       case FurnitureKind.bed:
         return [
-          ...box(x, 0.04, z, x1, 0.18, z1, 0.4),
-          ...box(x + width * 0.04, 0.18, z + depth * 0.04, x1 - width * 0.04, 0.38, z1 - depth * 0.04, 0.58),
-          ...box(x + width * 0.06, 0.38, z + depth * 0.06, x1 - width * 0.06, 0.46, z1 - depth * 0.28, 0.7),
-          ...box(x + width * 0.08, 0.46, z + depth * 0.04, x + width * 0.46, 0.55, z + depth * 0.22, 0.8),
-          ...box(x1 - width * 0.46, 0.46, z + depth * 0.04, x1 - width * 0.08, 0.55, z + depth * 0.22, 0.8),
+          ...box(x, h * 0.07, z, x1, h * 0.33, z1, 0.4),
+          ...box(x + width * 0.04, h * 0.33, z + depth * 0.04, x1 - width * 0.04, h * 0.69, z1 - depth * 0.04, 0.58),
+          ...box(x + width * 0.06, h * 0.69, z + depth * 0.06, x1 - width * 0.06, h * 0.84, z1 - depth * 0.28, 0.7),
+          ...box(x + width * 0.08, h * 0.84, z + depth * 0.04, x + width * 0.46, h, z + depth * 0.22, 0.8),
+          ...box(x1 - width * 0.46, h * 0.84, z + depth * 0.04, x1 - width * 0.08, h, z + depth * 0.22, 0.8),
         ];
       case FurnitureKind.sofa:
         return [
-          ...box(x + width * 0.08, 0.08, z + depth * 0.22, x1 - width * 0.08, 0.40, z1 - depth * 0.06, 0.55),
-          ...box(x, 0.40, z, x1, 0.76, z + depth * 0.30, 0.74),
-          ...box(x, 0.18, z + depth * 0.16, x + width * 0.10, 0.62, z1, 0.62),
-          ...box(x1 - width * 0.10, 0.18, z + depth * 0.16, x1, 0.62, z1, 0.62),
+          ...box(x + width * 0.08, h * 0.09, z + depth * 0.22, x1 - width * 0.08, h * 0.47, z1 - depth * 0.06, 0.55),
+          ...box(x, h * 0.47, z, x1, h * 0.89, z + depth * 0.30, 0.74),
+          ...box(x, h * 0.21, z + depth * 0.16, x + width * 0.10, h * 0.73, z1, 0.62),
+          ...box(x1 - width * 0.10, h * 0.21, z + depth * 0.16, x1, h * 0.73, z1, 0.62),
         ];
       case FurnitureKind.wardrobe:
         return [
-          ...box(x, 0, z, x1, 2.02, z1, 0.55),
-          ...box(x + width * 0.48, 0.12, z + depth * 0.02, x + width * 0.52, 1.92, z1 - depth * 0.02, 0.88),
-          ...box(x + width * 0.18, 0.95, z + depth * 0.02, x + width * 0.26, 1.02, z1 - depth * 0.02, 0.9),
-          ...box(x1 - width * 0.26, 0.95, z + depth * 0.02, x1 - width * 0.18, 1.02, z1 - depth * 0.02, 0.9),
-          ...box(x, 0, z, x1, 0.10, z1, 0.7),
+          ...box(x, 0, z, x1, h, z1, 0.55),
+          ...box(x + width * 0.48, h * 0.06, z + depth * 0.02, x + width * 0.52, h * 0.95, z1 - depth * 0.02, 0.88),
+          ...box(x + width * 0.18, h * 0.47, z + depth * 0.02, x + width * 0.26, h * 0.51, z1 - depth * 0.02, 0.9),
+          ...box(x1 - width * 0.26, h * 0.47, z + depth * 0.02, x1 - width * 0.18, h * 0.51, z1 - depth * 0.02, 0.9),
+          ...box(x, 0, z, x1, h * 0.05, z1, 0.7),
         ];
       case FurnitureKind.shelf:
         return [
-          ...box(x, 0, z, x + width * 0.10, 1.70, z1, 0.42),
-          ...box(x1 - width * 0.10, 0, z, x1, 1.70, z1, 0.42),
-          ...box(x + width * 0.08, 0, z, x1 - width * 0.08, 1.70, z + depth * 0.10, 0.35),
-          ...box(x, 0.08, z + depth * 0.08, x1, 0.16, z1, 0.62),
-          ...box(x, 0.58, z + depth * 0.08, x1, 0.66, z1, 0.62),
-          ...box(x, 1.08, z + depth * 0.08, x1, 1.16, z1, 0.62),
-          ...box(x, 1.58, z + depth * 0.08, x1, 1.70, z1, 0.58),
+          ...box(x, 0, z, x + width * 0.10, h, z1, 0.42),
+          ...box(x1 - width * 0.10, 0, z, x1, h, z1, 0.42),
+          ...box(x + width * 0.08, 0, z, x1 - width * 0.08, h, z + depth * 0.10, 0.35),
+          ...box(x, h * 0.05, z + depth * 0.08, x1, h * 0.09, z1, 0.62),
+          ...box(x, h * 0.34, z + depth * 0.08, x1, h * 0.39, z1, 0.62),
+          ...box(x, h * 0.64, z + depth * 0.08, x1, h * 0.68, z1, 0.62),
+          ...box(x, h * 0.93, z + depth * 0.08, x1, h, z1, 0.58),
         ];
       case FurnitureKind.plant:
         return [
-          ...box(x + width * 0.30, 0, z + depth * 0.30, x1 - width * 0.30, 0.16, z1 - depth * 0.30, 0.55),
-          ...box(x + width * 0.34, 0.16, z + depth * 0.34, x1 - width * 0.34, 0.20, z1 - depth * 0.34, 0.4),
-          ...box(x + width * 0.22, 0.20, z + depth * 0.18, x1 - width * 0.22, 0.42, z1 - depth * 0.22, 0.48),
-          ...box(x + width * 0.12, 0.32, z + depth * 0.28, x + width * 0.42, 0.58, z1 - depth * 0.22, 0.42),
-          ...box(x1 - width * 0.42, 0.28, z + depth * 0.16, x1 - width * 0.10, 0.62, z1 - depth * 0.28, 0.4),
+          ...box(x + width * 0.30, 0, z + depth * 0.30, x1 - width * 0.30, h * 0.23, z1 - depth * 0.30, 0.55),
+          ...box(x + width * 0.34, h * 0.23, z + depth * 0.34, x1 - width * 0.34, h * 0.29, z1 - depth * 0.34, 0.4),
+          ...box(x + width * 0.22, h * 0.29, z + depth * 0.18, x1 - width * 0.22, h * 0.60, z1 - depth * 0.22, 0.48),
+          ...box(x + width * 0.12, h * 0.46, z + depth * 0.28, x + width * 0.42, h * 0.83, z1 - depth * 0.22, 0.42),
+          ...box(x1 - width * 0.42, h * 0.40, z + depth * 0.16, x1 - width * 0.10, h * 0.89, z1 - depth * 0.28, 0.4),
         ];
       case FurnitureKind.tv:
         return [
-          ...box(x + width * 0.32, 0, z + depth * 0.28, x1 - width * 0.32, 0.08, z1 - depth * 0.18, 0.45),
-          ...box(x + width * 0.46, 0.08, z + depth * 0.42, x1 - width * 0.46, 0.22, z1 - depth * 0.28, 0.5),
-          ...box(x, 0.22, z + depth * 0.58, x1, 0.80, z1 - depth * 0.06, 0.84),
+          ...box(x + width * 0.32, 0, z + depth * 0.28, x1 - width * 0.32, h * 0.10, z1 - depth * 0.18, 0.45),
+          ...box(x + width * 0.46, h * 0.10, z + depth * 0.42, x1 - width * 0.46, h * 0.28, z1 - depth * 0.28, 0.5),
+          ...box(x, h * 0.28, z + depth * 0.58, x1, h, z1 - depth * 0.06, 0.84),
         ];
       case FurnitureKind.portableAc:
         return [
-          ...box(x + width * 0.14, 0, z + depth * 0.16, x1 - width * 0.14, 0.70, z1 - depth * 0.10, 0.6),
-          ...box(x + width * 0.22, 0.52, z + depth * 0.08, x1 - width * 0.22, 0.64, z + depth * 0.18, 0.45),
-          ...box(x + width * 0.22, 0.18, z1 - depth * 0.16, x1 - width * 0.22, 0.58, z1 - depth * 0.06, 0.4),
-          ...box(x + width * 0.42, 0.70, z + depth * 0.22, x1 - width * 0.42, 0.78, z + depth * 0.40, 0.75),
+          ...box(x + width * 0.14, 0, z + depth * 0.16, x1 - width * 0.14, h * 0.90, z1 - depth * 0.10, 0.6),
+          ...box(x + width * 0.22, h * 0.67, z + depth * 0.08, x1 - width * 0.22, h * 0.82, z + depth * 0.18, 0.45),
+          ...box(x + width * 0.22, h * 0.23, z1 - depth * 0.16, x1 - width * 0.22, h * 0.74, z1 - depth * 0.06, 0.4),
+          ...box(x + width * 0.42, h * 0.90, z + depth * 0.22, x1 - width * 0.42, h, z + depth * 0.40, 0.75),
         ];
       case FurnitureKind.fan:
         return [
-          ...box(x + width * 0.28, 0, z + depth * 0.28, x1 - width * 0.28, 0.08, z1 - depth * 0.28, 0.45),
-          ...box(x + width * 0.44, 0.08, z + depth * 0.44, x1 - width * 0.44, 0.88, z1 - depth * 0.44, 0.4),
-          ...box(x + width * 0.36, 0.82, z + depth * 0.36, x1 - width * 0.36, 0.98, z1 - depth * 0.36, 0.7),
-          ...box(x + width * 0.08, 0.88, z + depth * 0.38, x1 - width * 0.08, 1.20, z1 - depth * 0.22, 0.55),
+          ...box(x + width * 0.28, 0, z + depth * 0.28, x1 - width * 0.28, h * 0.09, z1 - depth * 0.28, 0.45),
+          ...box(x + width * 0.44, h * 0.09, z + depth * 0.44, x1 - width * 0.44, h * 0.72, z1 - depth * 0.44, 0.4),
+          ...box(x + width * 0.36, h * 0.68, z + depth * 0.36, x1 - width * 0.36, h * 0.82, z1 - depth * 0.36, 0.7),
+          ...box(x + width * 0.08, h * 0.72, z + depth * 0.38, x1 - width * 0.08, h, z1 - depth * 0.22, 0.55),
         ];
       case FurnitureKind.heater:
         return [
-          ...box(x + width * 0.08, 0, z + depth * 0.22, x1 - width * 0.08, 0.40, z1 - depth * 0.16, 0.58),
-          ...box(x + width * 0.16, 0.08, z1 - depth * 0.20, x + width * 0.22, 0.34, z1 - depth * 0.10, 0.8),
-          ...box(x + width * 0.38, 0.08, z1 - depth * 0.20, x + width * 0.44, 0.34, z1 - depth * 0.10, 0.8),
-          ...box(x + width * 0.60, 0.08, z1 - depth * 0.20, x + width * 0.66, 0.34, z1 - depth * 0.10, 0.8),
-          ...box(x + width * 0.78, 0.08, z1 - depth * 0.20, x + width * 0.84, 0.34, z1 - depth * 0.10, 0.8),
+          ...box(x + width * 0.08, 0, z + depth * 0.22, x1 - width * 0.08, h * 0.87, z1 - depth * 0.16, 0.58),
+          ...box(x + width * 0.16, h * 0.17, z1 - depth * 0.20, x + width * 0.22, h * 0.74, z1 - depth * 0.10, 0.8),
+          ...box(x + width * 0.38, h * 0.17, z1 - depth * 0.20, x + width * 0.44, h * 0.74, z1 - depth * 0.10, 0.8),
+          ...box(x + width * 0.60, h * 0.17, z1 - depth * 0.20, x + width * 0.66, h * 0.74, z1 - depth * 0.10, 0.8),
+          ...box(x + width * 0.78, h * 0.17, z1 - depth * 0.20, x + width * 0.84, h * 0.74, z1 - depth * 0.10, 0.8),
         ];
       case FurnitureKind.taskLamp:
         return [
-          ...box(x + width * 0.34, y, z + depth * 0.34, x1 - width * 0.34, y + 0.06, z1 - depth * 0.34, 0.5),
-          ...box(x + width * 0.46, y + 0.06, z + depth * 0.46, x1 - width * 0.46, y + 0.30, z1 - depth * 0.46, 0.4),
-          ...box(x + width * 0.30, y + 0.28, z + depth * 0.22, x1 - width * 0.22, y + 0.36, z + depth * 0.48, 0.55),
-          ...box(x + width * 0.16, y + 0.34, z + depth * 0.12, x1 - width * 0.38, y + 0.50, z + depth * 0.40, 0.75),
+          ...box(x + width * 0.18, y, z + depth * 0.18, x1 - width * 0.18, y + h * 0.12, z1 - depth * 0.18, 0.5),
+          ...box(x + width * 0.38, y + h * 0.12, z + depth * 0.38, x1 - width * 0.38, y + h * 0.58, z1 - depth * 0.38, 0.4),
+          ...box(x + width * 0.16, y + h * 0.52, z + depth * 0.14, x1 - width * 0.12, y + h * 0.70, z + depth * 0.48, 0.55),
+          ...box(x + width * 0.08, y + h * 0.66, z + depth * 0.08, x1 - width * 0.28, y + h, z + depth * 0.42, 0.75),
         ];
       case FurnitureKind.floorLamp:
         return [
-          ...box(x + width * 0.28, 0, z + depth * 0.28, x1 - width * 0.28, 0.08, z1 - depth * 0.28, 0.5),
-          ...box(x + width * 0.44, 0.08, z + depth * 0.44, x1 - width * 0.44, 1.18, z1 - depth * 0.44, 0.4),
-          ...box(x + width * 0.16, 1.14, z + depth * 0.16, x1 - width * 0.16, 1.50, z1 - depth * 0.16, 0.68),
+          ...box(x + width * 0.28, 0, z + depth * 0.28, x1 - width * 0.28, h * 0.05, z1 - depth * 0.28, 0.5),
+          ...box(x + width * 0.44, h * 0.05, z + depth * 0.44, x1 - width * 0.44, h * 0.76, z1 - depth * 0.44, 0.4),
+          ...box(x + width * 0.16, h * 0.74, z + depth * 0.16, x1 - width * 0.16, h, z1 - depth * 0.16, 0.68),
         ];
       case FurnitureKind.ceilingLight:
         return [
-          ...box(x + width * 0.42, y + 0.08, z + depth * 0.42, x1 - width * 0.42, y + 0.14, z1 - depth * 0.42, 0.5),
-          ...box(x + width * 0.16, y, z + depth * 0.16, x1 - width * 0.16, y + 0.08, z1 - depth * 0.16, 0.75),
+          ...box(x + width * 0.42, y + h * 0.67, z + depth * 0.42, x1 - width * 0.42, y + h, z1 - depth * 0.42, 0.5),
+          ...box(x + width * 0.16, y, z + depth * 0.16, x1 - width * 0.16, y + h * 0.67, z1 - depth * 0.16, 0.75),
         ];
       case FurnitureKind.purifier:
         return [
-          ...box(x + width * 0.18, 0, z + depth * 0.18, x1 - width * 0.18, 0.62, z1 - depth * 0.18, 0.58),
-          ...box(x + width * 0.28, 0.48, z + depth * 0.10, x1 - width * 0.28, 0.58, z + depth * 0.22, 0.4),
-          ...box(x + width * 0.30, 0.62, z + depth * 0.28, x1 - width * 0.30, 0.70, z1 - depth * 0.28, 0.72),
+          ...box(x + width * 0.18, 0, z + depth * 0.18, x1 - width * 0.18, h * 0.89, z1 - depth * 0.18, 0.58),
+          ...box(x + width * 0.28, h * 0.69, z + depth * 0.10, x1 - width * 0.28, h * 0.83, z + depth * 0.22, 0.4),
+          ...box(x + width * 0.30, h * 0.89, z + depth * 0.28, x1 - width * 0.30, h, z1 - depth * 0.28, 0.72),
         ];
       case FurnitureKind.smartBlinds:
         return [
-          ...box(x + width * 0.06, 0.2, z + depth * 0.02, x1 - width * 0.06, 1.40, z + depth * 0.18, 0.5),
-          ...box(x + width * 0.10, 0.28, z + depth * 0.06, x1 - width * 0.10, 0.36, z + depth * 0.16, 0.75),
-          ...box(x + width * 0.10, 0.55, z + depth * 0.06, x1 - width * 0.10, 0.63, z + depth * 0.16, 0.75),
-          ...box(x + width * 0.10, 0.82, z + depth * 0.06, x1 - width * 0.10, 0.90, z + depth * 0.16, 0.75),
-          ...box(x + width * 0.10, 1.09, z + depth * 0.06, x1 - width * 0.10, 1.17, z + depth * 0.16, 0.75),
+          ...box(x + width * 0.06, h * 0.14, z + depth * 0.02, x1 - width * 0.06, h, z + depth * 0.18, 0.5),
+          ...box(x + width * 0.10, h * 0.20, z + depth * 0.06, x1 - width * 0.10, h * 0.26, z + depth * 0.16, 0.75),
+          ...box(x + width * 0.10, h * 0.39, z + depth * 0.06, x1 - width * 0.10, h * 0.45, z + depth * 0.16, 0.75),
+          ...box(x + width * 0.10, h * 0.59, z + depth * 0.06, x1 - width * 0.10, h * 0.64, z + depth * 0.16, 0.75),
+          ...box(x + width * 0.10, h * 0.78, z + depth * 0.06, x1 - width * 0.10, h * 0.84, z + depth * 0.16, 0.75),
         ];
       case FurnitureKind.generic:
-        return box(x + width * 0.08, y, z + depth * 0.08, x1 - width * 0.08, y + 0.9, z1 - depth * 0.08, 0.5);
+        return box(x + width * 0.08, y, z + depth * 0.08, x1 - width * 0.08, y + h, z1 - depth * 0.08, 0.5);
     }
   }
 

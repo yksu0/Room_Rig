@@ -15,8 +15,12 @@ Future<bool> confirmAction(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: AppColors.surface,
-      title: Text(title, style: const TextStyle(color: AppColors.textPrimary)),
-      content: Text(body, style: const TextStyle(color: AppColors.textSecondary)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: AppSpace.xl, vertical: AppSpace.xl),
+      titlePadding: const EdgeInsets.fromLTRB(AppSpace.lg, AppSpace.lg, AppSpace.lg, AppSpace.sm),
+      contentPadding: const EdgeInsets.fromLTRB(AppSpace.lg, 0, AppSpace.lg, AppSpace.md),
+      actionsPadding: const EdgeInsets.fromLTRB(AppSpace.md, 0, AppSpace.md, AppSpace.md),
+      title: Text(title, style: AppType.title(ctx).copyWith(fontSize: 18)),
+      content: Text(body, style: AppType.body(ctx)),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
@@ -28,7 +32,7 @@ Future<bool> confirmAction(
             confirmLabel,
             style: TextStyle(
               color: danger ? AppColors.red : AppColors.cyan,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ),

@@ -36,6 +36,10 @@ class TrackingSample {
   final double? depthHintMeters;
   final Vec3? lookAtPosition;
   final bool hasFloorHit;
+  /// True when look-at is a ceiling / downward-facing plane hit.
+  final bool hasCeilingHit;
+  /// `floor` | `ceiling` | null when no surface hit.
+  final String? lookAtKind;
 
   const TrackingSample({
     required this.cameraPosition,
@@ -47,7 +51,11 @@ class TrackingSample {
     this.depthHintMeters,
     this.lookAtPosition,
     this.hasFloorHit = false,
+    this.hasCeilingHit = false,
+    this.lookAtKind,
   });
+
+  bool get hasSurfaceHit => hasFloorHit || hasCeilingHit;
 }
 
 class ScanQualityReport {

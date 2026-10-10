@@ -43,6 +43,12 @@ void main() {
       expect(mount(_item(id: 'window', x: 2, y: 0)).surface, MountSurface.wall);
       expect(mount(_item(id: 'door', x: 0, y: 6)).surface, MountSurface.wall);
       expect(mount(_item(id: 'ac', name: 'AC Unit', x: 5, y: 0)).surface, MountSurface.wall);
+      expect(mount(_item(id: 'intake', x: 0, y: 3)).surface, MountSurface.wall);
+      expect(mount(_item(id: 'exhaust', x: 5, y: 3)).surface, MountSurface.wall);
+      expect(
+        mount(_item(id: 'blinds', name: 'Smart Blinds', icon: 'smartBlinds', x: 2, y: 0)).surface,
+        MountSurface.wall,
+      );
 
       for (final id in const ['desk', 'chair', 'bed', 'pc', 'shelf', 'fan', 'sofa']) {
         expect(
@@ -77,24 +83,22 @@ void main() {
     });
 
     test('mount heights match the volumes the simulators build', () {
-      // AirflowSimulator._buildBoxes puts an AC at 1.4-2.3 and a window sink at
-      // 0.9-2.1; drifting apart here would draw fittings where the physics has
-      // nothing.
+      // Keep AC / window bands aligned with AirflowSimulator._buildBoxes.
       final vent = SurfaceMounts.of(
         _item(id: 'ac', name: 'AC Unit', x: 5, y: 0),
         gridCols: 6,
         gridRows: 8,
       );
-      expect(vent.bottomY, 1.4);
-      expect(vent.topY, 2.3);
+      expect(vent.bottomY, SurfaceMounts.acBottom);
+      expect(vent.topY, SurfaceMounts.acTop);
 
       final window = SurfaceMounts.of(_item(id: 'window', x: 2, y: 0), gridCols: 6, gridRows: 8);
-      expect(window.bottomY, 0.9);
-      expect(window.topY, 2.1);
+      expect(window.bottomY, SurfaceMounts.windowBottom);
+      expect(window.topY, SurfaceMounts.windowTop);
 
       final door = SurfaceMounts.of(_item(id: 'door', x: 0, y: 6), gridCols: 6, gridRows: 8);
       expect(door.bottomY, 0);
-      expect(door.topY, 2.1);
+      expect(door.topY, SurfaceMounts.doorTop);
       expect(door.occupiesFloor, isFalse);
     });
   });
@@ -123,8 +127,8 @@ void main() {
       expect(north.wall, RoomWall.north);
       expect(north.z0, 0);
       expect(north.z1, 0);
-      expect(north.x0, 2);
-      expect(north.x1, 4);
+      final along = SurfaceMounts.openingAlongCells(_item(id: 'window', w: 2));
+      expect(north.x1 - north.x0, closeTo(along, 0.05));
       expect(north.inwardZ, 1, reason: 'north wall faces into increasing z');
 
       final east = SurfaceMounts.spanFor(
@@ -135,6 +139,84 @@ void main() {
       expect(east.wall, RoomWall.east);
       expect(east.x0, 6, reason: 'seated on the far wall plane');
       expect(east.inwardX, -1);
+
+      // Along-wall length — not the thin footprint edge that crushed side walls.
+      final westWide = SurfaceMounts.spanFor(
+        _item(id: 'window', x: 0, y: 2, w: 0.25, h: 1.9),
+        gridCols: 6,
+        gridRows: 8,
+      );
+      expect(westWide.wall, RoomWall.west);
+      final westAlong = SurfaceMounts.openingAlongCells(_item(id: 'window'));
+      expect(westWide.z1 - westWide.z0, closeTo(westAlong, 0.05));
+      expect(westAlong, lessThan(1.4), reason: 'window clear width is ~1 cell, not a slab');
+    });
+
+    test('snapToWall orients opening length along every wall', () {
+      final west = SurfaceMounts.snapToWall(
+        _item(id: 'window', x: 0, y: 2, w: 1.9, h: 0.25),
+        gridCols: 6,
+        gridRows: 8,
+      );
+      expect(west.gridX, 0);
+      expect(west.width, lessThan(west.height), reason: 'depth into room on E/W');
+      expect(west.height, closeTo(SurfaceMounts.openingAlongCells(west), 0.05));
+
+      final north = SurfaceMounts.snapToWall(
+        _item(id: 'window', x: 2, y: 0, w: 0.25, h: 1.9),
+        gridCols: 6,
+        gridRows: 8,
+      );
+      expect(north.gridY, 0);
+      expect(north.width, closeTo(SurfaceMounts.openingAlongCells(north), 0.05));
+      expect(north.height, lessThan(north.width));
+    });
+
+    test('every wall fitting keeps the same clear length on all four walls', () {
+      const icons = ['window', 'smartBlinds', 'door', 'ac', 'intake', 'exhaust'];
+      const cols = 8;
+      const rows = 8;
+
+      for (final icon in icons) {
+        final along = SurfaceMounts.openingAlongCells(_item(id: icon, icon: icon));
+        expect(along, greaterThan(0.2), reason: '$icon needs a catalogue clear width');
+
+        double spanLen(WallSpan s) => (s.x1 - s.x0).abs() + (s.z1 - s.z0).abs();
+
+        final north = SurfaceMounts.spanFor(
+          _item(id: icon, icon: icon, x: 3, y: 0, w: 0.2, h: 0.2),
+          gridCols: cols,
+          gridRows: rows,
+        );
+        final south = SurfaceMounts.spanFor(
+          _item(id: icon, icon: icon, x: 3, y: rows - 0.2, w: 0.2, h: 0.2),
+          gridCols: cols,
+          gridRows: rows,
+        );
+        final west = SurfaceMounts.spanFor(
+          _item(id: icon, icon: icon, x: 0, y: 3, w: 0.2, h: 0.2),
+          gridCols: cols,
+          gridRows: rows,
+        );
+        final east = SurfaceMounts.spanFor(
+          _item(id: icon, icon: icon, x: cols - 0.2, y: 3, w: 0.2, h: 0.2),
+          gridCols: cols,
+          gridRows: rows,
+        );
+
+        expect(north.wall, RoomWall.north, reason: icon);
+        expect(south.wall, RoomWall.south, reason: icon);
+        expect(west.wall, RoomWall.west, reason: icon);
+        expect(east.wall, RoomWall.east, reason: icon);
+
+        for (final span in [north, south, west, east]) {
+          expect(
+            spanLen(span),
+            closeTo(along, 0.05),
+            reason: '$icon on ${span.wall} must use clear width, not the thin axis',
+          );
+        }
+      }
     });
 
     test('every shipped preset fitting resolves to the wall it touches', () {

@@ -241,26 +241,36 @@ class ComfortHeuristics {
     return out;
   }
 
-  static ({double x, double z}) _center(FurnitureItem f) => (
-        x: f.gridX + f.width * 0.5,
-        z: f.gridY + f.height * 0.5,
+  static ({double x, double z}) _center(FurnitureItem f) {
+    if (SurfaceMounts.isDoor(f) ||
+        SurfaceMounts.isWindow(f) ||
+        SurfaceMounts.isVent(f) ||
+        SurfaceMounts.isIntake(f) ||
+        SurfaceMounts.isExhaust(f)) {
+      // Approximate wall face without needing room size (span uses nearest wall).
+      final span = SurfaceMounts.spanFor(f, gridCols: 64, gridRows: 64);
+      return (
+        x: (span.x0 + span.x1) * 0.5 + span.inwardX * 0.25,
+        z: (span.z0 + span.z1) * 0.5 + span.inwardZ * 0.25,
       );
+    }
+    return (
+      x: f.gridX + f.width * 0.5,
+      z: f.gridY + f.height * 0.5,
+    );
+  }
 
   static ({double x, double z}) _doorInward(
     FurnitureItem door,
     int gridCols,
     int gridRows,
   ) {
-    final c = _center(door);
-    final dN = c.z;
-    final dS = gridRows - c.z;
-    final dW = c.x;
-    final dE = gridCols - c.x;
-    final minD = [dN, dS, dW, dE].reduce(min);
-    if (minD == dN) return (x: 0, z: 1);
-    if (minD == dS) return (x: 0, z: -1);
-    if (minD == dW) return (x: 1, z: 0);
-    return (x: -1, z: 0);
+    final span = SurfaceMounts.spanFor(
+      door,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    return (x: span.inwardX, z: span.inwardZ);
   }
 
   static bool _rectsOverlap(
