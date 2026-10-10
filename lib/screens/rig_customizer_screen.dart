@@ -231,6 +231,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             fit: StackFit.expand,
             children: [
               _buildCanvas(state),
+              // Overlay — never in header flow, so Edit/Orbit/Check do not jump.
+              if (state.layoutConflicts.isNotEmpty)
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  top: _viewMode == _RigViewMode.model3D ? 40 : 8,
+                  child: IgnorePointer(
+                    child: _ConflictBanner(conflicts: state.layoutConflicts),
+                  ),
+                ),
               if (selectedFurniture != null &&
                   !state.hasPendingPlacement &&
                   !_drag2dGestureStarted &&
@@ -238,7 +248,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 Positioned(
                   left: 8,
                   right: 8,
-                  top: 4,
+                  top: state.layoutConflicts.isNotEmpty
+                      ? (_viewMode == _RigViewMode.model3D ? 84 : 52)
+                      : 4,
                   child: _buildFurnitureInfoCard(state, selectedFurniture),
                 ),
               if (_showDimensions && _viewMode == _RigViewMode.twoD) ...[
@@ -364,10 +376,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               _AddItemButton(onTap: _showAddItemSheet),
             ],
           ),
-          if (state.layoutConflicts.isNotEmpty) ...[
-            const SizedBox(height: AppSpace.sm),
-            _ConflictBanner(conflicts: state.layoutConflicts),
-          ],
           const SizedBox(height: AppSpace.sm),
           SizedBox(
             height: 48,
