@@ -676,7 +676,22 @@ class LayoutOptimizerCommon {
     desktopIdx.sort((a, b) => _deskItemRank(next[a]).compareTo(_deskItemRank(next[b])));
 
     final placedOnHost = <String, List<FurnitureItem>>{};
+    final cols0 = gridCols ?? math.max(8, (primary.gridX + primary.width + 4).ceil());
+    final rows0 = gridRows ?? math.max(8, (primary.gridY + primary.height + 4).ceil());
+    final clustered = _packCenteredWorkCluster(
+      next,
+      desktopIdx,
+      primary,
+      gridCols: cols0,
+      gridRows: rows0,
+    );
+    for (final i in clustered) {
+      final host = primary;
+      placedOnHost.putIfAbsent(host.id, () => <FurnitureItem>[]).add(next[i]);
+    }
+
     for (final i in desktopIdx) {
+      if (clustered.contains(i)) continue;
       var item = next[i];
       final host = _hostForDeskTopItem(
         item,
@@ -753,6 +768,137 @@ class LayoutOptimizerCommon {
       others.add(seated);
     }
     return separateDeskTopOverlaps(next);
+  }
+
+  /// PC | monitor | lamp as one centered row on the desk back edge.
+  /// Returns desktop indices that were seated (so the greedy loop can skip them).
+  static Set<int> _packCenteredWorkCluster(
+    List<FurnitureItem> next,
+    List<int> desktopIdx,
+    FurnitureItem host, {
+    required int gridCols,
+    required int gridRows,
+  }) {
+    if (SurfaceMounts.isTableHost(host)) return {};
+
+    int? monI;
+    int? pcI;
+    int? lampI;
+    for (final i in desktopIdx) {
+      final f = next[i];
+      if (f.locked) continue;
+      final rank = _deskItemRank(f);
+      if (rank == 0 &&
+          (f.iconName == 'monitor' ||
+              ItemPlacementRules.hay(f).contains('monitor'))) {
+        monI ??= i;
+      } else if (rank == 1) {
+        pcI ??= i;
+      } else if (rank == 2 &&
+          (f.iconName == 'lamp' || ItemPlacementRules.hay(f).contains('lamp')) &&
+          !ItemPlacementRules.hay(f).contains('floor')) {
+        lampI ??= i;
+      }
+    }
+    if (monI == null) return {};
+
+    // Shrink task lamp so the trio fits a 2-cell desk with gaps.
+    if (lampI != null) {
+      final lamp = next[lampI];
+      next[lampI] = lamp.copyWith(
+        width: math.min(lamp.width, 0.35),
+        height: math.min(lamp.height, 0.35),
+      );
+    }
+
+    final workFace = ItemPlacementRules.deskWorkFace(host, gridCols, gridRows);
+    final alongX = workFace == 'south' || workFace == 'north';
+
+    FurnitureItem sized(int i) {
+      var f = next[i];
+      if (f.width > host.width - 0.05 || f.height > host.height - 0.05) {
+        if (_deskItemRank(f) == 0) {
+          f = f.copyWith(
+            width: math.min(f.width, math.max(0.7, host.width - 0.15)),
+            height: math.min(f.height, math.max(0.45, host.height - 0.15)),
+          );
+        } else if (_deskItemRank(f) == 1) {
+          f = f.copyWith(
+            width: math.min(f.width, 0.5),
+            height: math.min(f.height, 0.55),
+          );
+        }
+        next[i] = f;
+      }
+      return next[i];
+    }
+
+    final mon = sized(monI);
+    final pc = pcI != null ? sized(pcI) : null;
+    final lamp = lampI != null ? sized(lampI) : null;
+
+    double along(FurnitureItem f) => alongX ? f.width : f.height;
+    double depth(FurnitureItem f) => alongX ? f.height : f.width;
+
+    const g = _deskTopGap;
+    final parts = <FurnitureItem>[
+      if (pc != null) pc,
+      mon,
+      if (lamp != null) lamp,
+    ];
+    var total = 0.0;
+    for (var i = 0; i < parts.length; i++) {
+      total += along(parts[i]);
+      if (i > 0) total += g;
+    }
+    final deskAlong = alongX ? host.width : host.height;
+    if (total > deskAlong + 0.05) {
+      // Fall back to greedy slotting when the desk is too short.
+      return {};
+    }
+
+    final startAlong = (alongX ? host.gridX : host.gridY) + (deskAlong - total) * 0.5;
+    // Back edge (opposite the chair); each item uses its own depth inset.
+    double backFor(FurnitureItem f) => switch (workFace) {
+          'east' => host.gridX,
+          'west' => host.gridX + host.width - depth(f),
+          'north' => host.gridY + host.height - depth(f),
+          _ => host.gridY,
+        };
+
+    var cursor = startAlong;
+    void seat(int idx, FurnitureItem f) {
+      final b = backFor(f);
+      final seated = alongX
+          ? f.copyWith(gridX: cursor, gridY: b)
+          : f.copyWith(gridX: b, gridY: cursor);
+      next[idx] = seated;
+      cursor += along(f) + g;
+    }
+
+    final seatedIdx = <int>{};
+    if (pcI != null && pc != null) {
+      seat(pcI, pc);
+      seatedIdx.add(pcI);
+    }
+    seat(monI, mon);
+    seatedIdx.add(monI);
+    if (lampI != null && lamp != null) {
+      seat(lampI, lamp);
+      seatedIdx.add(lampI);
+    }
+
+    // Keep footprints inside the host AABB.
+    for (final i in seatedIdx) {
+      final f = next[i];
+      final maxX = host.gridX + host.width - f.width;
+      final maxY = host.gridY + host.height - f.height;
+      next[i] = f.copyWith(
+        gridX: f.gridX.clamp(host.gridX, math.max(host.gridX, maxX)),
+        gridY: f.gridY.clamp(host.gridY, math.max(host.gridY, maxY)),
+      );
+    }
+    return seatedIdx;
   }
 
   /// True for workstation gear that must share one work desk (never a lounge table).
@@ -925,16 +1071,16 @@ class LayoutOptimizerCommon {
     late double preferX;
     late double preferY;
     switch (rank) {
-      case 0: // monitor — back edge, start of the long axis (room for PC + lamp)
-        preferX = host.width <= 2.01 && (workFace == 'south' || workFace == 'north')
-            ? loX
-            : backX.clamp(loX, hiX);
+      case 0: // monitor — centered on the back edge (PC / lamp flank it)
+        preferX = backX.clamp(loX, hiX);
         preferY = backY.clamp(loY, hiY);
-        if (workFace == 'east' || workFace == 'west') {
-          // Side-wall desks are 1 cell wide × 2 deep — park at the north end of
-          // the back edge so the tower/lamp still fit along +Y (0.35 mid left none).
+        if (workFace == 'south' || workFace == 'north') {
+          preferX = (host.gridX + (host.width - item.width) * 0.5).clamp(loX, hiX);
+          preferY = backY.clamp(loY, hiY);
+        } else {
+          // Side-wall desk: long axis is Y — center the screen along that edge.
           preferX = backX.clamp(loX, hiX);
-          preferY = loY;
+          preferY = (host.gridY + (host.height - item.height) * 0.5).clamp(loY, hiY);
         }
       case 1: // PC — wall edge, beside monitor along the wall (never toward chair)
         FurnitureItem? monitor;

@@ -1,5 +1,6 @@
 // lib/models/room_model.dart
 // Preset footprints come from GltfCatalog.orbitFootprint so Orbit matches Model.
+import 'dart:math' as math;
 import '../services/gltf_catalog.dart';
 
 enum RoomPreset {
@@ -197,12 +198,19 @@ class RoomPresets {
   static RoomData getPreset(RoomPreset preset) {
     switch (preset) {
       case RoomPreset.gamingSetup: {
-        // Pack PC | monitor | lamp along the desk back — three footprints fill ~2 cells.
+        // Centered PC | monitor | lamp row on the desk back edge.
         const deskX = 1.0;
         const deskY = 1.0;
+        final deskFp = GltfCatalog.orbitFootprint('desk');
         final pcFp = GltfCatalog.orbitFootprint('pc');
         final monFp = GltfCatalog.orbitFootprint('monitor');
+        final lampFp = GltfCatalog.orbitFootprint('lamp');
         final shelfFp = GltfCatalog.orbitFootprint('shelf');
+        // Edge-to-edge fill (~2 cells); Auto-Rig remount adds gaps + lamp shrink.
+        final rowW = pcFp.width + monFp.width + lampFp.width;
+        final pcX = deskX + (deskFp.width - rowW) * 0.5;
+        final monX = pcX + pcFp.width;
+        final lampX = monX + monFp.width;
         const cols = 6.0;
         return RoomData(
           name: 'Gaming Setup',
@@ -213,9 +221,9 @@ class RoomPresets {
           furniture: [
             _f(id: 'desk', name: 'Gaming Desk', iconName: 'desk', category: 'ergonomics', gridX: deskX, gridY: deskY, ergonomicsImpact: 0.6, lightingImpact: -0.1, cost: 299, description: 'Spacious desk designed for multi-monitor setups.'),
             _f(id: 'chair', name: 'Gaming Chair', iconName: 'chair', category: 'ergonomics', gridX: 1, gridY: 2, yawDegrees: 180, ergonomicsImpact: 0.8, airflowImpact: -0.2, cost: 349, description: 'Ergonomic bucket-seat design with lumbar support.'),
-            _f(id: 'pc', name: 'PC Tower', iconName: 'pc', category: 'airflow', gridX: deskX, gridY: deskY, airflowImpact: -0.4, lightingImpact: 0.1, cost: 1500, description: 'Main processing powerhouse; sits on the desk beside the monitor.'),
-            _f(id: 'monitor', name: 'Gaming Monitor', iconName: 'monitor', category: 'ergonomics', gridX: deskX + pcFp.width, gridY: deskY, yawDegrees: 0, ergonomicsImpact: 0.7, cost: 329, description: 'Primary display — sits on the back edge of the desk.'),
-            _f(id: 'lamp', name: 'RGB Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: deskX + pcFp.width + monFp.width, gridY: deskY, lightingImpact: 0.45, cost: 49, description: 'Task light on the back corner — clear of the screen.'),
+            _f(id: 'pc', name: 'PC Tower', iconName: 'pc', category: 'airflow', gridX: pcX, gridY: deskY, airflowImpact: -0.4, lightingImpact: 0.1, cost: 1500, description: 'Main processing powerhouse; sits on the desk beside the monitor.'),
+            _f(id: 'monitor', name: 'Gaming Monitor', iconName: 'monitor', category: 'ergonomics', gridX: monX, gridY: deskY, yawDegrees: 0, ergonomicsImpact: 0.7, cost: 329, description: 'Primary display — centered on the back edge of the desk.'),
+            _f(id: 'lamp', name: 'RGB Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: lampX, gridY: deskY, lightingImpact: 0.45, cost: 49, description: 'Task light on the back corner — clear of the screen.'),
             _f(id: 'bed', name: 'Bed', iconName: 'bed', category: 'neutral', gridX: 3, gridY: 4, airflowImpact: -0.3, ergonomicsImpact: -0.2, cost: 599, description: 'Essential sleeping comfort zone; obstructs some airflow.'),
             // North wall — keep inside cols (catalogue AC width ~1.5 cells).
             _f(
@@ -241,8 +249,13 @@ class RoomPresets {
         const deskX = 0.0;
         const deskY = 1.0;
         const cols = 6.0;
+        final deskFp = GltfCatalog.orbitFootprint('desk');
         final monFp = GltfCatalog.orbitFootprint('monitor');
+        final lampFp = GltfCatalog.orbitFootprint('lamp');
         final shelfFp = GltfCatalog.orbitFootprint('shelf');
+        final rowW = monFp.width + lampFp.width;
+        final monX = deskX + (deskFp.width - rowW) * 0.5;
+        final lampX = monX + monFp.width;
         return RoomData(
           name: 'Home Office',
           subtitle: 'Productive workspace optimized for deep work',
@@ -252,8 +265,8 @@ class RoomPresets {
           furniture: [
             _f(id: 'desk', name: 'Standing Desk', iconName: 'desk', category: 'ergonomics', gridX: deskX, gridY: deskY, ergonomicsImpact: 0.9, lightingImpact: 0.1, cost: 499, description: 'Dual-motor standing desk for healthy posture transitions.'),
             _f(id: 'chair', name: 'Ergonomic Chair', iconName: 'chair', category: 'ergonomics', gridX: 0, gridY: 2, yawDegrees: 180, ergonomicsImpact: 0.9, cost: 699, description: 'High-back mesh design, optimal comfort and posture alignment.'),
-            _f(id: 'monitor', name: 'Monitor', iconName: 'monitor', category: 'ergonomics', gridX: deskX, gridY: deskY, yawDegrees: 0, ergonomicsImpact: 0.7, cost: 129, description: 'Positions the screen at eye level on the desk.'),
-            _f(id: 'lamp', name: 'Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: deskX + monFp.width, gridY: deskY, lightingImpact: 0.6, cost: 59, description: 'Task light on the back corner — clear of the screen.'),
+            _f(id: 'monitor', name: 'Monitor', iconName: 'monitor', category: 'ergonomics', gridX: monX, gridY: deskY, yawDegrees: 0, ergonomicsImpact: 0.7, cost: 129, description: 'Centered on the desk back edge at eye level.'),
+            _f(id: 'lamp', name: 'Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: lampX, gridY: deskY, lightingImpact: 0.6, cost: 59, description: 'Task light on the back corner — clear of the screen.'),
             _f(id: 'window', name: 'Large Window', iconName: 'window', category: 'lighting', gridX: 3, gridY: 0, lightingImpact: 0.9, airflowImpact: 0.7, cost: 400, description: 'Wide exterior window for maximum natural light spread.'),
             _f(id: 'door', name: 'Office Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, airflowImpact: 0.3, ergonomicsImpact: 0.25, cost: 180, description: 'Entry door — leave a clear approach aisle.'),
             _f(id: 'plant', name: 'Plant', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 2, airflowImpact: 0.3, ergonomicsImpact: 0.2, cost: 39, description: 'Breathes life into the office and purifies ambient air.'),
