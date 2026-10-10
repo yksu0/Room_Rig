@@ -1,6 +1,5 @@
 // lib/models/room_model.dart
 // Preset footprints come from GltfCatalog.orbitFootprint so Orbit matches Model.
-import 'dart:math' as math;
 import '../services/gltf_catalog.dart';
 
 enum RoomPreset {
