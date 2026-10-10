@@ -28,6 +28,7 @@
   <div id="minimap" style="display:none;position:absolute;right:10px;bottom:10px;z-index:2;width:108px;height:86px;border-radius:10px;border:1px solid #2C3348;background:rgba(17,20,28,0.82);overflow:hidden;pointer-events:none;">
     <canvas id="mm" width="108" height="86"></canvas>
   </div>
+  <canvas id="loupe" width="216" height="216" style="display:none;position:absolute;z-index:4;width:108px;height:108px;border-radius:50%;border:2px solid #00E5FF;box-shadow:0 4px 16px rgba(0,0,0,0.45);pointer-events:none;background:#11141C;"></canvas>
   <script src="vendor/three.min.js"></script>
   <script src="vendor/GLTFLoader.js"></script>
   <script>
@@ -42,7 +43,9 @@
     console.error(msg);
   }
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+  const renderer = new THREE.WebGLRenderer({
+    canvas, antialias: true, alpha: false, preserveDrawingBuffer: true,
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.shadowMap.enabled = true;
@@ -709,6 +712,7 @@
         }
       }
       if (!model) model = placeholderMesh(it.kind || 'box', fitW, fitD, h);
+      if (it.ghost) applyGhostMaterials(model, true);
       wrap.add(model);
       furnitureRoot.add(wrap);
       // After parenting: pull niche grilles flush to the plaster (world AABB).
@@ -948,8 +952,12 @@
   let lastMidX = 0, lastMidY = 0, lastPinch = 0;
   let moveMode = false;
   let dragId = null;
+  let dragBlocked = false;
   let pointerDownItemId = null;
   let downX = 0, downY = 0;
+  let loupeClientX = 0, loupeClientY = 0;
+  const loupeEl = document.getElementById('loupe');
+  const loupeCtx = loupeEl ? loupeEl.getContext('2d') : null;
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -1034,6 +1042,80 @@
       : 'LMB orbit · RMB pan · scroll zoom';
   };
 
+  window.setDragFeedback = function (payload) {
+    const data = typeof payload === 'string' ? JSON.parse(payload) : (payload || {});
+    dragBlocked = !!data.blocked;
+    if (loupeEl) {
+      loupeEl.style.borderColor = dragBlocked ? '#FF4D4D' : '#00E5FF';
+    }
+  };
+
+  function itemIsGhost(id) {
+    if (!id) return false;
+    for (let i = 0; i < lastItems.length; i++) {
+      if (lastItems[i].id === id) return !!lastItems[i].ghost;
+    }
+    return false;
+  }
+
+  function applyGhostMaterials(root, ghost) {
+    root.traverse((c) => {
+      if (!c.isMesh || !c.material) return;
+      const mats = Array.isArray(c.material) ? c.material : [c.material];
+      for (let i = 0; i < mats.length; i++) {
+        const m = mats[i];
+        if (!m) continue;
+        if (ghost) {
+          if (m.userData._preGhost == null) {
+            m.userData._preGhost = {
+              transparent: !!m.transparent,
+              opacity: m.opacity != null ? m.opacity : 1,
+              depthWrite: m.depthWrite !== false,
+            };
+          }
+          m.transparent = true;
+          m.opacity = Math.min(m.userData._preGhost.opacity, 0.42);
+          m.depthWrite = false;
+          m.needsUpdate = true;
+        } else if (m.userData._preGhost) {
+          m.transparent = m.userData._preGhost.transparent;
+          m.opacity = m.userData._preGhost.opacity;
+          m.depthWrite = m.userData._preGhost.depthWrite;
+          m.needsUpdate = true;
+          delete m.userData._preGhost;
+        }
+      }
+    });
+  }
+
+  function updateLoupe(clientX, clientY) {
+    if (!loupeEl || !loupeCtx || !dragId) {
+      if (loupeEl) loupeEl.style.display = 'none';
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const lx = clientX - rect.left;
+    const ly = clientY - rect.top;
+    const src = 72;
+    const dx = Math.max(0, Math.min(canvas.width - src, lx * (canvas.width / Math.max(rect.width, 1)) - src * 0.5));
+    const dy = Math.max(0, Math.min(canvas.height - src, ly * (canvas.height / Math.max(rect.height, 1)) - src * 0.5));
+    loupeCtx.fillStyle = '#11141C';
+    loupeCtx.fillRect(0, 0, 216, 216);
+    try {
+      loupeCtx.drawImage(canvas, dx, dy, src, src, 0, 0, 216, 216);
+    } catch (_) {}
+    loupeEl.style.display = 'block';
+    loupeEl.style.borderColor = dragBlocked ? '#FF4D4D' : '#00E5FF';
+    const left = Math.min(rect.width - 120, Math.max(8, lx - 54));
+    const top = Math.max(8, ly - 170);
+    loupeEl.style.left = left + 'px';
+    loupeEl.style.top = top + 'px';
+  }
+
+  function hideLoupe() {
+    if (loupeEl) loupeEl.style.display = 'none';
+  }
+
   function ptrList() { return Array.from(activePtrs.values()); }
 
   function beginGesture() {
@@ -1078,9 +1160,13 @@
     pointerDownItemId = (activePtrs.size === 1 && e.button === 0)
       ? pickItemId(e.clientX, e.clientY)
       : null;
-    if (moveMode && pointerDownItemId && activePtrs.size === 1 && e.button === 0) {
+    const canDragHit = pointerDownItemId &&
+      (moveMode || itemIsGhost(pointerDownItemId));
+    if (canDragHit && activePtrs.size === 1 && e.button === 0) {
       gesture = 'drag';
       dragId = pointerDownItemId;
+      loupeClientX = e.clientX;
+      loupeClientY = e.clientY;
       postToFlutter({ type: 'dragStart', id: dragId });
       const floor = floorHitMeters(e.clientX, e.clientY);
       if (floor) postToFlutter({ type: 'drag', id: dragId, x: floor.x, z: floor.z });
@@ -1094,6 +1180,8 @@
     activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY, button: prev.button });
     const pts = ptrList();
     if (gesture === 'drag' && dragId && pts.length === 1) {
+      loupeClientX = pts[0].x;
+      loupeClientY = pts[0].y;
       const floor = floorHitMeters(pts[0].x, pts[0].y);
       if (floor) postToFlutter({ type: 'drag', id: dragId, x: floor.x, z: floor.z });
       return;
@@ -1133,6 +1221,8 @@
     if (wasDrag) {
       postToFlutter({ type: 'dragEnd', id: endedId });
       dragId = null;
+      dragBlocked = false;
+      hideLoupe();
       gesture = null;
     } else if (wasTap && activePtrs.size === 0) {
       const hit = pickItemId(e.clientX, e.clientY);
@@ -1215,6 +1305,10 @@
       window.setMoveMode(!!data.moveMode);
       return;
     }
+    if (data.type === 'setDragFeedback') {
+      window.setDragFeedback(data);
+      return;
+    }
     if (data.type === 'select' || data.type === 'deselect' ||
         data.type === 'drag' || data.type === 'dragStart' || data.type === 'dragEnd') {
       return;
@@ -1241,6 +1335,8 @@
     updateCamera();
     drawMiniMap();
     renderer.render(scene, camera);
+    if (dragId) updateLoupe(loupeClientX, loupeClientY);
+    else hideLoupe();
     requestAnimationFrame(frame);
   }
   frame();

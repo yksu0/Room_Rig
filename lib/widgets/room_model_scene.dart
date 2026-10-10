@@ -36,6 +36,10 @@ class RoomModelScene extends StatefulWidget {
   final bool moveMode;
   /// While true, furniture pose changes push [updateItemPoses] instead of a full GLB reload.
   final bool liveDrag;
+  /// Catalog Place ghost id — translucent mesh; draggable without MOVE.
+  final String? pendingPlacementId;
+  /// Live drag collision feedback for the HTML loupe border.
+  final bool dragBlocked;
   final void Function(String id)? onSelect;
   final VoidCallback? onDeselect;
   final void Function(String id)? onDragStart;
@@ -58,6 +62,8 @@ class RoomModelScene extends StatefulWidget {
     this.onPresetApplied,
     this.moveMode = false,
     this.liveDrag = false,
+    this.pendingPlacementId,
+    this.dragBlocked = false,
     this.onSelect,
     this.onDeselect,
     this.onDragStart,
@@ -77,6 +83,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
   bool _webRegistered = false;
   CameraPreset? _lastPreset;
   int _lastFocusToken = 0;
+  bool? _lastDragBlocked;
 
   @override
   void initState() {
@@ -212,6 +219,8 @@ class RoomModelSceneState extends State<RoomModelScene> {
     super.didUpdateWidget(oldWidget);
     final furnitureChanged = oldWidget.furniture != widget.furniture;
     final selectedChanged = oldWidget.selectedId != widget.selectedId;
+    final pendingChanged =
+        oldWidget.pendingPlacementId != widget.pendingPlacementId;
     final cameraOrShell = oldWidget.room != widget.room ||
         oldWidget.yaw != widget.yaw ||
         oldWidget.pitch != widget.pitch ||
@@ -222,11 +231,22 @@ class RoomModelSceneState extends State<RoomModelScene> {
         oldWidget.focusToken != widget.focusToken ||
         oldWidget.moveMode != widget.moveMode;
 
-    if (widget.liveDrag && furnitureChanged && !cameraOrShell && !selectedChanged) {
+    if (oldWidget.dragBlocked != widget.dragBlocked) {
+      _pushDragFeedback();
+    }
+
+    if (widget.liveDrag &&
+        furnitureChanged &&
+        !cameraOrShell &&
+        !selectedChanged &&
+        !pendingChanged) {
       _pushLivePoses();
       return;
     }
-    if (furnitureChanged || selectedChanged || cameraOrShell) {
+    if (furnitureChanged ||
+        selectedChanged ||
+        pendingChanged ||
+        cameraOrShell) {
       _pushScene();
     }
   }
@@ -380,6 +400,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
         'h': itemH,
         'yaw': yaw,
         'selected': f.id == widget.selectedId,
+        'ghost': f.id == widget.pendingPlacementId,
         'mount': mount.isCeiling
             ? 'ceiling'
             : mount.isDesk
@@ -390,6 +411,13 @@ class RoomModelSceneState extends State<RoomModelScene> {
         ...profile.fitPayload(),
       };
     }).toList();
+
+    // Also mark ghost on wall-mounted pending items (built in the wall branch).
+    for (final it in items) {
+      if (it['id'] == widget.pendingPlacementId) {
+        it['ghost'] = true;
+      }
+    }
 
     final payload = <String, dynamic>{
       'roomW': roomW,
@@ -402,7 +430,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
       'assetBase': GltfCatalog.sceneAssetBase,
       'exploreMode': 'orbit',
       'miniMap': widget.showMiniMap,
-      'moveMode': widget.moveMode,
+      'moveMode': widget.moveMode || widget.pendingPlacementId != null,
       if (widget.yaw != null) 'yaw': widget.yaw,
       if (widget.pitch != null) 'pitch': widget.pitch,
       if (widget.distance != null) 'distance': widget.distance,
@@ -493,6 +521,18 @@ class RoomModelSceneState extends State<RoomModelScene> {
     }
     final json = jsonEncode(items);
     await _runJs('window.updateItemPoses($json);');
+  }
+
+  Future<void> _pushDragFeedback() async {
+    if (!_ready) return;
+    if (_lastDragBlocked == widget.dragBlocked) return;
+    _lastDragBlocked = widget.dragBlocked;
+    final payload = {'type': 'setDragFeedback', 'blocked': widget.dragBlocked};
+    if (kIsWeb) {
+      platform.pushRoomModelSceneWeb(payload);
+      return;
+    }
+    await _runJs('window.setDragFeedback(${jsonEncode(payload)});');
   }
 
   Future<void> _pushScene() async {

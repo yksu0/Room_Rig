@@ -476,8 +476,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         CameraPresetChips(
           onSelect: (p) {
             setState(() {
-              _pendingPreset = p;
-              _viewMode = _RigViewMode.model3D;
+              if (_viewMode == _RigViewMode.model3D) {
+                _pendingPreset = p;
+              } else {
+                // Stay on Orbit (or open Orbit from Edit) — do not force Check.
+                _viewMode = _RigViewMode.threeD;
+                _applyOrbitCameraPreset(p, state);
+              }
             });
             if (!embedded) _maybeCloseSupportingSheet();
           },
@@ -500,8 +505,12 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 ? null
                 : () {
                     setState(() {
-                      _focusToken++;
-                      _viewMode = _RigViewMode.model3D;
+                      if (_viewMode == _RigViewMode.model3D) {
+                        _focusToken++;
+                      } else {
+                        _viewMode = _RigViewMode.threeD;
+                        _focusOrbitOnSelection(state);
+                      }
                     });
                     if (!embedded) _maybeCloseSupportingSheet();
                   },
@@ -514,7 +523,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               subtitle: Text(
                 state.selectedFurniture == null
                     ? 'Select an item first'
-                    : 'Orbit around ${state.selectedFurniture!.name}',
+                    : 'Frame ${state.selectedFurniture!.name}',
                 style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
             ),
@@ -522,6 +531,70 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         ),
       ],
     );
+  }
+
+  /// Approximate Model camera presets for the Orbit painter (grid-cell space).
+  void _applyOrbitCameraPreset(CameraPreset preset, AppState state) {
+    final cols = state.currentRoomData.gridCols.toDouble();
+    final rows = state.currentRoomData.gridRows.toDouble();
+    final cx = cols * 0.5;
+    final cz = rows * 0.5;
+    final span = math.max(cols, rows);
+    switch (preset) {
+      case CameraPreset.birdseye:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = 0;
+        _cameraPitchRad = 1.15;
+        _cameraDistance = (span * 1.15).clamp(8.0, 28.0);
+        break;
+      case CameraPreset.cornerA:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = 0.75;
+        _cameraPitchRad = 0.38;
+        _cameraDistance = (span * 0.95).clamp(8.0, 24.0);
+        break;
+      case CameraPreset.cornerB:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = -2.35;
+        _cameraPitchRad = 0.38;
+        _cameraDistance = (span * 0.95).clamp(8.0, 24.0);
+        break;
+      case CameraPreset.eyeLevel:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = 0;
+        _cameraPitchRad = 0.18;
+        _cameraDistance = (span * 0.85).clamp(7.0, 22.0);
+        break;
+      case CameraPreset.door:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = math.pi;
+        _cameraPitchRad = 0.28;
+        _cameraDistance = (span * 0.9).clamp(7.0, 22.0);
+        break;
+      case CameraPreset.ceiling:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = 0.4;
+        _cameraPitchRad = -0.35;
+        _cameraDistance = (span * 0.7).clamp(6.0, 18.0);
+        break;
+    }
+  }
+
+  void _focusOrbitOnSelection(AppState state) {
+    final item = state.selectedFurniture;
+    if (item == null || state.selectedIsScanObject) return;
+    final cols = state.currentRoomData.gridCols.toDouble();
+    final rows = state.currentRoomData.gridRows.toDouble();
+    _lookAtX = item.gridX + item.width * 0.5;
+    _lookAtZ = item.gridY + item.height * 0.5;
+    _cameraPitchRad = 0.42;
+    _cameraDistance = (math.max(cols, rows) * 0.55).clamp(5.0, 16.0);
   }
 
   Widget _buildToolsPanelBody(
@@ -1224,8 +1297,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 pendingPreset: _pendingPreset,
                 showMiniMap: _showMiniMap,
                 focusToken: _focusToken,
-                moveMode: _rigMoveMode,
+                moveMode: _rigMoveMode || state.hasPendingPlacement,
                 liveDrag: _dragItemId != null,
+                pendingPlacementId: state.pendingPlacementId,
+                dragBlocked: _dragItemId != null && state.dragPoseBlocked,
                 onPresetApplied: () {
                   if (_pendingPreset != null) {
                     setState(() => _pendingPreset = null);
@@ -1238,9 +1313,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     return;
                   }
                   state.selectFurniture(id);
-                  setState(() => _rigMoveMode = true);
+                  // Ghosts drag without MOVE; other items arm MOVE like Orbit tap.
+                  setState(() {
+                    _rigMoveMode = !state.isPendingPlacement(id);
+                  });
                 },
                 onDeselect: () {
+                  if (state.hasPendingPlacement) return;
                   state.clearSelection();
                   if (_rigMoveMode) setState(() => _rigMoveMode = false);
                 },
@@ -1250,7 +1329,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   _dragItemId = id;
                   _dragGrabOffset = null;
                   state.beginFurnitureGesture();
-                  if (!_rigMoveMode) setState(() => _rigMoveMode = true);
+                  if (!_rigMoveMode && !state.isPendingPlacement(id)) {
+                    setState(() => _rigMoveMode = true);
+                  }
                 },
                 onDrag: (id, floorX, floorY) {
                   if (_dragItemId != id) return;
@@ -1290,9 +1371,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       border: Border.all(color: AppColors.border),
                     ),
                     child: Text(
-                      _rigMoveMode
-                          ? 'MOVE on · drag item · tap empty to exit'
-                          : 'Orbit · tap item · MOVE to drag',
+                      state.hasPendingPlacement
+                          ? 'Drag the ghost to place · tap Place when ready'
+                          : _rigMoveMode
+                              ? 'MOVE on · drag item · tap empty to exit'
+                              : 'Orbit · tap item · MOVE to drag',
                       style: const TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 11,
@@ -1302,7 +1385,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   ),
                 ),
               ),
-              if (canMoveSelected || _rigMoveMode)
+              if (canMoveSelected || _rigMoveMode || state.hasPendingPlacement)
                 Positioned(
                   top: 8,
                   right: 10,
@@ -1926,6 +2009,24 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     ),
                   ),
                 ),
+                if (_showMiniMap)
+                  Positioned(
+                    right: 10,
+                    bottom: 48,
+                    child: IgnorePointer(
+                      child: _OrbitMiniMap(
+                        room: state.currentRoomData,
+                        furniture: state.furniture,
+                        selectedId: state.selectedIsScanObject
+                            ? null
+                            : state.selectedFurniture?.id,
+                        lookAtX: _lookAtX ??
+                            state.currentRoomData.gridCols * 0.5,
+                        lookAtZ: _lookAtZ ??
+                            state.currentRoomData.gridRows * 0.5,
+                      ),
+                    ),
+                  ),
               ],
             );
           },
@@ -3818,6 +3919,120 @@ class _SelectedItemSizeChip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Top-down floor plan overlay for Orbit (mirrors Model HTML minimap).
+class _OrbitMiniMap extends StatelessWidget {
+  final RoomData room;
+  final List<FurnitureItem> furniture;
+  final String? selectedId;
+  final double lookAtX;
+  final double lookAtZ;
+
+  const _OrbitMiniMap({
+    required this.room,
+    required this.furniture,
+    required this.selectedId,
+    required this.lookAtX,
+    required this.lookAtZ,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 108,
+      height: 86,
+      decoration: BoxDecoration(
+        color: const Color(0xD111141C),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: CustomPaint(
+        painter: _OrbitMiniMapPainter(
+          cols: room.gridCols.toDouble(),
+          rows: room.gridRows.toDouble(),
+          furniture: furniture,
+          selectedId: selectedId,
+          lookAtX: lookAtX,
+          lookAtZ: lookAtZ,
+        ),
+      ),
+    );
+  }
+}
+
+class _OrbitMiniMapPainter extends CustomPainter {
+  final double cols;
+  final double rows;
+  final List<FurnitureItem> furniture;
+  final String? selectedId;
+  final double lookAtX;
+  final double lookAtZ;
+
+  _OrbitMiniMapPainter({
+    required this.cols,
+    required this.rows,
+    required this.furniture,
+    required this.selectedId,
+    required this.lookAtX,
+    required this.lookAtZ,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bg = Paint()..color = const Color(0xFF1B2030);
+    canvas.drawRect(Offset.zero & size, bg);
+
+    const pad = 8.0;
+    final sx = (size.width - pad * 2) / math.max(cols, 0.1);
+    final sz = (size.height - pad * 2) / math.max(rows, 0.1);
+    final s = math.min(sx, sz);
+    final ox = (size.width - cols * s) * 0.5;
+    final oz = (size.height - rows * s) * 0.5;
+
+    final roomRect = Rect.fromLTWH(ox, oz, cols * s, rows * s);
+    canvas.drawRect(
+      roomRect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..color = AppColors.border
+        ..strokeWidth = 1,
+    );
+
+    for (final f in furniture) {
+      if (f.hidden) continue;
+      final r = Rect.fromLTWH(
+        ox + f.gridX * s,
+        oz + f.gridY * s,
+        math.max(0.15, f.width) * s,
+        math.max(0.15, f.height) * s,
+      );
+      canvas.drawRect(
+        r,
+        Paint()
+          ..color = f.id == selectedId
+              ? AppColors.cyan
+              : const Color(0xFF5A6280),
+      );
+    }
+
+    canvas.drawCircle(
+      Offset(ox + lookAtX * s, oz + lookAtZ * s),
+      3.5,
+      Paint()..color = const Color(0xFF2EE68A),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _OrbitMiniMapPainter old) {
+    return old.cols != cols ||
+        old.rows != rows ||
+        old.furniture != furniture ||
+        old.selectedId != selectedId ||
+        old.lookAtX != lookAtX ||
+        old.lookAtZ != lookAtZ;
   }
 }
 
