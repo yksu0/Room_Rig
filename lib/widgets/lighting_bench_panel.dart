@@ -8,6 +8,7 @@ import '../services/bench_layouts.dart';
 import '../services/layout_share_image.dart';
 import '../services/lighting_simulator.dart';
 import '../services/benchmark_validator.dart';
+import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
@@ -231,6 +232,52 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     final noOp = improvedLayoutIsNoOp(_layouts);
     final applyBlocked = noOp || applyValidation.hasHardLayoutConflicts;
 
+    Future<void> applyImproved() async {
+      if (!await confirmBenchApply(
+        context,
+        validation: applyValidation,
+        fellBackToSample: _layouts?.fellBackToSample ?? false,
+      )) {
+        return;
+      }
+      if (!context.mounted) return;
+      final before = List<FurnitureItem>.from(state.committedFurniture);
+      state.applyFurnitureLayout(
+        _furnitureFor(BenchLayoutKind.improved),
+        markOptimized: true,
+        lockMode: 'lighting',
+      );
+      final diff = summarizeLayoutDiff(before, state.furniture);
+      final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+      final room = state.currentRoomData;
+      final after = List<FurnitureItem>.from(state.furniture);
+      showBenchApplySnackBar(
+        context,
+        message: why.isEmpty ? 'Lighting applied · $diff' : 'Lighting applied · $diff · $why',
+        accentColor: AppColors.lightingColor,
+        onOpenRig: () => state.setTab(2),
+        onShareImage: () => LayoutShareImage.shareBeforeAfter(
+          gridCols: room.gridCols,
+          gridRows: room.gridRows,
+          before: before,
+          after: after,
+          footer: why.isEmpty ? diff : '$diff · $why',
+        ),
+      );
+    }
+
+    final resultsExtra = noOp
+        ? benchImprovedNoOpBanner(
+            message:
+                'Improved layout matches your room — lighting is already as good as the optimizer found.',
+          )
+        : benchWhyWinsCard(
+            reasons: _layouts?.improvedReasons ?? const [],
+            accentColor: AppColors.lightingColor,
+          );
+
+    final desktop = AppLayout.isDesktop(context);
+
     return BenchPanelScaffold(
       accentColor: AppColors.lightingColor,
       step: _stepIndex,
@@ -246,55 +293,427 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
         hint: _layoutHint,
       ),
       middleBody: _simSection(state),
-      resultsExtra: noOp
-          ? benchImprovedNoOpBanner(
-              message:
-                  'Improved layout matches your room — lighting is already as good as the optimizer found.',
-            )
-          : benchWhyWinsCard(
-              reasons: _layouts?.improvedReasons ?? const [],
-              accentColor: AppColors.lightingColor,
-            ),
+      resultsExtra: resultsExtra,
       resultsBody: _results(state),
       applyEnabled: !applyBlocked,
       applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
           : (noOp ? 'Improved layout matches your room — nothing to apply.' : null),
-      onApply: () async {
-        if (!await confirmBenchApply(
-          context,
-          validation: applyValidation,
-          fellBackToSample: _layouts?.fellBackToSample ?? false,
-        )) {
-          return;
-        }
-        if (!context.mounted) return;
-        final before = List<FurnitureItem>.from(state.committedFurniture);
-        state.applyFurnitureLayout(
-          _furnitureFor(BenchLayoutKind.improved),
-          markOptimized: true,
-          lockMode: 'lighting',
-        );
-        final diff = summarizeLayoutDiff(before, state.furniture);
-        final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
-        final room = state.currentRoomData;
-        final after = List<FurnitureItem>.from(state.furniture);
-        showBenchApplySnackBar(
-          context,
-          message: why.isEmpty ? 'Lighting applied · $diff' : 'Lighting applied · $diff · $why',
-          accentColor: AppColors.lightingColor,
-          onOpenRig: () => state.setTab(2),
-          onShareImage: () => LayoutShareImage.shareBeforeAfter(
-            gridCols: room.gridCols,
-            gridRows: room.gridRows,
-            before: before,
-            after: after,
-            footer: why.isEmpty ? diff : '$diff · $why',
-          ),
-        );
-      },
+      onApply: applyImproved,
       onRefresh: _rebuild,
+      desktopControls: desktop ? _desktopControls(state) : null,
+      desktopViewport: desktop ? _desktopViewport(state) : null,
+      desktopInspect: desktop
+          ? _desktopInspect(
+              state,
+              resultsExtra: resultsExtra,
+              onApply: applyBlocked ? null : applyImproved,
+              applyBlockedReason: applyValidation.hasHardLayoutConflicts
+                  ? 'Fix overlaps or blocked doorways before applying.'
+                  : (noOp ? 'Improved layout matches your room — nothing to apply.' : null),
+            )
+          : null,
     );
+  }
+
+  Widget _desktopControls(AppState state) {
+    switch (_step) {
+      case _LightStep.layout:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'LIGHTING LAYOUT',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            BenchVariantChips(
+              selected: _layoutVariant,
+              onChanged: _setLayoutVariant,
+              includeSample: _layoutVariant == BenchLayoutKind.sample,
+            ),
+            BenchViewChips(
+              children: [
+                BenchChip(
+                  label: '2D',
+                  selected: _roomView == _View.twoD,
+                  color: AppColors.lightingColor,
+                  onTap: () => setState(() => _roomView = _View.twoD),
+                ),
+                BenchChip(
+                  label: '3D',
+                  selected: _roomView == _View.threeD,
+                  color: AppColors.lightingColor,
+                  onTap: () => setState(() => _roomView = _View.threeD),
+                ),
+                BenchChip(
+                  label: 'Compare',
+                  selected: _roomView == _View.compare,
+                  color: AppColors.lightingColor,
+                  onTap: () => setState(() => _roomView = _View.compare),
+                ),
+              ],
+            ),
+            BenchAutoRigMixBar(
+              layouts: _layouts,
+              onTryAlternate: () {
+                context.read<AppState>().cycleBenchAlternate();
+                setState(() {
+                  _layoutVariant = BenchLayoutKind.improved;
+                  _roomView = _View.compare;
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+            BenchRunAction(
+              buttonLabel: 'RUN LIGHTING BENCH',
+              icon: RoomSvg.scan,
+              onRun: _runBench,
+              hint: _layoutHint,
+            ),
+          ],
+        );
+      case _LightStep.simulate:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'ILLUMINANCE FIELD',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            BenchVariantChips(
+              selected: _simVariant,
+              onChanged: (v) => setState(() => _simVariant = v),
+            ),
+            BenchViewChips(
+              children: [
+                BenchChip(
+                  label: '2D',
+                  selected: _simViz == LightingVizMode.topDown2D,
+                  color: AppColors.lightingColor,
+                  onTap: () => setState(() => _simViz = LightingVizMode.topDown2D),
+                ),
+                BenchChip(
+                  label: '3D',
+                  selected: _simViz == LightingVizMode.orbit3D,
+                  color: AppColors.lightingColor,
+                  onTap: () => setState(() => _simViz = LightingVizMode.orbit3D),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const BenchLegend(caption: 'Illuminance'),
+          ],
+        );
+      case _LightStep.results:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'RESULTS',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'My Room vs Improved under your Rig Auto-Rig mix.',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 12),
+            BenchVariantChips(
+              selected: _simVariant,
+              onChanged: (v) => setState(() => _simVariant = v),
+            ),
+            BenchViewChips(
+              children: [
+                BenchChip(
+                  label: '2D',
+                  selected: _simViz == LightingVizMode.topDown2D,
+                  color: AppColors.lightingColor,
+                  onTap: () => setState(() => _simViz = LightingVizMode.topDown2D),
+                ),
+                BenchChip(
+                  label: '3D',
+                  selected: _simViz == LightingVizMode.orbit3D,
+                  color: AppColors.lightingColor,
+                  onTap: () => setState(() => _simViz = LightingVizMode.orbit3D),
+                ),
+              ],
+            ),
+          ],
+        );
+    }
+  }
+
+  Widget _desktopViewport(AppState state) {
+    if (_step == _LightStep.layout) {
+      return _layoutViewportCanvas(state);
+    }
+    return _simViewportCanvas(state);
+  }
+
+  Widget _desktopInspect(
+    AppState state, {
+    required Widget resultsExtra,
+    required VoidCallback? onApply,
+    required String? applyBlockedReason,
+  }) {
+    switch (_step) {
+      case _LightStep.layout:
+        final notes = _notesFor(_layoutVariant);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _roomView == _View.compare
+                  ? 'My Room vs Improved'
+                  : switch (_layoutVariant) {
+                      BenchLayoutKind.myRoom =>
+                        (_layouts?.fellBackToSample ?? false)
+                            ? 'Reference room — Rig empty'
+                            : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items',
+                      BenchLayoutKind.improved =>
+                        _layouts?.improvedCaption ?? 'Improved · Auto-Rig',
+                      BenchLayoutKind.sample => 'Sample room',
+                    },
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...notes.map(
+              (n) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      _layoutVariant == BenchLayoutKind.sample
+                          ? Icons.warning_amber_rounded
+                          : Icons.check_circle_outline,
+                      size: 14,
+                      color: switch (_layoutVariant) {
+                        BenchLayoutKind.sample => AppColors.amber,
+                        BenchLayoutKind.myRoom => AppColors.cyan,
+                        BenchLayoutKind.improved => AppColors.green,
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        n,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      case _LightStep.simulate:
+        final m = _activeSim?.metrics;
+        if (m == null) return const SizedBox.shrink();
+        return Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: BenchMetricTile(
+                    label: 'Exposure',
+                    value: m.exposureScore,
+                    color: AppColors.lightingColor,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: BenchMetricTile(
+                    label: 'Task light',
+                    value: m.taskIllumination * 100,
+                    color: AppColors.amber,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            BenchMetricTile(
+              label: 'Shadows',
+              value: m.shadowRatio * 100,
+              color: AppColors.red,
+              invert: true,
+            ),
+          ],
+        );
+      case _LightStep.results:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            resultsExtra,
+            const SizedBox(height: 12),
+            _results(state),
+            const SizedBox(height: 16),
+            BenchApplyRow(
+              onApply: onApply,
+              onRefresh: _rebuild,
+              blockedReason: applyBlockedReason,
+            ),
+          ],
+        );
+    }
+  }
+
+  Widget _layoutViewportCanvas(AppState state) {
+    final room = state.currentRoomData;
+    final furniture = _layoutFurnitureFor(state);
+    if (_roomView == _View.compare) {
+      return BenchSideBySidePlans(
+        gridCols: room.gridCols,
+        gridRows: room.gridRows,
+        myRoom: _furnitureFor(BenchLayoutKind.myRoom),
+        improved: _furnitureFor(BenchLayoutKind.improved),
+        accentColor: AppColors.lightingColor,
+      );
+    }
+    return ColoredBox(
+      color: AppColors.surface,
+      child: _roomView == _View.twoD
+          ? LayoutBuilder(
+              builder: (context, constraints) {
+                final size = Size(constraints.maxWidth, constraints.maxHeight);
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (details) {
+                    final hit = BenchRoom2DGeometry.hitTest(
+                      local: details.localPosition,
+                      size: size,
+                      gridCols: room.gridCols,
+                      gridRows: room.gridRows,
+                      furniture: furniture,
+                    );
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      if (hit == null || _selectedFurnitureId == hit.id) {
+                        _selectedFurnitureId = null;
+                      } else {
+                        _selectedFurnitureId = hit.id;
+                      }
+                    });
+                  },
+                  child: CustomPaint(
+                    painter: BenchRoom2DPainter(
+                      gridCols: room.gridCols,
+                      gridRows: room.gridRows,
+                      furniture: furniture,
+                      selectedId: _selectedFurnitureId,
+                    ),
+                    child: const SizedBox.expand(),
+                  ),
+                );
+              },
+            )
+          : _orbit(
+              key: const ValueKey('lighting_layout_orbit_desk'),
+              resetNonce: _layoutOrbitResetNonce,
+              onDoubleTap: () {
+                HapticFeedback.lightImpact();
+                setState(() => _layoutOrbitResetNonce++);
+              },
+              lookAtX: room.gridCols * 0.5,
+              lookAtZ: room.gridRows * 0.5,
+              roomWidth: room.gridCols.toDouble(),
+              roomDepth: room.gridRows.toDouble(),
+              builder: (cam) => CustomPaint(
+                painter: BenchRoom3DPainter(
+                  roomWidth: room.gridCols.toDouble(),
+                  roomDepth: room.gridRows.toDouble(),
+                  roomHeight: 2.8,
+                  gridCols: room.gridCols,
+                  gridRows: room.gridRows,
+                  yaw: cam.yaw,
+                  pitch: cam.pitch,
+                  distance: cam.distance,
+                  lookAtX: cam.lookAtX,
+                  lookAtZ: cam.lookAtZ,
+                  furniture: furniture,
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+    );
+  }
+
+  Widget _simViewportCanvas(AppState state) {
+    final sim = _activeSim;
+    if (sim == null) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.lightingColor));
+    }
+    return _simViz == LightingVizMode.topDown2D
+        ? AnimatedBuilder(
+            animation: _pulse,
+            builder: (context, child) => CustomPaint(
+              painter: LightingFieldPainter(
+                snapshot: sim,
+                furniture: _furnitureFor(_simVariant),
+                vizMode: _simViz,
+                yaw: _defaultYaw,
+                pitch: _defaultPitch,
+                distance: _defaultDistance,
+                pulse: _pulse.value,
+              ),
+              child: const SizedBox.expand(),
+            ),
+          )
+        : _orbit(
+            key: const ValueKey('lighting_sim_orbit_desk'),
+            resetNonce: _simOrbitResetNonce,
+            onDoubleTap: () {
+              HapticFeedback.lightImpact();
+              setState(() => _simOrbitResetNonce++);
+            },
+            builder: (cam) => AnimatedBuilder(
+              animation: _pulse,
+              builder: (context, child) => CustomPaint(
+                painter: LightingFieldPainter(
+                  snapshot: sim,
+                  furniture: _furnitureFor(_simVariant),
+                  vizMode: _simViz,
+                  yaw: cam.yaw,
+                  pitch: cam.pitch,
+                  distance: cam.distance,
+                  lookAtX: cam.lookAtX,
+                  lookAtZ: cam.lookAtZ,
+                  pulse: _pulse.value,
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          );
   }
 
   /// Switching layouts only changes what is displayed — it never writes to the

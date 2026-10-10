@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../models/room_model.dart';
 import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
+import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import 'benchmark_validation_card.dart';
 import 'bench_room_views.dart';
+import 'chrome/adaptive_panel.dart';
 import 'chrome/bench_results_chrome.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
@@ -205,27 +207,34 @@ class BenchSideBySidePlans extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 280,
-      child: Row(
-        children: [
-          Expanded(
-            child: _pane(
-              label: 'My Room',
-              color: AppColors.cyan,
-              furniture: myRoom,
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final h = constraints.maxHeight.isFinite && constraints.maxHeight > 0
+            ? constraints.maxHeight
+            : 280.0;
+        return SizedBox(
+          height: h,
+          child: Row(
+            children: [
+              Expanded(
+                child: _pane(
+                  label: 'My Room',
+                  color: AppColors.cyan,
+                  furniture: myRoom,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _pane(
+                  label: 'Improved',
+                  color: AppColors.green,
+                  furniture: improved,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _pane(
-              label: 'Improved',
-              color: AppColors.green,
-              furniture: improved,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -913,7 +922,86 @@ Widget benchImprovedNoOpBanner({String message = 'Improved layout matches your r
   );
 }
 
+/// Rig-style desktop shell: left controls · center viewport · right inspect.
+class BenchDesktopShell extends StatelessWidget {
+  final Color accentColor;
+  final Widget controls;
+  final Widget viewport;
+  final Widget inspect;
+  final String controlsTitle;
+  final String inspectTitle;
+
+  const BenchDesktopShell({
+    super.key,
+    required this.accentColor,
+    required this.controls,
+    required this.viewport,
+    required this.inspect,
+    this.controlsTitle = 'Workspace',
+    this.inspectTitle = 'Inspect',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: AppLayout.toolsRailWidth,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              border: Border(
+                right: BorderSide(color: AppColors.borderSubtle),
+              ),
+            ),
+            child: AdaptiveRailPane(
+              title: controlsTitle,
+              icon: Icons.tune_rounded,
+              accent: accentColor,
+              child: controls,
+            ),
+          ),
+        ),
+        Expanded(
+          child: ColoredBox(
+            color: AppColors.bg,
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                child: ColoredBox(
+                  color: AppColors.surface,
+                  child: viewport,
+                ),
+              ),
+            ),
+          ),
+        ),
+        SizedBox(
+          width: AppLayout.inspectRailWidth,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              border: Border(
+                left: BorderSide(color: AppColors.borderSubtle),
+              ),
+            ),
+            child: AdaptiveRailPane(
+              title: inspectTitle,
+              icon: Icons.analytics_outlined,
+              accent: accentColor,
+              child: inspect,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Orchestrates the common bench panel column: tabs, step content, progress, results, apply.
+///
+/// On desktop, when [desktopControls] / [desktopViewport] / [desktopInspect] are
+/// provided, uses a Rig-style three-rail shell instead of a stacked column.
 class BenchPanelScaffold extends StatelessWidget {
   final Color accentColor;
   final int step;
@@ -922,7 +1010,7 @@ class BenchPanelScaffold extends StatelessWidget {
   final bool running;
   final ValueChanged<int> onStepChanged;
 
-  /// Shown on the layout step.
+  /// Shown on the layout step (mobile / fallback).
   final Widget? layoutBody;
   final BenchRunAction? layoutRunAction;
 
@@ -941,6 +1029,12 @@ class BenchPanelScaffold extends StatelessWidget {
   final VoidCallback? onRefresh;
   final bool applyEnabled;
   final String? applyBlockedReason;
+
+  /// Desktop three-rail slots (current step). When non-null on desktop width, used
+  /// instead of the stacked [layoutBody] / [middleBody] / [resultsBody] column.
+  final Widget? desktopControls;
+  final Widget? desktopViewport;
+  final Widget? desktopInspect;
 
   const BenchPanelScaffold({
     super.key,
@@ -962,20 +1056,52 @@ class BenchPanelScaffold extends StatelessWidget {
     this.onRefresh,
     this.applyEnabled = true,
     this.applyBlockedReason,
+    this.desktopControls,
+    this.desktopViewport,
+    this.desktopInspect,
   });
+
+  bool _useDesktopShell(BuildContext context) {
+    return AppLayout.isDesktop(context) &&
+        desktopControls != null &&
+        desktopViewport != null &&
+        desktopInspect != null;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final steps = BenchStepTabs(
+      accentColor: accentColor,
+      step: step,
+      labels: stepLabels,
+      resultsEnabled: resultsEnabled || running,
+      onStepChanged: onStepChanged,
+    );
+
+    if (_useDesktopShell(context)) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: steps,
+          ),
+          Expanded(
+            child: BenchDesktopShell(
+              accentColor: accentColor,
+              controls: desktopControls!,
+              viewport: desktopViewport!,
+              inspect: desktopInspect!,
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        BenchStepTabs(
-          accentColor: accentColor,
-          step: step,
-          labels: stepLabels,
-          resultsEnabled: resultsEnabled || running,
-          onStepChanged: onStepChanged,
-        ),
+        steps,
         const SizedBox(height: 16),
         if (step == benchStepLayout && layoutBody != null) ...[
           layoutBody!,
