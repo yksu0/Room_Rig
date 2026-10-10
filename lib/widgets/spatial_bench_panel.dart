@@ -100,6 +100,9 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       _layoutVariant = kind;
       _analyzeVariant = kind;
       _showResults = false;
+      if (kind == BenchLayoutKind.sample) {
+        _layoutView = _LayoutView.heatmap;
+      }
     }
   }
 
@@ -109,6 +112,9 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       _seenFocusToken = state.benchLayoutFocusToken;
       _layoutVariant = state.benchLayoutFocus;
       _analyzeVariant = state.benchLayoutFocus;
+      if (state.benchLayoutFocus == BenchLayoutKind.sample) {
+        _layoutView = _LayoutView.heatmap;
+      }
     }
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
@@ -194,6 +200,8 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       _showResults = true;
       _step = _SpatialStep.results;
       _analyzeVariant = BenchLayoutKind.improved;
+      _layoutVariant = BenchLayoutKind.improved;
+      _layoutView = _LayoutView.compare;
     });
   }
 
@@ -581,7 +589,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
     final validation = _validationForImproved(state);
     final base = _myRoomMetrics!;
     final opt = _improvedMetrics!;
-    final sample = _sampleMetrics;
 
     final spaceDelta = (opt.overallScore - base.overallScore).round();
     final spaceLabel = spaceDelta >= 0 ? '+$spaceDelta' : '$spaceDelta';
@@ -593,10 +600,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       rings: [
         BenchScoreRingSpec(score: base.overallScore, color: AppColors.cyan, label: 'My Room'),
         BenchScoreRingSpec(score: opt.overallScore, color: AppColors.spatialColor, label: 'Improved'),
-        if (sample != null)
-          BenchScoreRingSpec(score: sample.overallScore, color: AppColors.amber, label: 'Sample')
-        else
-          BenchScoreRingSpec(score: state.spatialScore, color: AppColors.green, label: 'Score'),
       ],
       summaryText:
           'Space $spaceLabel · '

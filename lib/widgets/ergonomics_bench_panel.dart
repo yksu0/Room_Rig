@@ -46,8 +46,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
   static const _defaultPitch = 0.4;
   static const _defaultDistance = 16.0;
 
-  bool _running = false;
-  double _progress = 0;
   bool _showResults = false;
   bool _ready = false;
   bool _showPaths = true;
@@ -106,6 +104,9 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       _layoutVariant = kind;
       _simVariant = kind;
       _showResults = false;
+      if (kind == BenchLayoutKind.sample) {
+        _roomView = _View.twoD;
+      }
     }
   }
 
@@ -119,6 +120,9 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       _layoutVariant = state.benchLayoutFocus;
       _simVariant = state.benchLayoutFocus;
       _selectedFurnitureId = null;
+      if (state.benchLayoutFocus == BenchLayoutKind.sample) {
+        _roomView = _View.twoD;
+      }
     }
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
@@ -212,32 +216,15 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     });
   }
 
-  Future<void> _runBench() async {
-    // Always start from the room as it stands right now.
+  void _runBench() {
+    // Sims are sync — open Results on Improved immediately.
     _recompute(context.read<AppState>(), resetStep: false);
     setState(() {
-      _running = true;
-      _showResults = false;
-      _progress = 0;
-      _step = _ErgoStep.simulate;
-      _simVariant = BenchLayoutKind.myRoom;
-    });
-    for (int i = 1; i <= 10; i++) {
-      await Future.delayed(const Duration(milliseconds: 45));
-      if (!mounted) return;
-      setState(() {
-        _progress = i / 10;
-        if (i == 5) _simVariant = BenchLayoutKind.improved;
-      });
-    }
-    if (!mounted) return;
-    // Bench → Rig only happens on the explicit Apply action below the results,
-    // so finishing a run never silently replaces the user's layout.
-    setState(() {
-      _running = false;
       _showResults = true;
       _step = _ErgoStep.results;
       _simVariant = BenchLayoutKind.improved;
+      _layoutVariant = BenchLayoutKind.improved;
+      _roomView = _View.compare;
     });
   }
 
@@ -261,18 +248,16 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       step: _stepIndex,
       stepLabels: const ['1. Layout', '2. Paths', '3. Results'],
       resultsEnabled: _showResults,
-      running: _running,
+      running: false,
       onStepChanged: (i) => setState(() => _step = _stepFromIndex(i)),
       layoutBody: _layoutSection(state),
       layoutRunAction: BenchRunAction(
         buttonLabel: 'RUN ERGONOMICS BENCH',
         icon: RoomSvg.scan,
-        onRun: _running ? null : _runBench,
+        onRun: _runBench,
         hint: _layoutHint,
       ),
       middleBody: _simSection(state),
-      progress: _progress,
-      progressLabel: 'Tracing frequent walk paths',
       resultsExtra: noOp
           ? benchImprovedNoOpBanner(
               message:
@@ -705,10 +690,8 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
 
   Widget _results(AppState state) {
     final validation = _validationForSimVariant(state);
-    // Before / after are your room and the optimizer's rearrange of it.
     final base = _myRoomSim!.metrics;
     final opt = _improvedSim!.metrics;
-    final sample = _sampleSim?.metrics;
     final pathDelta = ((opt.pathScore - base.pathScore) * 100).round();
     final pathLabel = pathDelta >= 0 ? '+$pathDelta' : '$pathDelta';
     return BenchResultsCard(
@@ -719,10 +702,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       rings: [
         BenchScoreRingSpec(score: base.comfortScore, color: AppColors.cyan, label: 'My Room'),
         BenchScoreRingSpec(score: opt.comfortScore, color: AppColors.ergonomicsColor, label: 'Improved'),
-        if (sample != null)
-          BenchScoreRingSpec(score: sample.comfortScore, color: AppColors.amber, label: 'Sample')
-        else
-          BenchScoreRingSpec(score: state.ergonomicsScore, color: AppColors.green, label: 'Score'),
       ],
       summaryText:
           'Walk paths $pathLabel · '
