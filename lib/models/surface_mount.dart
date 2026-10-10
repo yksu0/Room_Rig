@@ -473,17 +473,12 @@ class SurfaceMounts {
 
   /// Clear opening length along the wall (cells).
   ///
-  /// Uses the longer footprint edge so E/W walls are not crushed to thickness.
-  /// Catalogue clear width fills in for legacy 1×1 openings.
+  /// Catalogue clear width wins so Orbit stays consistent on every wall and
+  /// leftover wide footprints from older builds do not keep stretching panes.
   static double openingAlongCells(FurnitureItem f) {
-    final fromFootprint = math.max(f.width, f.height);
     final fromCatalog = GltfCatalog.profileFor(f.iconName).footprintWidthCells;
-    if (fromCatalog != null && fromCatalog > 0) {
-      // Square legacy pads (old windows) → catalogue clear width.
-      if ((f.width - f.height).abs() < 0.2) return fromCatalog;
-      return math.max(fromCatalog, fromFootprint);
-    }
-    return fromFootprint;
+    if (fromCatalog != null && fromCatalog > 0) return fromCatalog;
+    return math.max(f.width, f.height);
   }
 
   /// Wall thickness / stand-off in cells (shorter footprint edge).
