@@ -121,8 +121,8 @@ void main() {
       expect(north.wall, RoomWall.north);
       expect(north.z0, 0);
       expect(north.z1, 0);
-      expect(north.x0, 2);
-      expect(north.x1, 4);
+      final along = SurfaceMounts.openingAlongCells(_item(id: 'window', w: 2));
+      expect(north.x1 - north.x0, closeTo(along, 0.05));
       expect(north.inwardZ, 1, reason: 'north wall faces into increasing z');
 
       final east = SurfaceMounts.spanFor(
@@ -133,6 +133,39 @@ void main() {
       expect(east.wall, RoomWall.east);
       expect(east.x0, 6, reason: 'seated on the far wall plane');
       expect(east.inwardX, -1);
+
+      // Along-wall length — not the thin footprint edge that crushed side walls.
+      final westWide = SurfaceMounts.spanFor(
+        _item(id: 'window', x: 0, y: 2, w: 0.25, h: 1.9),
+        gridCols: 6,
+        gridRows: 8,
+      );
+      expect(westWide.wall, RoomWall.west);
+      expect(westWide.z1 - westWide.z0, greaterThan(1.5));
+      expect(
+        westWide.z1 - westWide.z0,
+        closeTo(SurfaceMounts.openingAlongCells(_item(id: 'window', w: 0.25, h: 1.9)), 0.05),
+      );
+    });
+
+    test('snapToWall orients opening length along every wall', () {
+      final west = SurfaceMounts.snapToWall(
+        _item(id: 'window', x: 0, y: 2, w: 1.9, h: 0.25),
+        gridCols: 6,
+        gridRows: 8,
+      );
+      expect(west.gridX, 0);
+      expect(west.width, lessThan(west.height), reason: 'depth into room on E/W');
+      expect(west.height, greaterThan(1.5), reason: 'clear width along wall');
+
+      final north = SurfaceMounts.snapToWall(
+        _item(id: 'window', x: 2, y: 0, w: 0.25, h: 1.9),
+        gridCols: 6,
+        gridRows: 8,
+      );
+      expect(north.gridY, 0);
+      expect(north.width, greaterThan(1.5));
+      expect(north.height, lessThan(north.width));
     });
 
     test('every shipped preset fitting resolves to the wall it touches', () {

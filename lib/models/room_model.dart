@@ -217,7 +217,18 @@ class RoomPresets {
             _f(id: 'monitor', name: 'Gaming Monitor', iconName: 'monitor', category: 'ergonomics', gridX: deskX + pcFp.width, gridY: deskY, yawDegrees: 0, ergonomicsImpact: 0.7, cost: 329, description: 'Primary display — sits on the back edge of the desk.'),
             _f(id: 'lamp', name: 'RGB Desk Lamp', iconName: 'lamp', category: 'lighting', gridX: deskX + pcFp.width + monFp.width, gridY: deskY, lightingImpact: 0.45, cost: 49, description: 'Task light on the back corner — clear of the screen.'),
             _f(id: 'bed', name: 'Bed', iconName: 'bed', category: 'neutral', gridX: 3, gridY: 4, airflowImpact: -0.3, ergonomicsImpact: -0.2, cost: 599, description: 'Essential sleeping comfort zone; obstructs some airflow.'),
-            _f(id: 'ac', name: 'AC Unit', iconName: 'ac', category: 'airflow', gridX: 5, gridY: 0, airflowImpact: 0.9, cost: 450, description: 'Generates cold air streams to cool down the room rig.'),
+            // North wall — keep inside cols (catalogue AC width ~1.5 cells).
+            _f(
+              id: 'ac',
+              name: 'AC Unit',
+              iconName: 'ac',
+              category: 'airflow',
+              gridX: cols - GltfCatalog.orbitFootprint('ac').width,
+              gridY: 0,
+              airflowImpact: 0.9,
+              cost: 450,
+              description: 'Generates cold air streams to cool down the room rig.',
+            ),
             _f(id: 'window', name: 'Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, lightingImpact: 0.8, airflowImpact: 0.5, cost: 300, description: 'Provides natural light and ambient ventilation.'),
             _f(id: 'door', name: 'Entry Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, airflowImpact: 0.35, ergonomicsImpact: 0.2, cost: 220, description: 'Primary room entrance; keep approach path clear.'),
             // Fully inside the east wall (old gridX: 5 overflowed width past cols).

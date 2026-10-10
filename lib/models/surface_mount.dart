@@ -419,17 +419,22 @@ class SurfaceMounts {
     }
   }
 
-  /// Distance from the item to each wall, in grid units.
+  /// Distance from the item centre to each wall, in grid units.
+  ///
+  /// Centre-based (not AABB edges) so a north-wall AC whose catalogue width
+  /// slightly past the east edge still resolves to north, not east.
   static Map<RoomWall, double> wallDistances(
     FurnitureItem f, {
     required int gridCols,
     required int gridRows,
   }) {
+    final cx = f.gridX + f.width * 0.5;
+    final cy = f.gridY + f.height * 0.5;
     return {
-      RoomWall.north: f.gridY,
-      RoomWall.south: gridRows - (f.gridY + f.height),
-      RoomWall.west: f.gridX,
-      RoomWall.east: gridCols - (f.gridX + f.width),
+      RoomWall.north: cy,
+      RoomWall.south: gridRows - cy,
+      RoomWall.west: cx,
+      RoomWall.east: gridCols - cx,
     };
   }
 
@@ -466,19 +471,66 @@ class SurfaceMounts {
     return best;
   }
 
+  /// Clear opening length along the wall (cells).
+  ///
+  /// Uses the longer footprint edge so E/W walls are not crushed to thickness.
+  /// Catalogue clear width fills in for legacy 1×1 openings.
+  static double openingAlongCells(FurnitureItem f) {
+    final fromFootprint = math.max(f.width, f.height);
+    final fromCatalog = GltfCatalog.profileFor(f.iconName).footprintWidthCells;
+    if (fromCatalog != null && fromCatalog > 0) {
+      // Square legacy pads (old windows) → catalogue clear width.
+      if ((f.width - f.height).abs() < 0.2) return fromCatalog;
+      return math.max(fromCatalog, fromFootprint);
+    }
+    return fromFootprint;
+  }
+
+  /// Wall thickness / stand-off in cells (shorter footprint edge).
+  static double openingDepthCells(FurnitureItem f) {
+    final fromCatalog = GltfCatalog.profileFor(f.iconName).footprintDepthCells;
+    if (fromCatalog != null && fromCatalog > 0) return fromCatalog;
+    final depth = math.min(f.width, f.height);
+    return depth > 0.05 ? depth : 0.25;
+  }
+
+  /// Width = along-wall on N/S, depth into room on E/W — keeps Orbit spans correct.
+  static FurnitureItem orientOpeningFootprint(FurnitureItem f, RoomWall wall) {
+    final along = openingAlongCells(f);
+    final depth = openingDepthCells(f);
+    switch (wall) {
+      case RoomWall.north:
+      case RoomWall.south:
+        if ((f.width - along).abs() < 0.02 && (f.height - depth).abs() < 0.02) {
+          return f;
+        }
+        return f.copyWith(width: along, height: depth);
+      case RoomWall.east:
+      case RoomWall.west:
+        if ((f.width - depth).abs() < 0.02 && (f.height - along).abs() < 0.02) {
+          return f;
+        }
+        return f.copyWith(width: depth, height: along);
+    }
+  }
+
   static WallSpan spanFor(
     FurnitureItem f, {
     required int gridCols,
     required int gridRows,
   }) {
     final wall = nearestWall(f, gridCols: gridCols, gridRows: gridRows);
+    final along = openingAlongCells(f);
+    final cx = f.gridX + f.width * 0.5;
+    final cz = f.gridY + f.height * 0.5;
+    final half = along * 0.5;
     switch (wall) {
       case RoomWall.north:
         return WallSpan(
           wall: wall,
-          x0: f.gridX,
+          x0: (cx - half).clamp(0.0, gridCols.toDouble()),
           z0: 0,
-          x1: f.gridX + f.width,
+          x1: (cx + half).clamp(0.0, gridCols.toDouble()),
           z1: 0,
           inwardX: 0,
           inwardZ: 1,
@@ -486,9 +538,9 @@ class SurfaceMounts {
       case RoomWall.south:
         return WallSpan(
           wall: wall,
-          x0: f.gridX,
+          x0: (cx - half).clamp(0.0, gridCols.toDouble()),
           z0: gridRows.toDouble(),
-          x1: f.gridX + f.width,
+          x1: (cx + half).clamp(0.0, gridCols.toDouble()),
           z1: gridRows.toDouble(),
           inwardX: 0,
           inwardZ: -1,
@@ -497,9 +549,9 @@ class SurfaceMounts {
         return WallSpan(
           wall: wall,
           x0: 0,
-          z0: f.gridY,
+          z0: (cz - half).clamp(0.0, gridRows.toDouble()),
           x1: 0,
-          z1: f.gridY + f.height,
+          z1: (cz + half).clamp(0.0, gridRows.toDouble()),
           inwardX: 1,
           inwardZ: 0,
         );
@@ -507,9 +559,9 @@ class SurfaceMounts {
         return WallSpan(
           wall: wall,
           x0: gridCols.toDouble(),
-          z0: f.gridY,
+          z0: (cz - half).clamp(0.0, gridRows.toDouble()),
           x1: gridCols.toDouble(),
-          z1: f.gridY + f.height,
+          z1: (cz + half).clamp(0.0, gridRows.toDouble()),
           inwardX: -1,
           inwardZ: 0,
         );
@@ -529,17 +581,18 @@ class SurfaceMounts {
     }
 
     final wall = nearestWall(f, gridCols: gridCols, gridRows: gridRows, preferred: preferred);
+    final oriented = orientOpeningFootprint(f, wall);
     switch (wall) {
       case RoomWall.north:
-        return f.gridY == 0 ? f : f.copyWith(gridY: 0);
+        return oriented.gridY == 0 ? oriented : oriented.copyWith(gridY: 0);
       case RoomWall.south:
-        final y = gridRows - f.height;
-        return f.gridY == y ? f : f.copyWith(gridY: y);
+        final y = gridRows - oriented.height;
+        return oriented.gridY == y ? oriented : oriented.copyWith(gridY: y);
       case RoomWall.west:
-        return f.gridX == 0 ? f : f.copyWith(gridX: 0);
+        return oriented.gridX == 0 ? oriented : oriented.copyWith(gridX: 0);
       case RoomWall.east:
-        final x = gridCols - f.width;
-        return f.gridX == x ? f : f.copyWith(gridX: x);
+        final x = gridCols - oriented.width;
+        return oriented.gridX == x ? oriented : oriented.copyWith(gridX: x);
     }
   }
 }
