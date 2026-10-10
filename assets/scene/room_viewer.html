@@ -94,59 +94,108 @@
   const fill = new THREE.DirectionalLight(0x88c0ff, 0.18);
   fill.position.set(-6, 4, 4);
   scene.add(fill);
-  // Fallback room light when no lamp / ceiling fixture is placed.
-  const ceilingGlow = new THREE.PointLight(0xfff0d8, 1.1, 14, 1.6);
+  // Primary indoor shadow caster — always at ceiling height (not desk lamps).
+  const ceilingGlow = new THREE.PointLight(0xfff5e6, 1.35, 16, 1.35);
   ceilingGlow.castShadow = true;
   ceilingGlow.shadow.mapSize.set(1024, 1024);
-  ceilingGlow.shadow.bias = -0.0015;
-  ceilingGlow.shadow.normalBias = 0.02;
+  ceilingGlow.shadow.bias = -0.0008;
+  ceilingGlow.shadow.normalBias = 0.03;
   scene.add(ceilingGlow);
   const interiorLightRoot = new THREE.Group();
   scene.add(interiorLightRoot);
 
-  /** Kinds that act as indoor bulbs (shadow casters). */
-  const BULB_KINDS = {
-    lamp: { intensity: 1.35, distance: 5.5, heightFrac: 0.88, color: 0xffe6b8 },
-    floorlamp: { intensity: 1.5, distance: 7, heightFrac: 0.92, color: 0xfff0d0 },
-    ceilinglight: { intensity: 1.85, distance: 9, heightFrac: 0.15, color: 0xfff5e6 },
+  /** Local glow only — desk / floor lamps must not steal the shadow map. */
+  const LOCAL_LAMPS = {
+    lamp: { intensity: 0.85, distance: 3.2, heightFrac: 0.9, color: 0xffe6b8 },
+    floorlamp: { intensity: 1.0, distance: 4.5, heightFrac: 0.93, color: 0xfff0d0 },
   };
 
   function clearInteriorLights() {
     while (interiorLightRoot.children.length) {
       const c = interiorLightRoot.children[0];
+      if (c.target && c.target.parent) c.target.parent.remove(c.target);
       interiorLightRoot.remove(c);
-      if (c.dispose) c.dispose();
     }
   }
 
-  function makeBulbLight(cfg) {
-    const pl = new THREE.PointLight(cfg.color, cfg.intensity, cfg.distance, 1.7);
-    pl.castShadow = true;
-    pl.shadow.mapSize.set(512, 512);
-    pl.shadow.bias = -0.0015;
-    pl.shadow.normalBias = 0.025;
-    pl.shadow.camera.near = 0.08;
-    pl.shadow.camera.far = cfg.distance;
-    return pl;
+  function ceilingLightY() {
+    return Math.max(1.4, roomH - 0.1);
   }
 
-  /** Drive indoor shadows from placed bulbs; sun stays fill-only. */
+  function configureCeilingShadow(light) {
+    const reach = Math.max(roomH + 0.6, Math.max(roomW, roomD) * 1.15);
+    light.distance = reach;
+    light.castShadow = true;
+    light.shadow.mapSize.set(1024, 1024);
+    light.shadow.bias = -0.0008;
+    light.shadow.normalBias = 0.03;
+    light.shadow.camera.near = 0.12;
+    light.shadow.camera.far = reach;
+  }
+
+  /**
+   * Shadows always originate near the ceiling. Desk/floor lamps only add glow.
+   * Placed ceiling fixtures move the shadow origin to their XY at ceiling Y.
+   */
   function syncInteriorLights(items) {
     clearInteriorLights();
     const list = items || [];
-    let bulbCount = 0;
-    const maxShadows = 3;
+    const ceilY = ceilingLightY();
+    const ceilingFixtures = [];
+    const localLamps = [];
     for (const it of list) {
       const kind = (it.kind || '').toLowerCase();
-      const cfg = BULB_KINDS[kind];
-      const isEmit = it.emit === true || it.role === 'emitter' || !!cfg;
-      if (!cfg && !isEmit) continue;
-      // Heat / airflow emitters (PC, AC, fan) glow weakly but do not cast shadows.
-      if (!cfg) continue;
-      if (bulbCount >= maxShadows) break;
+      const mount = (it.mount || '').toLowerCase();
+      if (kind === 'ceilinglight' || mount === 'ceiling') {
+        ceilingFixtures.push(it);
+      } else if (LOCAL_LAMPS[kind]) {
+        localLamps.push({ it, kind });
+      }
+    }
+
+    let shadowSources = 0;
+    if (ceilingFixtures.length) {
+      ceilingGlow.visible = false;
+      ceilingGlow.castShadow = false;
+      ceilingGlow.intensity = 0;
+      for (const it of ceilingFixtures.slice(0, 2)) {
+        const wrap = furnitureRoot.children.find((c) => c.userData.itemId === it.id);
+        let x = +it.x || roomW * 0.5;
+        let z = +it.z || roomD * 0.5;
+        if (wrap) {
+          wrap.updateWorldMatrix(true, true);
+          const box = new THREE.Box3().setFromObject(wrap);
+          if (!box.isEmpty()) {
+            x = (box.min.x + box.max.x) * 0.5;
+            z = (box.min.z + box.max.z) * 0.5;
+          }
+        }
+        // Downward spot from true ceiling height — matches fixture elevation.
+        const spot = new THREE.SpotLight(0xfff5e6, 1.9, 0, Math.PI / 2.15, 0.45, 1.15);
+        spot.position.set(x, ceilY, z);
+        spot.target.position.set(x, 0.02, z);
+        configureCeilingShadow(spot);
+        spot.distance = Math.max(roomH + 0.8, Math.max(roomW, roomD) * 1.1);
+        spot.shadow.camera.far = spot.distance;
+        interiorLightRoot.add(spot);
+        interiorLightRoot.add(spot.target);
+        shadowSources++;
+      }
+    } else {
+      // No ceiling fixture — room fill still sits on the ceiling plane.
+      ceilingGlow.position.set(roomW * 0.5, ceilY, roomD * 0.5);
+      ceilingGlow.visible = true;
+      ceilingGlow.intensity = 1.35;
+      configureCeilingShadow(ceilingGlow);
+      shadowSources = 1;
+    }
+
+    // Task / floor lamps: local warm glow only (no castShadow).
+    for (const { it, kind } of localLamps.slice(0, 4)) {
+      const cfg = LOCAL_LAMPS[kind];
       const wrap = furnitureRoot.children.find((c) => c.userData.itemId === it.id);
       let x = +it.x || 0;
-      let y = (+it.y || 0) + (+it.h || 0.4) * (cfg.heightFrac || 0.8);
+      let y = (+it.y || 0) + (+it.h || 0.4) * cfg.heightFrac;
       let z = +it.z || 0;
       if (wrap) {
         wrap.updateWorldMatrix(true, true);
@@ -154,21 +203,16 @@
         if (!box.isEmpty()) {
           x = (box.min.x + box.max.x) * 0.5;
           z = (box.min.z + box.max.z) * 0.5;
-          y = box.min.y + (box.max.y - box.min.y) * (cfg.heightFrac || 0.8);
-          if (kind === 'ceilinglight') y = Math.min(y, roomH - 0.08);
+          y = box.min.y + (box.max.y - box.min.y) * cfg.heightFrac;
         }
       }
-      const pl = makeBulbLight(cfg);
+      const pl = new THREE.PointLight(cfg.color, cfg.intensity, cfg.distance, 2);
+      pl.castShadow = false;
       pl.position.set(x, y, z);
       interiorLightRoot.add(pl);
-      bulbCount++;
     }
-    const hasBulbs = bulbCount > 0;
-    ceilingGlow.visible = !hasBulbs;
-    ceilingGlow.castShadow = !hasBulbs;
-    ceilingGlow.intensity = hasBulbs ? 0 : 1.1;
-    // Keep a little outdoor wash; never let it own the shadow map.
-    sun.intensity = hasBulbs ? 0.22 : 0.35;
+
+    sun.intensity = shadowSources ? 0.2 : 0.35;
     sun.castShadow = false;
   }
 
@@ -388,7 +432,8 @@
     clearGroup(roomRoot);
     rebuildExterior(w, d);
     lookAt.set(w * 0.5, h * 0.32, d * 0.5);
-    ceilingGlow.position.set(w * 0.5, h - 0.15, d * 0.5);
+    ceilingGlow.position.set(w * 0.5, Math.max(1.4, h - 0.1), d * 0.5);
+    configureCeilingShadow(ceilingGlow);
     sun.position.set(w * 0.5 + 6, h + 10, d * 0.5 - 8);
     sun.castShadow = false;
 
@@ -700,9 +745,10 @@
 
     const n = (items || []).length;
     const withModel = (items || []).filter((i) => i.model).length;
-    const bulbs = interiorLightRoot.children.length;
-    hud.textContent = n + ' items · ' + withModel + ' GLBs · ' +
-      (bulbs ? bulbs + ' room bulbs' : 'ceiling fill') + ' · shadows indoor';
+    const ceilLit = ceilingGlow.visible ||
+      interiorLightRoot.children.some((c) => c.isSpotLight || (c.isPointLight && c.castShadow));
+    hud.textContent = n + ' items · ' + withModel + ' GLBs · shadows @ ceiling' +
+      (ceilLit ? '' : ' (pending)');
     return measuredCuts;
   }
 
