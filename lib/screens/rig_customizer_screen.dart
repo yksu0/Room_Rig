@@ -1107,6 +1107,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
   Widget _buildCanvas(AppState state) {
     if (_viewMode == _RigViewMode.model3D) {
+      final canMoveSelected = state.selectedFurniture != null &&
+          !state.selectedIsScanObject &&
+          state.canMoveFurniture(state.selectedFurniture!);
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
@@ -1132,12 +1135,119 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 pendingPreset: _pendingPreset,
                 showMiniMap: _showMiniMap,
                 focusToken: _focusToken,
+                moveMode: _rigMoveMode,
+                liveDrag: _dragItemId != null,
                 onPresetApplied: () {
                   if (_pendingPreset != null) {
                     setState(() => _pendingPreset = null);
                   }
                 },
+                onSelect: (id) {
+                  if (!state.canMoveFurnitureId(id)) {
+                    state.selectFurniture(id);
+                    setState(() => _rigMoveMode = false);
+                    return;
+                  }
+                  state.selectFurniture(id);
+                  setState(() => _rigMoveMode = true);
+                },
+                onDeselect: () {
+                  state.clearSelection();
+                  if (_rigMoveMode) setState(() => _rigMoveMode = false);
+                },
+                onDragStart: (id) {
+                  if (!state.canMoveFurnitureId(id)) return;
+                  state.selectFurniture(id);
+                  _dragItemId = id;
+                  _dragGrabOffset = null;
+                  state.beginFurnitureGesture();
+                  if (!_rigMoveMode) setState(() => _rigMoveMode = true);
+                },
+                onDrag: (id, floorX, floorY) {
+                  if (_dragItemId != id) return;
+                  if (!state.canMoveFurnitureId(id)) return;
+                  final matches = state.furniture.where((f) => f.id == id);
+                  if (matches.isEmpty) return;
+                  final item = matches.first;
+                  _dragGrabOffset ??=
+                      Offset(floorX - item.gridX, floorY - item.gridY);
+                  final grab = _dragGrabOffset!;
+                  state.moveFurniture(
+                    id,
+                    floorX - grab.dx,
+                    floorY - grab.dy,
+                  );
+                },
+                onDragEnd: (id) {
+                  if (_dragItemId != null) {
+                    state.endFurnitureGesture();
+                  }
+                  setState(() {
+                    _dragItemId = null;
+                    _dragGrabOffset = null;
+                  });
+                },
               ),
+              Positioned(
+                top: 8,
+                left: 10,
+                child: IgnorePointer(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(
+                      _rigMoveMode
+                          ? 'MOVE on · drag item · tap empty to exit'
+                          : 'Orbit · tap item · MOVE to drag',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              if (canMoveSelected || _rigMoveMode)
+                Positioned(
+                  top: 8,
+                  right: 10,
+                  child: Material(
+                    color: _rigMoveMode
+                        ? AppColors.cyan
+                        : AppColors.surface.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      key: const ValueKey('rig_model_move_mode'),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _rigMoveMode = !_rigMoveMode);
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          'MOVE',
+                          style: TextStyle(
+                            color:
+                                _rigMoveMode ? Colors.black : AppColors.cyan,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

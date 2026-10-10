@@ -6,7 +6,9 @@ import 'dart:ui_web' as ui_web;
 
 html.IFrameElement? _iframe;
 bool _registered = false;
+bool _messageHooked = false;
 void Function()? _onReady;
+void Function(Map<String, dynamic> data)? _onMessage;
 
 void registerRoomModelIFrameFactory() {
   if (_registered) return;
@@ -50,4 +52,31 @@ void setRoomModelScenePointerEvents(bool enabled) {
   final iframe = _iframe;
   if (iframe == null) return;
   iframe.style.pointerEvents = enabled ? 'auto' : 'none';
+}
+
+void setRoomModelSceneMessageHandler(
+  void Function(Map<String, dynamic> data)? handler,
+) {
+  _onMessage = handler;
+  if (_messageHooked) return;
+  _messageHooked = true;
+  html.window.onMessage.listen((html.MessageEvent event) {
+    final raw = event.data;
+    if (raw is! String) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return;
+      final data = Map<String, dynamic>.from(decoded);
+      final type = data['type'];
+      if (type is! String) return;
+      if (type == 'ready' ||
+          type == 'select' ||
+          type == 'deselect' ||
+          type == 'dragStart' ||
+          type == 'drag' ||
+          type == 'dragEnd') {
+        _onMessage?.call(data);
+      }
+    } catch (_) {}
+  });
 }

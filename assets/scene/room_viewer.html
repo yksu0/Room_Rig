@@ -930,15 +930,104 @@
 
   // Desktop: LMB orbit, RMB/MMB pan, wheel zoom.
   // Touch: 1-finger orbit, 2-finger pan + pinch zoom.
+  // MOVE mode: LMB on a mesh drags; tap selects / deselects.
   const activePtrs = new Map();
-  let gesture = null; // 'orbit' | 'pan' | 'panzoom'
+  let gesture = null; // 'orbit' | 'pan' | 'panzoom' | 'drag'
   let lastX = 0, lastY = 0;
   let lastMidX = 0, lastMidY = 0, lastPinch = 0;
+  let moveMode = false;
+  let dragId = null;
+  let pointerDownItemId = null;
+  let downX = 0, downY = 0;
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const _floorHit = new THREE.Vector3();
+
+  function postToFlutter(obj) {
+    const msg = JSON.stringify(obj);
+    try {
+      if (window.RoomRigChannel && RoomRigChannel.postMessage) {
+        RoomRigChannel.postMessage(msg);
+        return;
+      }
+    } catch (_) {}
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage(msg, '*');
+      }
+    } catch (_) {}
+  }
+
+  function pickItemId(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(rect.width, 1);
+    const h = Math.max(rect.height, 1);
+    ndc.x = ((clientX - rect.left) / w) * 2 - 1;
+    ndc.y = -((clientY - rect.top) / h) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    const hits = raycaster.intersectObjects(furnitureRoot.children, true);
+    for (let i = 0; i < hits.length; i++) {
+      let o = hits[i].object;
+      while (o && o !== furnitureRoot) {
+        if (o.userData && o.userData.itemId) return o.userData.itemId;
+        o = o.parent;
+      }
+    }
+    return null;
+  }
+
+  function floorHitMeters(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(rect.width, 1);
+    const h = Math.max(rect.height, 1);
+    ndc.x = ((clientX - rect.left) / w) * 2 - 1;
+    ndc.y = -((clientY - rect.top) / h) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
+    if (!raycaster.ray.intersectPlane(floorPlane, _floorHit)) return null;
+    return { x: _floorHit.x, z: _floorHit.z };
+  }
+
+  function updateItemPose(id, x, y, z, yawDeg) {
+    if (!id) return;
+    for (let i = 0; i < furnitureRoot.children.length; i++) {
+      const wrap = furnitureRoot.children[i];
+      if (wrap.userData.itemId !== id) continue;
+      if (x != null) wrap.position.x = +x;
+      if (y != null) wrap.position.y = +y;
+      if (z != null) wrap.position.z = +z;
+      if (yawDeg != null) wrap.rotation.y = THREE.MathUtils.degToRad(+yawDeg);
+      for (let j = 0; j < lastItems.length; j++) {
+        if (lastItems[j].id === id) {
+          if (x != null) lastItems[j].x = +x;
+          if (y != null) lastItems[j].y = +y;
+          if (z != null) lastItems[j].z = +z;
+          if (yawDeg != null) lastItems[j].yaw = +yawDeg;
+          break;
+        }
+      }
+      return;
+    }
+  }
+
+  function updateItemPoses(items) {
+    (items || []).forEach((it) => updateItemPose(it.id, it.x, it.y, it.z, it.yaw));
+  }
+
+  window.updateItemPose = updateItemPose;
+  window.updateItemPoses = updateItemPoses;
+  window.setMoveMode = function (on) {
+    moveMode = !!on;
+    hud.textContent = moveMode
+      ? 'MOVE · drag item · tap empty to exit'
+      : 'LMB orbit · RMB pan · scroll zoom';
+  };
 
   function ptrList() { return Array.from(activePtrs.values()); }
 
   function beginGesture() {
     const pts = ptrList();
+    if (gesture === 'drag' && pts.length === 1) return;
     if (pts.length === 1) {
       const btn = pts[0].button;
       // 0 = left orbit; 1 = middle pan; 2 = right pan (touch button is 0).
@@ -973,6 +1062,19 @@
   canvas.addEventListener('pointerdown', (e) => {
     activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button });
     try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    downX = e.clientX;
+    downY = e.clientY;
+    pointerDownItemId = (activePtrs.size === 1 && e.button === 0)
+      ? pickItemId(e.clientX, e.clientY)
+      : null;
+    if (moveMode && pointerDownItemId && activePtrs.size === 1 && e.button === 0) {
+      gesture = 'drag';
+      dragId = pointerDownItemId;
+      postToFlutter({ type: 'dragStart', id: dragId });
+      const floor = floorHitMeters(e.clientX, e.clientY);
+      if (floor) postToFlutter({ type: 'drag', id: dragId, x: floor.x, z: floor.z });
+      return;
+    }
     beginGesture();
   });
   canvas.addEventListener('pointermove', (e) => {
@@ -980,6 +1082,11 @@
     const prev = activePtrs.get(e.pointerId);
     activePtrs.set(e.pointerId, { x: e.clientX, y: e.clientY, button: prev.button });
     const pts = ptrList();
+    if (gesture === 'drag' && dragId && pts.length === 1) {
+      const floor = floorHitMeters(pts[0].x, pts[0].y);
+      if (floor) postToFlutter({ type: 'drag', id: dragId, x: floor.x, z: floor.z });
+      return;
+    }
     if (pts.length === 1 && gesture === 'orbit') {
       const dx = pts[0].x - lastX, dy = pts[0].y - lastY;
       lastX = pts[0].x; lastY = pts[0].y;
@@ -990,6 +1097,10 @@
       lastX = pts[0].x; lastY = pts[0].y;
       panLookAt(dx, dy);
     } else if (pts.length >= 2) {
+      if (gesture === 'drag') {
+        postToFlutter({ type: 'dragEnd', id: dragId });
+        dragId = null;
+      }
       if (gesture !== 'panzoom') beginGesture();
       const midX = (pts[0].x + pts[1].x) * 0.5;
       const midY = (pts[0].y + pts[1].y) * 0.5;
@@ -1003,7 +1114,21 @@
     }
   });
   function endPointer(e) {
+    const wasDrag = gesture === 'drag' && dragId;
+    const endedId = dragId;
+    const tapDist = Math.hypot(e.clientX - downX, e.clientY - downY);
+    const wasTap = !wasDrag && tapDist < 10 && e.button === 0;
     activePtrs.delete(e.pointerId);
+    if (wasDrag) {
+      postToFlutter({ type: 'dragEnd', id: endedId });
+      dragId = null;
+      gesture = null;
+    } else if (wasTap && activePtrs.size === 0) {
+      const hit = pickItemId(e.clientX, e.clientY);
+      if (hit) postToFlutter({ type: 'select', id: hit });
+      else postToFlutter({ type: 'deselect' });
+    }
+    pointerDownItemId = null;
     beginGesture();
   }
   canvas.addEventListener('pointerup', endPointer);
@@ -1038,6 +1163,7 @@
       }
       if (data.focusId) focusItem(data.focusId);
       if (data.miniMap != null) setMiniMap(!!data.miniMap);
+      if (data.moveMode != null) window.setMoveMode(!!data.moveMode);
       const measured = await setFurniture(data.items || []);
       // Second pass: shrink/grow shell cuts to the fitted GLB bounds.
       if (measured && measured.length) {
@@ -1064,7 +1190,25 @@
   window.focusItem = focusItem;
   window.setMiniMap = setMiniMap;
   window.addEventListener('message', (ev) => {
-    if (ev && ev.data) applyScene(ev.data);
+    if (!ev || ev.data == null) return;
+    let data = ev.data;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch (_) { return; }
+    }
+    if (!data || typeof data !== 'object') return;
+    if (data.type === 'updatePoses') {
+      updateItemPoses(data.items || []);
+      return;
+    }
+    if (data.type === 'setMoveMode') {
+      window.setMoveMode(!!data.moveMode);
+      return;
+    }
+    if (data.type === 'select' || data.type === 'deselect' ||
+        data.type === 'drag' || data.type === 'dragStart' || data.type === 'dragEnd') {
+      return;
+    }
+    applyScene(data);
   });
 
   Promise.all([

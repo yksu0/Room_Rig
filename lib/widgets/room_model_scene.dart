@@ -18,8 +18,8 @@ import 'room_model_scene_stub.dart'
 
 /// Interactive three.js room with Kenney CC0 furniture GLBs + textured shell.
 ///
-/// Used by Rig (Model view) and Bench layout previews. Editing still happens in
-/// 2D / orbit paint modes; this view is the high-fidelity visualization.
+/// Rig Model view can select / MOVE-drag via JS raycasts → [onSelect] /
+/// [onDrag*] → AppState. Bench previews leave those callbacks null.
 class RoomModelScene extends StatefulWidget {
   final RoomData room;
   final List<FurnitureItem> furniture;
@@ -32,6 +32,16 @@ class RoomModelScene extends StatefulWidget {
   final bool showMiniMap;
   final int focusToken;
   final VoidCallback? onPresetApplied;
+  /// When true, one-finger drag on a mesh moves it (camera orbit suppressed).
+  final bool moveMode;
+  /// While true, furniture pose changes push [updateItemPoses] instead of a full GLB reload.
+  final bool liveDrag;
+  final void Function(String id)? onSelect;
+  final VoidCallback? onDeselect;
+  final void Function(String id)? onDragStart;
+  /// Floor hit in grid cells (not item top-left). Parent applies grab offset.
+  final void Function(String id, double floorGridX, double floorGridY)? onDrag;
+  final void Function(String id)? onDragEnd;
 
   const RoomModelScene({
     super.key,
@@ -46,6 +56,13 @@ class RoomModelScene extends StatefulWidget {
     this.showMiniMap = false,
     this.focusToken = 0,
     this.onPresetApplied,
+    this.moveMode = false,
+    this.liveDrag = false,
+    this.onSelect,
+    this.onDeselect,
+    this.onDragStart,
+    this.onDrag,
+    this.onDragEnd,
   });
 
   @override
@@ -65,6 +82,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
   void initState() {
     super.initState();
     if (kIsWeb) {
+      platform.setRoomModelSceneMessageHandler(_handleViewerMessage);
       platform.createRoomModelIFrame(onReady: () {
         _ready = true;
         _pushScene();
@@ -80,6 +98,52 @@ class RoomModelSceneState extends State<RoomModelScene> {
     _initController();
   }
 
+  void _handleViewerMessage(Map<String, dynamic> data) {
+    final type = data['type'];
+    if (type == 'ready') {
+      _ready = true;
+      _pushScene();
+      return;
+    }
+    if (type == 'select') {
+      final id = data['id']?.toString();
+      if (id != null && id.isNotEmpty) widget.onSelect?.call(id);
+      return;
+    }
+    if (type == 'deselect') {
+      widget.onDeselect?.call();
+      return;
+    }
+    if (type == 'dragStart') {
+      final id = data['id']?.toString();
+      if (id != null && id.isNotEmpty) widget.onDragStart?.call(id);
+      return;
+    }
+    if (type == 'drag') {
+      final id = data['id']?.toString();
+      if (id == null || id.isEmpty) return;
+      final x = (data['x'] as num?)?.toDouble();
+      final z = (data['z'] as num?)?.toDouble();
+      if (x == null || z == null) return;
+      final floor = _metersToFloorCells(x, z);
+      widget.onDrag?.call(id, floor.$1, floor.$2);
+      return;
+    }
+    if (type == 'dragEnd') {
+      final id = data['id']?.toString();
+      if (id != null && id.isNotEmpty) widget.onDragEnd?.call(id);
+    }
+  }
+
+  /// Floor hit in meters → grid-cell coordinates (same space as Orbit unproject).
+  (double, double) _metersToFloorCells(double xMeters, double zMeters) {
+    final cols = widget.room.gridCols;
+    final rows = widget.room.gridRows;
+    final cellW = RoomScale.metersFromCells(cols) / cols;
+    final cellD = RoomScale.metersFromCells(rows) / rows;
+    return (xMeters / cellW, zMeters / cellD);
+  }
+
   Future<void> _initController() async {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -89,10 +153,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
         onMessageReceived: (msg) {
           try {
             final data = jsonDecode(msg.message) as Map<String, dynamic>;
-            if (data['type'] == 'ready') {
-              _ready = true;
-              _pushScene();
-            }
+            _handleViewerMessage(data);
           } catch (_) {}
         },
       )
@@ -149,16 +210,23 @@ class RoomModelSceneState extends State<RoomModelScene> {
   @override
   void didUpdateWidget(covariant RoomModelScene oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.room != widget.room ||
-        oldWidget.furniture != widget.furniture ||
-        oldWidget.selectedId != widget.selectedId ||
+    final furnitureChanged = oldWidget.furniture != widget.furniture;
+    final selectedChanged = oldWidget.selectedId != widget.selectedId;
+    final cameraOrShell = oldWidget.room != widget.room ||
         oldWidget.yaw != widget.yaw ||
         oldWidget.pitch != widget.pitch ||
         oldWidget.distance != widget.distance ||
         oldWidget.exploreChrome != widget.exploreChrome ||
         oldWidget.showMiniMap != widget.showMiniMap ||
         oldWidget.pendingPreset != widget.pendingPreset ||
-        oldWidget.focusToken != widget.focusToken) {
+        oldWidget.focusToken != widget.focusToken ||
+        oldWidget.moveMode != widget.moveMode;
+
+    if (widget.liveDrag && furnitureChanged && !cameraOrShell && !selectedChanged) {
+      _pushLivePoses();
+      return;
+    }
+    if (furnitureChanged || selectedChanged || cameraOrShell) {
       _pushScene();
     }
   }
@@ -332,6 +400,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
       'assetBase': GltfCatalog.sceneAssetBase,
       'exploreMode': 'orbit',
       'miniMap': widget.showMiniMap,
+      'moveMode': widget.moveMode,
       if (widget.yaw != null) 'yaw': widget.yaw,
       if (widget.pitch != null) 'pitch': widget.pitch,
       if (widget.distance != null) 'distance': widget.distance,
@@ -367,6 +436,61 @@ class RoomModelSceneState extends State<RoomModelScene> {
     } catch (e) {
       debugPrint('RoomModelScene js failed: $e');
     }
+  }
+
+  List<Map<String, dynamic>> _posePayloadItems() {
+    final cols = widget.room.gridCols;
+    final rows = widget.room.gridRows;
+    final roomW = RoomScale.metersFromCells(cols);
+    final roomD = RoomScale.metersFromCells(rows);
+    final cellW = roomW / cols;
+    final cellD = roomD / rows;
+    return widget.furniture.map((f) {
+      final mount = SurfaceMounts.of(
+        f,
+        gridCols: cols,
+        gridRows: rows,
+        furniture: widget.furniture,
+      );
+      double x = (f.gridX + f.width * 0.5) * cellW;
+      double y = 0;
+      double z = (f.gridY + f.height * 0.5) * cellD;
+      var yaw = f.yawDegrees;
+      if (mount.isWall && mount.span != null) {
+        final span = mount.span!;
+        final midX = (span.x0 + span.x1) * 0.5 * cellW;
+        final midZ = (span.z0 + span.z1) * 0.5 * cellD;
+        x = midX;
+        z = midZ;
+        y = mount.bottomY;
+        yaw = switch (span.wall) {
+          RoomWall.north => 0,
+          RoomWall.south => 180,
+          RoomWall.east => 90,
+          RoomWall.west => -90,
+        };
+      } else if (mount.isCeiling || mount.isDesk) {
+        y = mount.bottomY;
+      }
+      return {
+        'id': f.id,
+        'x': x,
+        'y': y,
+        'z': z,
+        'yaw': yaw,
+      };
+    }).toList();
+  }
+
+  Future<void> _pushLivePoses() async {
+    if (!_ready) return;
+    final items = _posePayloadItems();
+    if (kIsWeb) {
+      platform.pushRoomModelSceneWeb({'type': 'updatePoses', 'items': items});
+      return;
+    }
+    final json = jsonEncode(items);
+    await _runJs('window.updateItemPoses($json);');
   }
 
   Future<void> _pushScene() async {
@@ -455,6 +579,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
       );
     }
 
+    final interactive = widget.onSelect != null || widget.onDrag != null;
     final modeLabel = switch (widget.exploreChrome) {
       ChromeViewMode.orbit => 'ORBIT · 1-finger · pinch',
       ChromeViewMode.check => 'MODEL · exterior · mesh sims',
@@ -467,27 +592,29 @@ class RoomModelSceneState extends State<RoomModelScene> {
         fit: StackFit.expand,
         children: [
           sceneChild,
-          Positioned(
-            top: 8,
-            left: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppColors.surface.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Text(
-                modeLabel,
-                style: const TextStyle(
-                  color: AppColors.cyan,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.6,
+          if (!interactive)
+            Positioned(
+              top: 8,
+              left: 8,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.surface.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Text(
+                  modeLabel,
+                  style: const TextStyle(
+                    color: AppColors.cyan,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.6,
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
