@@ -4,6 +4,8 @@
 // Refs: Android Adaptive Apps SupportingPaneScaffold; MD3 window size classes.
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
+import '../room_model_scene_stub.dart'
+    if (dart.library.html) '../room_model_scene_web.dart' as platform;
 
 /// Named chrome regions shared by Rig and Bench (supporting-pane roles).
 enum ChromeRegion { view, tools, inspect, results }
@@ -88,20 +90,23 @@ class AdaptivePanelController {
     final panel = panelFor(region);
     if (panel == null) return;
     openRegion = region;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (ctx) {
-        final maxH = MediaQuery.sizeOf(ctx).height * (panel.preferTall ? 0.72 : 0.55);
-        return SafeArea(
-          child: ConstrainedBox(
+    // HtmlElementView on web steals clicks above Flutter sheets — park it.
+    platform.setRoomModelScenePointerEvents(false);
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: AppColors.surface,
+        isScrollControlled: true,
+        useSafeArea: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        ),
+        builder: (ctx) {
+          final maxH = MediaQuery.sizeOf(ctx).height * (panel.preferTall ? 0.78 : 0.6);
+          return ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxH),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,25 +121,29 @@ class AdaptivePanelController {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
-                      Icon(panel.icon, size: 18, color: AppColors.cyan),
+                      Icon(panel.icon, size: 20, color: AppColors.cyan),
                       const SizedBox(width: 8),
                       Text(
                         panel.title.toUpperCase(),
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: AppColors.cyan,
-                          fontSize: 11,
+                          fontSize: 12,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 1.6,
                         ),
                       ),
                       const Spacer(),
                       IconButton(
-                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Close',
+                        style: IconButton.styleFrom(
+                          minimumSize: const Size(44, 44),
+                          fixedSize: const Size(44, 44),
+                        ),
                         onPressed: () => Navigator.pop(ctx),
-                        icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.textMuted),
+                        icon: const Icon(Icons.close_rounded, size: 22, color: AppColors.textMuted),
                       ),
                     ],
                   ),
@@ -143,11 +152,14 @@ class AdaptivePanelController {
                 ],
               ),
             ),
-          ),
-        );
-      },
-    );
-    openRegion = null;
+          );
+        },
+      );
+    } finally {
+      openRegion = null;
+      // NavigatorObserver also toggles this; restore when this sheet was the only overlay.
+      platform.setRoomModelScenePointerEvents(true);
+    }
   }
 }
 
@@ -197,29 +209,34 @@ class _PanelTriggerChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: accent),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: TextStyle(
-                color: accent,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: accent),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -269,25 +286,30 @@ class ChromeViewModeChips extends StatelessWidget {
           runSpacing: 8,
           children: [
             for (final m in modes)
-              GestureDetector(
-                onTap: () => onChanged(m),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: selected == m
-                        ? AppColors.cyan.withValues(alpha: 0.15)
-                        : AppColors.card,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(
-                      color: selected == m ? AppColors.cyan : AppColors.border,
+              Material(
+                color: selected == m
+                    ? AppColors.cyan.withValues(alpha: 0.15)
+                    : AppColors.card,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                child: InkWell(
+                  onTap: () => onChanged(m),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      border: Border.all(
+                        color: selected == m ? AppColors.cyan : AppColors.border,
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    m.label,
-                    style: TextStyle(
-                      color: selected == m ? AppColors.cyan : AppColors.textMuted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+                    child: Text(
+                      m.label,
+                      style: TextStyle(
+                        color: selected == m ? AppColors.cyan : AppColors.textMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -334,21 +356,26 @@ class CameraPresetChips extends StatelessWidget {
       runSpacing: 8,
       children: [
         for (final p in CameraPreset.values)
-          GestureDetector(
-            onTap: () => onSelect(p),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Text(
-                p.label,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
+          Material(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: InkWell(
+              onTap: () => onSelect(p),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 44),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Text(
+                  p.label,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),

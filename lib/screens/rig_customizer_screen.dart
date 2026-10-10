@@ -298,7 +298,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
           ],
           const SizedBox(height: AppSpace.sm),
           SizedBox(
-            height: 44,
+            height: 48,
             child: Row(
               children: [
                 Expanded(
@@ -343,7 +343,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   Widget _buildCompactViewChips() {
     final mode = _chromeForViewMode(_viewMode);
     return Container(
-      height: 44,
+      height: 48,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -404,30 +404,41 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         ),
         const SizedBox(height: 16),
         SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Mini-map', style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
-          subtitle: const Text('Picture-in-picture floor plan', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          title: const Text('Mini-map', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+          subtitle: const Text('Picture-in-picture floor plan', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
           value: _showMiniMap,
           activeThumbColor: AppColors.cyan,
           onChanged: (v) => setState(() => _showMiniMap = v),
         ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.center_focus_strong_rounded, color: AppColors.cyan),
-          title: const Text('Focus selection', style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
-          subtitle: Text(
-            state.selectedFurniture == null ? 'Select an item first' : 'Orbit around ${state.selectedFurniture!.name}',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
+        Material(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: state.selectedFurniture == null
+                ? null
+                : () {
+                    setState(() {
+                      _focusToken++;
+                      _viewMode = _RigViewMode.model3D;
+                    });
+                    Navigator.of(context).maybePop();
+                  },
+            child: ListTile(
+              enabled: state.selectedFurniture != null,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              minVerticalPadding: 10,
+              leading: const Icon(Icons.center_focus_strong_rounded, color: AppColors.cyan, size: 24),
+              title: const Text('Focus selection', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+              subtitle: Text(
+                state.selectedFurniture == null
+                    ? 'Select an item first'
+                    : 'Orbit around ${state.selectedFurniture!.name}',
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+            ),
           ),
-          onTap: state.selectedFurniture == null
-              ? null
-              : () {
-                  setState(() {
-                    _focusToken++;
-                    _viewMode = _RigViewMode.model3D;
-                  });
-                  Navigator.of(context).maybePop();
-                },
         ),
       ],
     );
@@ -445,8 +456,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         ),
         const SizedBox(height: 8),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 10,
+          runSpacing: 10,
           children: [
             _ToolActionChip(
               label: 'Rotate −90°',
@@ -492,27 +503,40 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         ),
         const SizedBox(height: 12),
         SwitchListTile.adaptive(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Dimensions', style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
-          subtitle: const Text('Show cm labels on the plan', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          title: const Text('Dimensions', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+          subtitle: const Text('Show cm labels on the plan', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
           value: _showDimensions,
           activeThumbColor: AppColors.cyan,
           onChanged: (v) => setState(() => _showDimensions = v),
         ),
-        const SizedBox(height: 8),
-        _InvasiveEditToggle(
-          invasive: state.invasiveEdit,
-          onChanged: state.setInvasiveEdit,
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _InvasiveEditToggle(
+              invasive: state.invasiveEdit,
+              onChanged: state.setInvasiveEdit,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                state.invasiveEdit
+                    ? 'Invasive — wall mounts can move'
+                    : 'Non-invasive — wall mounts locked',
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         Text(
           'AUTO-RIG GOAL',
           style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.4),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: 10,
+          runSpacing: 10,
           children: [
             _GoalChip(
               label: 'Balanced',
@@ -561,16 +585,21 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         Row(
           children: [
             Expanded(
               child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(64, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                ),
                 onPressed: () {
                   Navigator.of(ctx).maybePop();
                   _runAutoRig(context, state);
                 },
-                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                icon: const Icon(Icons.auto_awesome_rounded, size: 20),
                 label: const Text('Run Auto-Rig'),
               ),
             ),
@@ -578,11 +607,15 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               const SizedBox(width: 8),
               IconButton(
                 tooltip: 'Sample on Bench',
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(48, 48),
+                  fixedSize: const Size(48, 48),
+                ),
                 onPressed: () {
                   Navigator.of(ctx).maybePop();
                   _openSampleRoom(state);
                 },
-                icon: const Icon(Icons.science_rounded, color: AppColors.amber),
+                icon: const Icon(Icons.science_rounded, color: AppColors.amber, size: 22),
               ),
             ],
           ],
@@ -604,19 +637,30 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.list_alt_rounded, color: AppColors.cyan),
-          title: const Text('Room items', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
-          subtitle: Text(
-            '${state.furniture.length} pieces',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+        Material(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              Navigator.of(ctx).maybePop();
+              _scaffoldKey.currentState?.openEndDrawer();
+            },
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              minVerticalPadding: 12,
+              leading: const Icon(Icons.list_alt_rounded, color: AppColors.cyan, size: 26),
+              title: const Text(
+                'Room items',
+                style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+              subtitle: Text(
+                '${state.furniture.length} pieces',
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 26),
+            ),
           ),
-          trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
-          onTap: () {
-            Navigator.of(ctx).maybePop();
-            _scaffoldKey.currentState?.openEndDrawer();
-          },
         ),
         if (state.layoutConflicts.isNotEmpty) ...[
           const SizedBox(height: 8),
@@ -675,16 +719,20 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
           'other ranked layouts for the same inventory.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
           TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
             onPressed: () => Navigator.of(ctx).pop('alternate'),
             child: const Text('Try alternate'),
           ),
-          TextButton(
+          FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size(88, 44)),
             onPressed: () => Navigator.of(ctx).pop('best'),
             child: const Text('Run best'),
           ),
@@ -2996,21 +3044,26 @@ class _InvasiveEditToggle extends StatelessWidget {
       message: invasive
           ? 'Invasive — wall mounts can move'
           : 'Non-invasive — wall mounts locked',
-      child: GestureDetector(
-        onTap: () => onChanged(!invasive),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: accent.withValues(alpha: 0.7)),
-          ),
-          child: Icon(
-            invasive ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
-            size: 18,
-            color: accent,
+      child: Material(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: () => onChanged(!invasive),
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: accent.withValues(alpha: 0.7)),
+            ),
+            child: Icon(
+              invasive ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
+              size: 22,
+              color: accent,
+            ),
           ),
         ),
       ),
@@ -3441,29 +3494,34 @@ class _ToolActionChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Opacity(
       opacity: enabled ? 1 : 0.4,
-      child: GestureDetector(
-        onTap: enabled ? onTap : null,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: AppColors.cyan),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+      child: Material(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: AppColors.cyan),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -3572,22 +3630,28 @@ class _GoalChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: active ? color.withValues(alpha: 0.16) : AppColors.card,
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: active ? color : AppColors.border),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? color : AppColors.textSecondary,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+    return Material(
+      color: active ? color.withValues(alpha: 0.16) : AppColors.card,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: active ? color : AppColors.border),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? color : AppColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ),
