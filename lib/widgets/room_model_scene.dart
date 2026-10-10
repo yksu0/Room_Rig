@@ -224,16 +224,16 @@ class RoomModelSceneState extends State<RoomModelScene> {
 
         final midX = (span.x0 + span.x1) * 0.5 * cellW;
         final midZ = (span.z0 + span.z1) * 0.5 * cellD;
-        final insetM = profile.wallCut == WallCutKind.through
-            ? 0.04
-            : mount.protrusion * (alongIsX ? cellD : cellW) * 0.28;
+        // Through openings sit slightly inland; niches sit on the wall face and
+        // room_viewer seats the mesh back into the cut (see seatNicheAgainstWall).
+        final insetM = profile.wallCut == WallCutKind.through ? 0.04 : 0.0;
         x = midX + span.inwardX * insetM;
         z = midZ + span.inwardZ * insetM;
         y = mount.bottomY;
         itemW = clearAlong;
         itemD = profile.wallCut == WallCutKind.through
             ? 0.14
-            : (0.12 + mount.protrusion * 0.12).clamp(0.1, 0.4);
+            : (profile.targetDepthMeters ?? 0.12).clamp(0.08, 0.28);
         yaw = switch (span.wall) {
           RoomWall.north => 0,
           RoomWall.south => 180,

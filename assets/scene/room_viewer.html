@@ -549,6 +549,19 @@
   }
 
   /**
+   * Wall meshes face local +Z (into the room). After recenter, the back face
+   * sits at -halfDepth — but wrap is already on the wall, so niches floated.
+   * Slide so the back rests at -recess (slightly into the plaster/niche).
+   */
+  function seatNicheAgainstWall(root, recessMeters) {
+    root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(root);
+    if (!isFinite(box.min.z)) return;
+    const recess = recessMeters != null ? +recessMeters : 0.04;
+    root.position.z += (-recess) - box.min.z;
+  }
+
+  /**
    * mode from MeshProfile.fitMode:
    *   'uniform' | 'width' | 'height' | 'wallOpening'
    * Targets come from the Dart catalog (metres) — not per-kind hardcodes here.
@@ -591,6 +604,10 @@
     }
     if (biasDeg) model.rotation.y += THREE.MathUtils.degToRad(biasDeg);
     fitObject(model, tw, td, th, mode);
+    // Niche HVAC (AC / vents): hug the wall instead of hovering at bbox center.
+    if (mount === 'wall' && String(it.cutKind || '').toLowerCase() === 'niche') {
+      seatNicheAgainstWall(model, it.wallRecess != null ? +it.wallRecess : 0.04);
+    }
   }
 
   function enableShadows(obj, cast) {
