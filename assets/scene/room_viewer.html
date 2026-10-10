@@ -549,16 +549,26 @@
   }
 
   /**
-   * Wall meshes face local +Z (into the room). After recenter, the back face
-   * sits at -halfDepth — but wrap is already on the wall, so niches floated.
-   * Slide so the back rests at -recess (slightly into the plaster/niche).
+   * Seat a niche HVAC wrap so its room-facing AABB face is only [proud] metres
+   * into the room. Uses world bounds vs the real wall plane — Sketchfab vents
+   * often have depth on the wrong local axis, so local-Z seating still floated.
    */
-  function seatNicheAgainstWall(root, recessMeters) {
-    root.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(root);
-    if (!isFinite(box.min.z)) return;
-    const recess = recessMeters != null ? +recessMeters : 0.04;
-    root.position.z += (-recess) - box.min.z;
+  function seatNicheFlushToWall(wrap, wall, proudMeters) {
+    const proud = proudMeters != null ? +proudMeters : 0.012;
+    wrap.updateWorldMatrix(true, true);
+    const box = new THREE.Box3().setFromObject(wrap);
+    if (!isFinite(box.min.x) || box.isEmpty()) return;
+    if (wall === 'north') {
+      // Interior face z=0, room +Z → front is max.z
+      wrap.position.z += proud - box.max.z;
+    } else if (wall === 'south') {
+      // Interior face z=roomD, room -Z → front is min.z
+      wrap.position.z += (roomD - proud) - box.min.z;
+    } else if (wall === 'west') {
+      wrap.position.x += proud - box.max.x;
+    } else if (wall === 'east') {
+      wrap.position.x += (roomW - proud) - box.min.x;
+    }
   }
 
   /**
@@ -604,10 +614,6 @@
     }
     if (biasDeg) model.rotation.y += THREE.MathUtils.degToRad(biasDeg);
     fitObject(model, tw, td, th, mode);
-    // Niche HVAC (AC / vents): hug the wall instead of hovering at bbox center.
-    if (mount === 'wall' && String(it.cutKind || '').toLowerCase() === 'niche') {
-      seatNicheAgainstWall(model, it.wallRecess != null ? +it.wallRecess : 0.04);
-    }
   }
 
   function enableShadows(obj, cast) {
@@ -704,6 +710,12 @@
       }
       if (!model) model = placeholderMesh(it.kind || 'box', fitW, fitD, h);
       wrap.add(model);
+      furnitureRoot.add(wrap);
+      // After parenting: pull niche grilles flush to the plaster (world AABB).
+      if (mount === 'wall' && it.wall && String(it.cutKind || '').toLowerCase() === 'niche') {
+        const proud = it.wallProud != null ? +it.wallProud : 0.012;
+        seatNicheFlushToWall(wrap, it.wall, proud);
+      }
 
       if (it.selected) {
         const ring = new THREE.Mesh(
@@ -714,7 +726,6 @@
         ring.position.y = 0.015;
         wrap.add(ring);
       }
-      furnitureRoot.add(wrap);
 
       // After fit, size the shell hole from the real mesh bounds.
       if (mount === 'wall' && it.wall && (it.opening || it.cutKind)) {

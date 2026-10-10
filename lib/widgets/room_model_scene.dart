@@ -293,7 +293,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
         final midX = (span.x0 + span.x1) * 0.5 * cellW;
         final midZ = (span.z0 + span.z1) * 0.5 * cellD;
         // Through openings sit slightly inland; niches sit on the wall face and
-        // room_viewer seats the mesh back into the cut (see seatNicheAgainstWall).
+        // room_viewer seats the mesh flush via world AABB (seatNicheFlushToWall).
         final insetM = profile.wallCut == WallCutKind.through ? 0.04 : 0.0;
         x = midX + span.inwardX * insetM;
         z = midZ + span.inwardZ * insetM;
@@ -349,6 +349,8 @@ class RoomModelSceneState extends State<RoomModelScene> {
           'glass': profile.isGlass,
           'cutKind': profile.cutsWall ? profile.wallCut.name : null,
           'lightTransmit': profile.lightTransmit,
+          // How far the niche grille may stand proud of the plaster (metres).
+          if (profile.wallCut == WallCutKind.niche) 'wallProud': 0.01,
           ...profile.fitPayload(),
           // Wall openings: clear W×H, thin D; alignFoot rotates long-Z Kenney slabs.
           'fit': MeshFitMode.wallOpening.name,
