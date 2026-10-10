@@ -17,7 +17,7 @@ import 'lighting_field_painter.dart';
 import 'room_icons.dart';
 
 enum _LightStep { layout, simulate, results }
-enum _View { twoD, threeD }
+enum _View { twoD, threeD, compare }
 
 class LightingBenchPanel extends StatefulWidget {
   final ValueChanged<bool>? onOrbitDraggingChanged;
@@ -87,6 +87,8 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       roomFurniture: state.committedFurniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
+      weights: state.optimizeWeights,
+      alternateIndex: state.benchAlternateCursor,
     );
     _layouts = layouts;
     _myRoomSim = LightingSimulator.build(furniture: layouts.myRoom, optimized: false);
@@ -120,7 +122,14 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
     );
-    if (_layouts != null && fp == _layouts!.fingerprint) return;
+    if (benchLayoutsInSync(
+      _layouts,
+      furnitureFingerprint: fp,
+      weightsCacheKey: state.optimizeWeights.cacheKey,
+      alternateCursor: state.benchAlternateCursor,
+    )) {
+      return;
+    }
     _recompute(state, resetStep: false);
   }
 
@@ -201,12 +210,12 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       _step = _LightStep.simulate;
       _simVariant = BenchLayoutKind.myRoom;
     });
-    for (int i = 1; i <= 20; i++) {
-      await Future.delayed(const Duration(milliseconds: 90));
+    for (int i = 1; i <= 10; i++) {
+      await Future.delayed(const Duration(milliseconds: 45));
       if (!mounted) return;
       setState(() {
-        _progress = i / 20;
-        if (i == 10) _simVariant = BenchLayoutKind.improved;
+        _progress = i / 10;
+        if (i == 5) _simVariant = BenchLayoutKind.improved;
       });
     }
     if (!mounted) return;
@@ -330,6 +339,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
+          includeSample: _layoutVariant == BenchLayoutKind.sample,
         ),
         BenchViewChips(
           children: [
@@ -345,7 +355,23 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
               color: AppColors.lightingColor,
               onTap: () => setState(() => _roomView = _View.threeD),
             ),
+            BenchChip(
+              label: 'Compare',
+              selected: _roomView == _View.compare,
+              color: AppColors.lightingColor,
+              onTap: () => setState(() => _roomView = _View.compare),
+            ),
           ],
+        ),
+        BenchAutoRigMixBar(
+          layouts: _layouts,
+          onTryAlternate: () {
+            context.read<AppState>().cycleBenchAlternate();
+            setState(() {
+              _layoutVariant = BenchLayoutKind.improved;
+              _roomView = _View.compare;
+            });
+          },
         ),
         const SizedBox(height: 12),
         GlassCard(
@@ -353,96 +379,119 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                switch (_layoutVariant) {
-                  BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
-                      ? 'Reference room — your Rig is empty'
-                      : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                  BenchLayoutKind.improved => 'Improved — your room, Auto-Rig layout',
-                  BenchLayoutKind.sample => 'Sample room — daylight blocked, lamp misplaced',
-                },
-                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 14),
+                _roomView == _View.compare
+                    ? 'My Room vs Improved — same Auto-Rig mix as Rig'
+                    : switch (_layoutVariant) {
+                        BenchLayoutKind.myRoom =>
+                          (_layouts?.fellBackToSample ?? false)
+                              ? 'Reference room — your Rig is empty'
+                              : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
+                        BenchLayoutKind.improved =>
+                          _layouts?.improvedCaption ??
+                              'Improved — your room, Auto-Rig layout',
+                        BenchLayoutKind.sample =>
+                          'Sample room — daylight blocked, lamp misplaced',
+                      },
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
               ),
               const SizedBox(height: 12),
-              SizedBox(
-                height: 280,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: ColoredBox(
-                    color: AppColors.surface,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      child: KeyedSubtree(
-                        key: ValueKey(
-                          '${_layoutVariant.name}_${_roomView.name}_${_layouts?.fingerprint ?? ''}',
-                        ),
-                        child: _roomView == _View.twoD
-                            ? LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final size = Size(constraints.maxWidth, constraints.maxHeight);
-                                  return GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTapDown: (details) {
-                                      final hit = BenchRoom2DGeometry.hitTest(
-                                        local: details.localPosition,
-                                        size: size,
-                                        gridCols: room.gridCols,
-                                        gridRows: room.gridRows,
-                                        furniture: furniture,
-                                      );
-                                      HapticFeedback.selectionClick();
-                                      setState(() {
-                                        if (hit == null || _selectedFurnitureId == hit.id) {
-                                          _selectedFurnitureId = null;
-                                        } else {
-                                          _selectedFurnitureId = hit.id;
-                                        }
-                                      });
-                                    },
-                                    child: CustomPaint(
-                                      painter: BenchRoom2DPainter(
-                                        gridCols: room.gridCols,
-                                        gridRows: room.gridRows,
-                                        furniture: furniture,
-                                        selectedId: _selectedFurnitureId,
+              if (_roomView == _View.compare)
+                BenchSideBySidePlans(
+                  gridCols: room.gridCols,
+                  gridRows: room.gridRows,
+                  myRoom: _furnitureFor(BenchLayoutKind.myRoom),
+                  improved: _furnitureFor(BenchLayoutKind.improved),
+                  accentColor: AppColors.lightingColor,
+                )
+              else
+                SizedBox(
+                  height: 280,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: ColoredBox(
+                      color: AppColors.surface,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        child: KeyedSubtree(
+                          key: ValueKey(
+                            '${_layoutVariant.name}_${_roomView.name}_${_layouts?.fingerprint ?? ''}_${_layouts?.requestedAlternateIndex ?? 0}',
+                          ),
+                          child: _roomView == _View.twoD
+                              ? LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final size = Size(
+                                      constraints.maxWidth,
+                                      constraints.maxHeight,
+                                    );
+                                    return GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTapDown: (details) {
+                                        final hit = BenchRoom2DGeometry.hitTest(
+                                          local: details.localPosition,
+                                          size: size,
+                                          gridCols: room.gridCols,
+                                          gridRows: room.gridRows,
+                                          furniture: furniture,
+                                        );
+                                        HapticFeedback.selectionClick();
+                                        setState(() {
+                                          if (hit == null ||
+                                              _selectedFurnitureId == hit.id) {
+                                            _selectedFurnitureId = null;
+                                          } else {
+                                            _selectedFurnitureId = hit.id;
+                                          }
+                                        });
+                                      },
+                                      child: CustomPaint(
+                                        painter: BenchRoom2DPainter(
+                                          gridCols: room.gridCols,
+                                          gridRows: room.gridRows,
+                                          furniture: furniture,
+                                          selectedId: _selectedFurnitureId,
+                                        ),
+                                        child: const SizedBox.expand(),
                                       ),
-                                      child: const SizedBox.expand(),
+                                    );
+                                  },
+                                )
+                              : _orbit(
+                                  key: const ValueKey('lighting_layout_orbit'),
+                                  resetNonce: _layoutOrbitResetNonce,
+                                  onDoubleTap: () {
+                                    HapticFeedback.lightImpact();
+                                    setState(() => _layoutOrbitResetNonce++);
+                                  },
+                                  lookAtX: room.gridCols * 0.5,
+                                  lookAtZ: room.gridRows * 0.5,
+                                  roomWidth: room.gridCols.toDouble(),
+                                  roomDepth: room.gridRows.toDouble(),
+                                  builder: (cam) => CustomPaint(
+                                    painter: BenchRoom3DPainter(
+                                      roomWidth: room.gridCols.toDouble(),
+                                      roomDepth: room.gridRows.toDouble(),
+                                      roomHeight: 2.8,
+                                      gridCols: room.gridCols,
+                                      gridRows: room.gridRows,
+                                      yaw: cam.yaw,
+                                      pitch: cam.pitch,
+                                      distance: cam.distance,
+                                      lookAtX: cam.lookAtX,
+                                      lookAtZ: cam.lookAtZ,
+                                      furniture: furniture,
                                     ),
-                                  );
-                                },
-                              )
-                            : _orbit(
-                                key: const ValueKey('lighting_layout_orbit'),
-                                resetNonce: _layoutOrbitResetNonce,
-                                onDoubleTap: () {
-                                  HapticFeedback.lightImpact();
-                                  setState(() => _layoutOrbitResetNonce++);
-                                },
-                                lookAtX: room.gridCols * 0.5,
-                                lookAtZ: room.gridRows * 0.5,
-                                roomWidth: room.gridCols.toDouble(),
-                                roomDepth: room.gridRows.toDouble(),
-                                builder: (cam) => CustomPaint(
-                                  painter: BenchRoom3DPainter(
-                                    roomWidth: room.gridCols.toDouble(),
-                                    roomDepth: room.gridRows.toDouble(),
-                                    roomHeight: 2.8,
-                                    gridCols: room.gridCols,
-                                    gridRows: room.gridRows,
-                                    yaw: cam.yaw,
-                                    pitch: cam.pitch,
-                                    distance: cam.distance,
-                                    lookAtX: cam.lookAtX,
-                                    lookAtZ: cam.lookAtZ,
-                                    furniture: furniture,
+                                    child: const SizedBox.expand(),
                                   ),
-                                  child: const SizedBox.expand(),
                                 ),
-                              ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
               if (_selectedFurnitureId != null) ...[
                 const SizedBox(height: 10),
                 Builder(

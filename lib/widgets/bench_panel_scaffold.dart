@@ -5,6 +5,7 @@ import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
 import 'benchmark_validation_card.dart';
+import 'bench_room_views.dart';
 import 'chrome/bench_results_chrome.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
@@ -168,6 +169,108 @@ class BenchViewChips extends StatelessWidget {
         spacing: 8,
         runSpacing: 8,
         children: children,
+      ),
+    );
+  }
+}
+
+/// True when Bench layouts already match the live Rig furniture + weight mix.
+bool benchLayoutsInSync(BenchLayouts? layouts, {
+  required String furnitureFingerprint,
+  required String weightsCacheKey,
+  required int alternateCursor,
+}) {
+  if (layouts == null) return false;
+  return furnitureFingerprint == layouts.fingerprint &&
+      weightsCacheKey == layouts.weightsCacheKey &&
+      alternateCursor == layouts.requestedAlternateIndex;
+}
+
+/// Side-by-side My Room | Improved floor plans (replaces the old scrub compare).
+class BenchSideBySidePlans extends StatelessWidget {
+  final int gridCols;
+  final int gridRows;
+  final List<FurnitureItem> myRoom;
+  final List<FurnitureItem> improved;
+  final Color accentColor;
+
+  const BenchSideBySidePlans({
+    super.key,
+    required this.gridCols,
+    required this.gridRows,
+    required this.myRoom,
+    required this.improved,
+    this.accentColor = AppColors.cyan,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 280,
+      child: Row(
+        children: [
+          Expanded(
+            child: _pane(
+              label: 'My Room',
+              color: AppColors.cyan,
+              furniture: myRoom,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _pane(
+              label: 'Improved',
+              color: AppColors.green,
+              furniture: improved,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pane({
+    required String label,
+    required Color color,
+    required List<FurnitureItem> furniture,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: ColoredBox(
+        color: AppColors.surface,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CustomPaint(
+              painter: BenchRoom2DPainter(
+                gridCols: gridCols,
+                gridRows: gridRows,
+                furniture: furniture,
+              ),
+              child: const SizedBox.expand(),
+            ),
+            Positioned(
+              left: 8,
+              top: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: color.withValues(alpha: 0.7)),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

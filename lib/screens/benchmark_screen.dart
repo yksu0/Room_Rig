@@ -26,7 +26,7 @@ import '../widgets/room_icons.dart';
 import '../widgets/spatial_bench_panel.dart';
 
 enum _AirflowStep { layout, simulate, results }
-enum _RoomViewMode { twoD, threeD }
+enum _RoomViewMode { twoD, threeD, compare }
 
 class BenchmarkScreen extends StatefulWidget {
   const BenchmarkScreen({super.key});
@@ -215,11 +215,14 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
     );
-    final same = _layouts != null &&
-        fp == _layouts!.fingerprint &&
-        state.optimizeWeights.cacheKey == _layouts!.weightsCacheKey &&
-        state.benchAlternateCursor == _layouts!.requestedAlternateIndex;
-    if (same) return;
+    if (benchLayoutsInSync(
+      _layouts,
+      furnitureFingerprint: fp,
+      weightsCacheKey: state.optimizeWeights.cacheKey,
+      alternateCursor: state.benchAlternateCursor,
+    )) {
+      return;
+    }
     _recomputeLayouts(state, resetStep: false);
   }
 
@@ -236,12 +239,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       _layoutVariant = BenchLayoutKind.myRoom;
     });
 
-    for (int i = 1; i <= 24; i++) {
-      await Future.delayed(const Duration(milliseconds: 90));
+    for (int i = 1; i <= 10; i++) {
+      await Future.delayed(const Duration(milliseconds: 45));
       if (!mounted) return;
       setState(() {
-        _runProgress = i / 24;
-        if (i == 10) {
+        _runProgress = i / 10;
+        if (i == 5) {
           _simVariant = BenchLayoutKind.improved;
           _layoutVariant = BenchLayoutKind.improved;
         }
@@ -669,6 +672,13 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               AppColors.green,
               () => _setLayoutVariant(BenchLayoutKind.improved),
             ),
+            if (_layoutVariant == BenchLayoutKind.sample)
+              _chip(
+                'Sample',
+                true,
+                AppColors.amber,
+                () => _setLayoutVariant(BenchLayoutKind.sample),
+              ),
           ],
         ),
         const SizedBox(height: 8),
@@ -682,13 +692,22 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             _chip('3D', _roomViewMode == _RoomViewMode.threeD, AppColors.cyan, () {
               setState(() => _roomViewMode = _RoomViewMode.threeD);
             }),
+            _chip(
+              'Compare',
+              _roomViewMode == _RoomViewMode.compare,
+              AppColors.cyan,
+              () => setState(() => _roomViewMode = _RoomViewMode.compare),
+            ),
           ],
         ),
         BenchAutoRigMixBar(
           layouts: _layouts,
           onTryAlternate: () {
             context.read<AppState>().cycleBenchAlternate();
-            setState(() => _layoutVariant = BenchLayoutKind.improved);
+            setState(() {
+              _layoutVariant = BenchLayoutKind.improved;
+              _roomViewMode = _RoomViewMode.compare;
+            });
           },
         ),
         const SizedBox(height: 12),
@@ -702,14 +721,18 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      switch (_layoutVariant) {
-                        BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
-                            ? 'Reference sample — Rig is empty (not your room)'
-                            : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                        BenchLayoutKind.improved =>
-                          _layouts?.improvedCaption ?? 'Improved · Auto-Rig',
-                        BenchLayoutKind.sample => 'Sample room — AC in a corner, weak coverage',
-                      },
+                      _roomViewMode == _RoomViewMode.compare
+                          ? 'My Room vs Improved — same Auto-Rig mix as Rig'
+                          : switch (_layoutVariant) {
+                              BenchLayoutKind.myRoom =>
+                                (_layouts?.fellBackToSample ?? false)
+                                    ? 'Reference sample — Rig is empty (not your room)'
+                                    : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
+                              BenchLayoutKind.improved =>
+                                _layouts?.improvedCaption ?? 'Improved · Auto-Rig',
+                              BenchLayoutKind.sample =>
+                                'Sample room — AC in a corner, weak coverage',
+                            },
                       style: const TextStyle(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w700,
@@ -720,40 +743,48 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              SizedBox(
-                height: 300,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: ColoredBox(
-                    color: AppColors.surface,
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 220),
-                      child: KeyedSubtree(
-                        key: ValueKey(
-                          '${_layoutVariant.name}_${_roomViewMode.name}_${_layouts?.fingerprint ?? ''}',
-                        ),
-                        child: _roomViewMode == _RoomViewMode.twoD
-                            ? _buildInteractive2DRoom(
-                                gridCols: room.gridCols,
-                                gridRows: room.gridRows,
-                                furniture: furniture,
-                              )
-                            : BenchOrbitShell(
-                                key: const ValueKey('bench_airflow_layout_orbit'),
-                                initialYaw: _defaultYaw,
-                                initialPitch: _defaultPitch,
-                                initialDistance: _defaultDistance,
-                                initialLookAtX: room.gridCols * 0.5,
-                                initialLookAtZ: room.gridRows * 0.5,
-                                roomWidth: room.gridCols.toDouble(),
-                                roomDepth: room.gridRows.toDouble(),
-                                resetNonce: _layoutOrbitResetNonce,
-                                onDoubleTap: () {
-                                  HapticFeedback.lightImpact();
-                                  setState(() => _layoutOrbitResetNonce++);
-                                },
-                                onDragChanged: _setOrbitDragging,
-                                builder: (cam) => CustomPaint(
+              if (_roomViewMode == _RoomViewMode.compare)
+                BenchSideBySidePlans(
+                  gridCols: room.gridCols,
+                  gridRows: room.gridRows,
+                  myRoom: _furnitureFor(BenchLayoutKind.myRoom),
+                  improved: _furnitureFor(BenchLayoutKind.improved),
+                )
+              else
+                SizedBox(
+                  height: 300,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: ColoredBox(
+                      color: AppColors.surface,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        child: KeyedSubtree(
+                          key: ValueKey(
+                            '${_layoutVariant.name}_${_roomViewMode.name}_${_layouts?.fingerprint ?? ''}_${_layouts?.requestedAlternateIndex ?? 0}',
+                          ),
+                          child: _roomViewMode == _RoomViewMode.twoD
+                              ? _buildInteractive2DRoom(
+                                  gridCols: room.gridCols,
+                                  gridRows: room.gridRows,
+                                  furniture: furniture,
+                                )
+                              : BenchOrbitShell(
+                                  key: const ValueKey('bench_airflow_layout_orbit'),
+                                  initialYaw: _defaultYaw,
+                                  initialPitch: _defaultPitch,
+                                  initialDistance: _defaultDistance,
+                                  initialLookAtX: room.gridCols * 0.5,
+                                  initialLookAtZ: room.gridRows * 0.5,
+                                  roomWidth: room.gridCols.toDouble(),
+                                  roomDepth: room.gridRows.toDouble(),
+                                  resetNonce: _layoutOrbitResetNonce,
+                                  onDoubleTap: () {
+                                    HapticFeedback.lightImpact();
+                                    setState(() => _layoutOrbitResetNonce++);
+                                  },
+                                  onDragChanged: _setOrbitDragging,
+                                  builder: (cam) => CustomPaint(
                                     painter: BenchRoom3DPainter(
                                       roomWidth: room.gridCols.toDouble(),
                                       roomDepth: room.gridRows.toDouble(),
@@ -769,12 +800,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                                     ),
                                     child: const SizedBox.expand(),
                                   ),
-                              ),
+                                ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
               if (_selectedFurnitureId != null) ...[
                 const SizedBox(height: 10),
                 _buildInspectChip(

@@ -20,7 +20,7 @@ import 'room_model_scene.dart';
 import 'score_ring.dart';
 
 enum _SpatialStep { layout, analyze, results }
-enum _LayoutView { heatmap, room3d, model3d }
+enum _LayoutView { heatmap, room3d, model3d, compare }
 
 class SpatialBenchPanel extends StatefulWidget {
   final ValueChanged<bool>? onOrbitDraggingChanged;
@@ -72,6 +72,8 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       roomFurniture: state.committedFurniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
+      weights: state.optimizeWeights,
+      alternateIndex: state.benchAlternateCursor,
     );
     _layouts = layouts;
     _myRoomMetrics = SpatialAnalyzer.evaluate(
@@ -111,7 +113,14 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
     );
-    if (_layouts != null && fp == _layouts!.fingerprint) return;
+    if (benchLayoutsInSync(
+      _layouts,
+      furnitureFingerprint: fp,
+      weightsCacheKey: state.optimizeWeights.cacheKey,
+      alternateCursor: state.benchAlternateCursor,
+    )) {
+      return;
+    }
     _recompute(state, resetStep: false);
   }
 
@@ -322,6 +331,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
+          includeSample: _layoutVariant == BenchLayoutKind.sample,
         ),
         BenchViewChips(
           children: [
@@ -343,7 +353,23 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
               color: AppColors.spatialColor,
               onTap: () => setState(() => _layoutView = _LayoutView.model3d),
             ),
+            BenchChip(
+              label: 'Compare',
+              selected: _layoutView == _LayoutView.compare,
+              color: AppColors.spatialColor,
+              onTap: () => setState(() => _layoutView = _LayoutView.compare),
+            ),
           ],
+        ),
+        BenchAutoRigMixBar(
+          layouts: _layouts,
+          onTryAlternate: () {
+            context.read<AppState>().cycleBenchAlternate();
+            setState(() {
+              _layoutVariant = BenchLayoutKind.improved;
+              _layoutView = _LayoutView.compare;
+            });
+          },
         ),
         const SizedBox(height: 12),
         GlassCard(
@@ -351,17 +377,35 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                switch (_layoutVariant) {
-                  BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
-                      ? 'Reference room — your Rig is empty'
-                      : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                  BenchLayoutKind.improved => 'Improved — your room, Auto-Rig layout',
-                  BenchLayoutKind.sample => 'Sample room — door aisle blocked, floor packed',
-                },
-                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 14),
+                _layoutView == _LayoutView.compare
+                    ? 'My Room vs Improved — same Auto-Rig mix as Rig'
+                    : switch (_layoutVariant) {
+                        BenchLayoutKind.myRoom =>
+                          (_layouts?.fellBackToSample ?? false)
+                              ? 'Reference room — your Rig is empty'
+                              : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
+                        BenchLayoutKind.improved =>
+                          _layouts?.improvedCaption ??
+                              'Improved — your room, Auto-Rig layout',
+                        BenchLayoutKind.sample =>
+                          'Sample room — door aisle blocked, floor packed',
+                      },
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
               ),
               const SizedBox(height: 12),
-              if (_layoutView == _LayoutView.heatmap)
+              if (_layoutView == _LayoutView.compare)
+                BenchSideBySidePlans(
+                  gridCols: room.gridCols,
+                  gridRows: room.gridRows,
+                  myRoom: _furnitureFor(BenchLayoutKind.myRoom),
+                  improved: _furnitureFor(BenchLayoutKind.improved),
+                  accentColor: AppColors.spatialColor,
+                )
+              else if (_layoutView == _LayoutView.heatmap)
                 _heatmapView(room: room, furniture: furniture, metrics: metrics)
               else if (_layoutView == _LayoutView.model3d)
                 SizedBox(
