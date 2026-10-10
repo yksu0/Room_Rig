@@ -54,13 +54,14 @@
   scene.background = new THREE.Color(0x87B8E0);
 
   const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 120);
-  let yaw = 0.85, pitch = 0.42, distance = 9;
+  let yaw = 0.65, pitch = 0.28, distance = 3.4;
   let lookAt = new THREE.Vector3(2.1, 0.9, 1.8);
   let roomW = 4.2, roomD = 3.6, roomH = 2.7;
   let pendingOpenings = [];
   let exploreMode = 'orbit';
   let showMiniMap = false;
   let lastItems = [];
+  let hasUserFramed = false;
   // Default works for staged temp dirs (Android) and web. Flutter may override.
   let assetBase = '../gltf/';
 
@@ -754,15 +755,28 @@
 
   // Pitch: negative = below lookAt looking up (ceiling); ~1.45 = top-down.
   const PITCH_MIN = -0.85;
-  const PITCH_MAX = 1.45;
-  const DIST_MIN = 2.2;
-  const DIST_MAX = 28;
+  const PITCH_MAX = 1.42;
+  const DIST_MIN = 0.85;
+  const DIST_MAX = 18;
 
   function clampLookAt() {
     const m = 0.15;
     lookAt.x = Math.max(m, Math.min(roomW - m, lookAt.x));
     lookAt.z = Math.max(m, Math.min(roomD - m, lookAt.z));
-    lookAt.y = Math.max(0.05, Math.min(roomH + 0.8, lookAt.y));
+    lookAt.y = Math.max(0.05, Math.min(roomH - 0.05, lookAt.y));
+  }
+
+  /** Place orbit rig so the camera sits at [cam] looking at [target] (interior). */
+  function frameFrom(camX, camY, camZ, targetX, targetY, targetZ) {
+    lookAt.set(targetX, targetY, targetZ);
+    const dx = camX - targetX;
+    const dy = camY - targetY;
+    const dz = camZ - targetZ;
+    let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist < 1e-3) dist = 1;
+    distance = Math.max(DIST_MIN, Math.min(DIST_MAX, dist));
+    pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, Math.asin(dy / dist)));
+    yaw = Math.atan2(dx, dz);
   }
 
   function updateCamera() {
@@ -776,30 +790,69 @@
     camera.lookAt(lookAt);
   }
 
+  function findDoorItem() {
+    return (lastItems || []).find((it) => {
+      const k = (it.kind || it.id || '').toLowerCase();
+      return k === 'door' || k.indexOf('door') >= 0;
+    }) || null;
+  }
+
+  /**
+   * All presets keep the camera inside the room envelope so Check shows
+   * furniture / interior walls — not the exterior shell.
+   */
   function applyPreset(name) {
     exploreMode = 'orbit';
-    const cx = roomW * 0.5, cz = roomD * 0.5;
-    lookAt.set(cx, 0.9, cz);
+    const cx = roomW * 0.5;
+    const cz = roomD * 0.5;
+    const inset = Math.min(0.55, Math.min(roomW, roomD) * 0.18);
+    const eyeY = Math.min(1.55, Math.max(1.15, roomH * 0.52));
+    const midY = Math.min(1.15, roomH * 0.42);
+
     if (name === 'birdseye') {
-      yaw = 0; pitch = 1.15; distance = Math.max(roomW, roomD) * 1.35 + 2;
-      lookAt.y = 0.2;
+      // Just under the ceiling, looking straight down at the floor plan.
+      frameFrom(cx, roomH - 0.22, cz, cx, 0.08, cz);
     } else if (name === 'cornerA') {
-      yaw = 0.7; pitch = 0.38; distance = Math.max(roomW, roomD) * 1.1 + 3;
+      // Inside near (−X,−Z), looking across the room.
+      frameFrom(inset, eyeY, inset, cx, midY, cz);
     } else if (name === 'cornerB') {
-      yaw = -2.3; pitch = 0.38; distance = Math.max(roomW, roomD) * 1.1 + 3;
+      // Opposite interior corner.
+      frameFrom(roomW - inset, eyeY, roomD - inset, cx, midY, cz);
     } else if (name === 'eyeLevel') {
-      yaw = 0.4; pitch = 0.18; distance = Math.max(roomW, roomD) * 0.85 + 2.2;
-      lookAt.y = 1.35;
+      // Standing along the near wall, eye-height, facing the room center.
+      frameFrom(cx, eyeY, inset, cx, eyeY * 0.85, roomD - inset * 1.2);
     } else if (name === 'door') {
-      lookAt.set(cx, 1.2, roomD * 0.45);
-      yaw = 0; pitch = 0.22; distance = Math.max(roomW, roomD) * 0.7 + 1.8;
+      const door = findDoorItem();
+      let camX = cx, camZ = inset, targetX = cx, targetZ = cz;
+      if (door) {
+        const wall = (door.wall || '').toLowerCase();
+        const dx = +door.x || cx;
+        const dz = +door.z || cz;
+        if (wall === 'south' || (!wall && dz > roomD * 0.55)) {
+          camX = dx; camZ = Math.min(roomD - inset, dz - 0.35);
+          targetX = cx; targetZ = inset * 1.4;
+        } else if (wall === 'north' || (!wall && dz < roomD * 0.45)) {
+          camX = dx; camZ = Math.max(inset, dz + 0.35);
+          targetX = cx; targetZ = roomD - inset * 1.4;
+        } else if (wall === 'west' || (!wall && dx < roomW * 0.45)) {
+          camX = Math.max(inset, dx + 0.35); camZ = dz;
+          targetX = roomW - inset * 1.4; targetZ = cz;
+        } else {
+          camX = Math.min(roomW - inset, dx - 0.35); camZ = dz;
+          targetX = inset * 1.4; targetZ = cz;
+        }
+      }
+      frameFrom(camX, eyeY, camZ, targetX, midY, targetZ);
     } else if (name === 'ceiling') {
-      // Low in the room, looking up at the ceiling.
-      lookAt.set(cx, roomH * 0.92, cz);
-      yaw = 0.55; pitch = -0.55; distance = Math.max(roomW, roomD) * 0.55 + 1.6;
+      // Low center, looking up at the ceiling plane.
+      frameFrom(cx, 0.75, cz, cx, roomH - 0.08, cz);
+    } else {
+      frameFrom(inset * 1.4, eyeY, inset * 1.4, cx, midY, cz);
     }
+    hasUserFramed = true;
     clampLookAt();
-    hud.textContent = 'LMB orbit · RMB pan · scroll zoom';
+    updateCamera();
+    hud.textContent = 'Interior · LMB orbit · RMB pan · scroll zoom';
   }
 
   function focusItem(id) {
@@ -960,7 +1013,12 @@
       if (data.assetBase) assetBase = data.assetBase;
       lastItems = data.items || [];
       if (data.exploreMode) setExploreMode(data.exploreMode);
-      if (data.preset) applyPreset(data.preset);
+      if (data.preset) {
+        applyPreset(data.preset);
+      } else if (!hasUserFramed) {
+        // First paint: interior corner, not the old exterior orbit.
+        applyPreset('cornerA');
+      }
       if (data.focusId) focusItem(data.focusId);
       if (data.miniMap != null) setMiniMap(!!data.miniMap);
       const measured = await setFurniture(data.items || []);
