@@ -50,9 +50,6 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   double _progress = 0;
   bool _showResults = false;
   bool _ready = false;
-  double _compareScrub = 0; // 0 = My Room, 1 = Improved
-  bool _showHeatmap = true;
-  bool _showParticles = true;
 
   BenchLayouts? _layouts;
   int _seenFocusToken = 0;
@@ -333,7 +330,9 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
-          trailing: [
+        ),
+        BenchViewChips(
+          children: [
             BenchChip(
               label: '2D',
               selected: _roomView == _View.twoD,
@@ -551,7 +550,9 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
         BenchVariantChips(
           selected: _simVariant,
           onChanged: (v) => setState(() => _simVariant = v),
-          trailing: [
+        ),
+        BenchViewChips(
+          children: [
             BenchChip(
               label: '2D',
               selected: _simViz == LightingVizMode.topDown2D,
@@ -565,24 +566,6 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
               onTap: () => setState(() => _simViz = LightingVizMode.orbit3D),
             ),
           ],
-        ),
-        const SizedBox(height: 10),
-        BenchCompareScrub(
-          value: _compareScrub,
-          accent: AppColors.lightingColor,
-          onChanged: (v) {
-            setState(() {
-              _compareScrub = v;
-              _simVariant = v < 0.5 ? BenchLayoutKind.myRoom : BenchLayoutKind.improved;
-            });
-          },
-        ),
-        const SizedBox(height: 8),
-        BenchLayerToggles(
-          showHeatmap: _showHeatmap,
-          showParticles: _showParticles,
-          onHeatmap: (v) => setState(() => _showHeatmap = v),
-          onParticles: (v) => setState(() => _showParticles = v),
         ),
         const SizedBox(height: 8),
         const BenchLegend(caption: 'Illuminance'),

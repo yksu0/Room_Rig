@@ -111,17 +111,17 @@ class BenchChip extends StatelessWidget {
   }
 }
 
-/// My Room / Improved / Sample variant selector.
+/// My Room / Improved variant selector (Sample is demoted — not a primary peer).
 class BenchVariantChips extends StatelessWidget {
   final BenchLayoutKind selected;
   final ValueChanged<BenchLayoutKind> onChanged;
-  final List<Widget>? trailing;
+  final bool includeSample;
 
   const BenchVariantChips({
     super.key,
     required this.selected,
     required this.onChanged,
-    this.trailing,
+    this.includeSample = false,
   });
 
   @override
@@ -142,14 +142,33 @@ class BenchVariantChips extends StatelessWidget {
           color: AppColors.green,
           onTap: () => onChanged(BenchLayoutKind.improved),
         ),
-        BenchChip(
-          label: 'Sample',
-          selected: selected == BenchLayoutKind.sample,
-          color: AppColors.amber,
-          onTap: () => onChanged(BenchLayoutKind.sample),
-        ),
-        if (trailing != null) ...trailing!,
+        if (includeSample)
+          BenchChip(
+            label: 'Sample',
+            selected: selected == BenchLayoutKind.sample,
+            color: AppColors.amber,
+            onTap: () => onChanged(BenchLayoutKind.sample),
+          ),
       ],
+    );
+  }
+}
+
+/// View-mode chips on their own row (Rig-style: view ≠ content variant).
+class BenchViewChips extends StatelessWidget {
+  final List<Widget> children;
+
+  const BenchViewChips({super.key, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: children,
+      ),
     );
   }
 }

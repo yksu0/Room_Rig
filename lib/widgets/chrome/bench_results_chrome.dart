@@ -1,4 +1,4 @@
-// Shared Bench results readability: legend, verdict-first, compare scrub, layers.
+// Shared Bench results readability: legend, verdict-first, layer toggles.
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
@@ -162,63 +162,7 @@ class _BenchVerdictHeaderState extends State<BenchVerdictHeader> {
   }
 }
 
-/// My Room ↔ Improved scrub (0 = my room, 1 = improved).
-class BenchCompareScrub extends StatelessWidget {
-  final double value;
-  final ValueChanged<double> onChanged;
-  final Color accent;
-
-  const BenchCompareScrub({
-    super.key,
-    required this.value,
-    required this.onChanged,
-    this.accent = AppColors.cyan,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text(
-              'My Room',
-              style: TextStyle(
-                color: value < 0.5 ? accent : AppColors.textMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              'Improved',
-              style: TextStyle(
-                color: value >= 0.5 ? AppColors.green : AppColors.textMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            activeTrackColor: accent,
-            inactiveTrackColor: AppColors.border,
-            thumbColor: accent,
-            overlayColor: accent.withValues(alpha: 0.15),
-          ),
-          child: Slider(
-            value: value.clamp(0.0, 1.0),
-            onChanged: onChanged,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Layer toggles for sim overlays.
+/// Layer toggles for sim overlays (only pass callbacks that are wired).
 class BenchLayerToggles extends StatelessWidget {
   final bool showParticles;
   final bool showHeatmap;

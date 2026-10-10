@@ -43,8 +43,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
   static const _defaultDistance = 16.0;
 
   bool _showResults = false;
-  double _compareScrub = 0;
-  bool _showHeatmap = true;
   bool _ready = false;
 
   BenchLayouts? _layouts;
@@ -324,7 +322,9 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
-          trailing: [
+        ),
+        BenchViewChips(
+          children: [
             BenchChip(
               label: 'Map',
               selected: _layoutView == _LayoutView.heatmap,
@@ -469,37 +469,10 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
           selected: _analyzeVariant,
           onChanged: (v) => setState(() => _analyzeVariant = v),
         ),
-        const SizedBox(height: 10),
-        BenchCompareScrub(
-          value: _compareScrub,
-          accent: AppColors.spatialColor,
-          onChanged: (v) {
-            setState(() {
-              _compareScrub = v;
-              _analyzeVariant = v < 0.5 ? BenchLayoutKind.myRoom : BenchLayoutKind.improved;
-            });
-          },
-        ),
-        const SizedBox(height: 8),
-        BenchLayerToggles(
-          showHeatmap: _showHeatmap,
-          onHeatmap: (v) => setState(() => _showHeatmap = v),
-        ),
         const SizedBox(height: 8),
         const BenchLegend(caption: 'Floor use'),
         const SizedBox(height: 12),
-        if (_showHeatmap)
-          _heatmapView(room: room, furniture: furniture, metrics: metrics)
-        else
-          SizedBox(
-            height: 120,
-            child: Center(
-              child: Text(
-                'Heat map hidden',
-                style: TextStyle(color: AppColors.textMuted, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
+        _heatmapView(room: room, furniture: furniture, metrics: metrics),
         const SizedBox(height: 14),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,

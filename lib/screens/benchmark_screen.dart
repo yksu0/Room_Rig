@@ -55,7 +55,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   BenchLayoutKind _layoutVariant = BenchLayoutKind.myRoom;
   _RoomViewMode _roomViewMode = _RoomViewMode.twoD;
   AirflowVizMode _simVizMode = AirflowVizMode.orbit3D;
-  double _compareScrub = 0;
   bool _showParticles = true;
   bool _showHeatmap = true;
   BenchLayoutKind _simVariant = BenchLayoutKind.myRoom;
@@ -305,43 +304,25 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   }
 
   Widget _buildHeader() {
-    return Row(
+    return const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'BENCH CENTER',
-                style: TextStyle(
-                  color: AppColors.cyan,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2.8,
-                ),
-              ),
-              SizedBox(height: AppSpace.xxs),
-              Text(
-                'Room Stress Tests',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
+        Text(
+          'BENCH CENTER',
+          style: TextStyle(
+            color: AppColors.cyan,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 2.8,
           ),
         ),
-        TextButton(
-          onPressed: _replayBeforeAfter,
-          style: TextButton.styleFrom(
-            foregroundColor: AppColors.amber,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          ),
-          child: const Text(
-            'Before/After',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
+        SizedBox(height: AppSpace.xxs),
+        Text(
+          'Room Stress Tests',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ],
@@ -387,49 +368,53 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
 
   Widget _buildModeSelector(AppState state) {
     final modes = [
-      ('airflow', RoomSvg.airflow, 'Airflow', AppColors.airflowColor),
-      ('lighting', RoomSvg.lightbulb, 'Lighting', AppColors.lightingColor),
-      ('ergonomics', RoomSvg.ergonomics, 'Ergo', AppColors.ergonomicsColor),
-      ('spatial', RoomSvg.home, 'Space', AppColors.spatialColor),
+      ('airflow', 'Airflow', AppColors.airflowColor),
+      ('lighting', 'Lighting', AppColors.lightingColor),
+      ('ergonomics', 'Ergo', AppColors.ergonomicsColor),
+      ('spatial', 'Space', AppColors.spatialColor),
     ];
 
+    // Compact chips — same language as Rig Edit | Orbit | Check.
     return Row(
-      children: modes.map((m) {
-        final isSelected = state.benchmarkMode == m.$1;
-        return Expanded(
-          child: GestureDetector(
-            onTap: () {
-              state.setBenchmarkMode(m.$1);
-              _setOrbitDragging(false);
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: EdgeInsets.only(right: m.$1 == 'spatial' ? 0 : AppSpace.xs),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: isSelected ? m.$4.withValues(alpha: 0.15) : AppColors.card,
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(color: isSelected ? m.$4 : AppColors.border, width: isSelected ? 1.5 : 1),
-                boxShadow: isSelected ? [BoxShadow(color: m.$4.withValues(alpha: 0.2), blurRadius: 12)] : [],
-              ),
-              child: Column(
-                children: [
-                  SvgIcon(m.$2, size: 22, color: isSelected ? m.$4 : AppColors.textMuted),
-                  const SizedBox(height: 8),
-                  Text(
-                    m.$3,
-                    style: TextStyle(
-                      color: isSelected ? m.$4 : AppColors.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
+      children: [
+        for (var i = 0; i < modes.length; i++) ...[
+          if (i > 0) const SizedBox(width: 8),
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                state.setBenchmarkMode(modes[i].$1);
+                _setOrbitDragging(false);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: state.benchmarkMode == modes[i].$1
+                      ? modes[i].$3.withValues(alpha: 0.14)
+                      : AppColors.card,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(
+                    color: state.benchmarkMode == modes[i].$1
+                        ? modes[i].$3
+                        : AppColors.border,
                   ),
-                ],
+                ),
+                child: Text(
+                  modes[i].$2,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: state.benchmarkMode == modes[i].$1
+                        ? modes[i].$3
+                        : AppColors.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
             ),
           ),
-        );
-      }).toList(),
+        ],
+      ],
     );
   }
 
@@ -669,12 +654,13 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               AppColors.green,
               () => _setLayoutVariant(BenchLayoutKind.improved),
             ),
-            _chip(
-              'Sample',
-              _layoutVariant == BenchLayoutKind.sample,
-              AppColors.amber,
-              () => _setLayoutVariant(BenchLayoutKind.sample),
-            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
             _chip('2D', _roomViewMode == _RoomViewMode.twoD, AppColors.cyan, () {
               setState(() => _roomViewMode = _RoomViewMode.twoD);
             }),
@@ -983,12 +969,13 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               AppColors.green,
               () => setState(() => _simVariant = BenchLayoutKind.improved),
             ),
-            _chip(
-              'Sample',
-              _simVariant == BenchLayoutKind.sample,
-              AppColors.amber,
-              () => setState(() => _simVariant = BenchLayoutKind.sample),
-            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
             _chip('2D', _simVizMode == AirflowVizMode.topDown2D, AppColors.cyan, () {
               setState(() => _simVizMode = AirflowVizMode.topDown2D);
             }),
@@ -996,17 +983,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               setState(() => _simVizMode = AirflowVizMode.orbit3D);
             }),
           ],
-        ),
-        const SizedBox(height: 10),
-        BenchCompareScrub(
-          value: _compareScrub,
-          accent: AppColors.airflowColor,
-          onChanged: (v) {
-            setState(() {
-              _compareScrub = v;
-              _simVariant = v < 0.5 ? BenchLayoutKind.myRoom : BenchLayoutKind.improved;
-            });
-          },
         ),
         const SizedBox(height: 8),
         BenchLayerToggles(
@@ -1165,9 +1141,33 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'AIRFLOW BENCH RESULTS',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'AIRFLOW BENCH RESULTS',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: _replayBeforeAfter,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.amber,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                minimumSize: const Size(0, 36),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Before/After',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 11),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         BenchResultsCard(

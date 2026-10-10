@@ -50,7 +50,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
   double _progress = 0;
   bool _showResults = false;
   bool _ready = false;
-  double _compareScrub = 0;
   bool _showPaths = true;
 
   BenchLayouts? _layouts;
@@ -332,7 +331,9 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
-          trailing: [
+        ),
+        BenchViewChips(
+          children: [
             BenchChip(
               label: '2D',
               selected: _roomView == _View.twoD,
@@ -552,7 +553,9 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
         BenchVariantChips(
           selected: _simVariant,
           onChanged: (v) => setState(() => _simVariant = v),
-          trailing: [
+        ),
+        BenchViewChips(
+          children: [
             BenchChip(
               label: '2D',
               selected: _simViz == ErgonomicsVizMode.topDown2D,
@@ -566,17 +569,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
               onTap: () => setState(() => _simViz = ErgonomicsVizMode.orbit3D),
             ),
           ],
-        ),
-        const SizedBox(height: 10),
-        BenchCompareScrub(
-          value: _compareScrub,
-          accent: AppColors.ergonomicsColor,
-          onChanged: (v) {
-            setState(() {
-              _compareScrub = v;
-              _simVariant = v < 0.5 ? BenchLayoutKind.myRoom : BenchLayoutKind.improved;
-            });
-          },
         ),
         const SizedBox(height: 8),
         BenchLayerToggles(
