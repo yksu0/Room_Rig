@@ -282,10 +282,12 @@ class RoomModelSceneState extends State<RoomModelScene> {
           'cutKind': profile.cutsWall ? profile.wallCut.name : null,
           'lightTransmit': profile.lightTransmit,
           ...profile.fitPayload(),
-          // Wall openings always use clear W×H from the profile.
+          // Wall openings: clear W×H, thin D; alignFoot rotates long-Z Kenney slabs.
           'fit': MeshFitMode.wallOpening.name,
           'tw': profile.clearWidthMeters ?? profile.targetWidthMeters ?? itemW,
+          'td': profile.targetDepthMeters ?? itemD,
           'th': profile.openingHeightMeters,
+          'alignFoot': true,
         };
       } else if (mount.isCeiling) {
         y = mount.bottomY;

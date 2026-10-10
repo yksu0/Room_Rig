@@ -588,7 +588,12 @@
     const td = it.td != null ? +it.td : fitD;
     const th = it.th != null ? +it.th : h;
     const biasDeg = +it.yawBias || 0;
-    if (it.alignFoot) alignToFootprint(model, tw, td);
+    const mount = (it.mount || '').toLowerCase();
+    // Wall openings always align long-axis to local +X (along-wall after wrap yaw).
+    // Otherwise Kenney wallWindow/doorway stay long on Z and look stretched on E/W walls.
+    if (it.alignFoot || mode === 'wallopening' || mount === 'wall') {
+      alignToFootprint(model, Math.max(tw, 0.2), Math.max(td > 0 ? td : 0.14, 0.08));
+    }
     if (biasDeg) model.rotation.y += THREE.MathUtils.degToRad(biasDeg);
     fitObject(model, tw, td, th, mode);
   }

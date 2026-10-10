@@ -35,6 +35,15 @@ void main() {
     expect(GltfCatalog.profileFor('tv').localYawBiasDegrees, 0);
   });
 
+  test('wall openings align footprint so E/W walls are not stretched', () {
+    for (final key in ['window', 'door', 'smartBlinds', 'ac', 'intake', 'exhaust']) {
+      final p = GltfCatalog.profileFor(key);
+      expect(p.alignFootprint, isTrue, reason: '$key needs alignFootprint');
+      expect(p.fitMode, MeshFitMode.wallOpening, reason: key);
+      expect(p.targetDepthMeters, isNotNull, reason: '$key thin wall depth');
+    }
+  });
+
   test('Orbit meshHeight matches MeshProfile for every catalog kind', () {
     const kinds = FurnitureKind.values;
     for (final kind in kinds) {

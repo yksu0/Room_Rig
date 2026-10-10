@@ -349,6 +349,9 @@ class GltfCatalog {
       clearHeightMeters: 0.62,
       fitMode: MeshFitMode.wallOpening,
       targetWidthMeters: 0.9,
+      targetDepthMeters: 0.14,
+      // Kenney/HVAC wall meshes are often long on Z — rotate to local +X = along-wall.
+      alignFootprint: true,
     ),
     'intake': const MeshProfile(
       iconName: 'intake',
@@ -363,6 +366,8 @@ class GltfCatalog {
       clearHeightMeters: 0.32,
       fitMode: MeshFitMode.wallOpening,
       targetWidthMeters: 0.45,
+      targetDepthMeters: 0.12,
+      alignFootprint: true,
     ),
     'exhaust': const MeshProfile(
       iconName: 'exhaust',
@@ -377,6 +382,8 @@ class GltfCatalog {
       clearHeightMeters: 0.32,
       fitMode: MeshFitMode.wallOpening,
       targetWidthMeters: 0.45,
+      targetDepthMeters: 0.12,
+      alignFootprint: true,
     ),
     'door': const MeshProfile(
       iconName: 'door',
@@ -392,6 +399,8 @@ class GltfCatalog {
       clearHeightMeters: 1.92,
       fitMode: MeshFitMode.wallOpening,
       targetWidthMeters: 0.9,
+      targetDepthMeters: 0.14,
+      alignFootprint: true,
     ),
     'window': const MeshProfile(
       iconName: 'window',
@@ -406,6 +415,9 @@ class GltfCatalog {
       clearHeightMeters: 1.1,
       fitMode: MeshFitMode.wallOpening,
       targetWidthMeters: 1.15,
+      targetDepthMeters: 0.14,
+      // Without this, E/W walls leave Kenney's long-Z axis pointing into the room.
+      alignFootprint: true,
     ),
     'smartBlinds': const MeshProfile(
       iconName: 'smartBlinds',
@@ -420,6 +432,8 @@ class GltfCatalog {
       clearHeightMeters: 1.1,
       fitMode: MeshFitMode.wallOpening,
       targetWidthMeters: 1.15,
+      targetDepthMeters: 0.14,
+      alignFootprint: true,
     ),
   };
 
