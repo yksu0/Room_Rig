@@ -14,6 +14,7 @@ import '../services/bench_layouts.dart';
 import '../models/scan_layout_model.dart';
 import '../services/layout_collision.dart';
 import '../services/layout_snap_guides.dart';
+import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confirm_dialogs.dart';
 import '../widgets/rig_customizer/rig_scan_action_button.dart';
@@ -123,7 +124,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final selectedFurniture = state.selectedFurniture;
-    final selectedScanObject = state.selectedScanObject;
     final canMoveSelected =
         selectedFurniture != null && !state.selectedIsScanObject;
     if (!canMoveSelected && _rigMoveMode) {
@@ -133,87 +133,87 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       });
     }
 
+    final desktop = AppLayout.isDesktop(context);
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.bg,
-      endDrawer: RigRoomItemsDrawer(
-        sidebarQuery: _sidebarQuery,
-        sidebarCategory: _sidebarCategory,
-        sidebarMinConfidence: _sidebarMinConfidence,
-        onQueryChanged: (v) => setState(() => _sidebarQuery = v),
-        onCategoryChanged: (cat) => setState(() => _sidebarCategory = cat),
-        onMinConfidenceChanged: (v) => setState(() => _sidebarMinConfidence = v),
-        onReplaceScanObject: (obj) => _showScanReplacePicker(state, obj),
-        onDeleteScanObject: (obj) => _deleteScanObjectWithUndo(state, obj),
-      ),
+      endDrawer: desktop
+          ? null
+          : RigRoomItemsDrawer(
+              sidebarQuery: _sidebarQuery,
+              sidebarCategory: _sidebarCategory,
+              sidebarMinConfidence: _sidebarMinConfidence,
+              onQueryChanged: (v) => setState(() => _sidebarQuery = v),
+              onCategoryChanged: (cat) => setState(() => _sidebarCategory = cat),
+              onMinConfidenceChanged: (v) =>
+                  setState(() => _sidebarMinConfidence = v),
+              onReplaceScanObject: (obj) => _showScanReplacePicker(state, obj),
+              onDeleteScanObject: (obj) => _deleteScanObjectWithUndo(state, obj),
+            ),
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(context, state),
+            _buildHeader(context, state, desktop: desktop),
             Expanded(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Stack(
-                      fit: StackFit.expand,
+              child: desktop
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _buildCanvas(state),
-                        if (selectedFurniture != null &&
-                            !state.hasPendingPlacement &&
-                            !_drag2dGestureStarted &&
-                            _drag2dItemId == null)
-                          Positioned(
-                            left: 8,
-                            right: 8,
-                            top: 4,
-                            child: _buildFurnitureInfoCard(state, selectedFurniture),
-                          ),
-                        if (_showDimensions && _viewMode == _RigViewMode.twoD) ...[
-                          Positioned(
-                            left: 16,
-                            bottom: 12,
-                            child: _DimensionsHint(room: state.currentRoomData),
-                          ),
-                          if (selectedFurniture != null && !state.selectedIsScanObject)
-                            Positioned(
-                              right: 16,
-                              bottom: 12,
-                              child: _SelectedItemSizeChip(item: selectedFurniture),
+                        SizedBox(
+                          width: AppLayout.toolsRailWidth,
+                          child: DecoratedBox(
+                            decoration: const BoxDecoration(
+                              border: Border(
+                                right: BorderSide(color: AppColors.borderSubtle),
+                              ),
                             ),
-                        ],
-                        if (state.hasApplyGhost)
-                          Positioned(
-                            top: _viewMode == _RigViewMode.model3D ? 40 : 56,
-                            left: 12,
-                            right: 12,
-                            child: _ApplyGhostBanner(
-                              onDismiss: state.clearApplyGhost,
-                            ),
-                          ),
-                        // Soft warning tint while an edit conflict is live.
-                        if (state.layoutConflicts.isNotEmpty &&
-                            (_dragItemId != null || _drag2dItemId != null))
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: AppColors.red.withValues(alpha: 0.55),
-                                    width: 2,
-                                  ),
-                                  borderRadius: BorderRadius.circular(16),
-                                  color: AppColors.red.withValues(alpha: 0.06),
-                                ),
+                            child: AdaptiveRailPane(
+                              title: 'Workspace',
+                              icon: Icons.tune_rounded,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildViewPanelBody(state, embedded: true),
+                                  const SizedBox(height: 20),
+                                  const Divider(color: AppColors.borderSubtle),
+                                  const SizedBox(height: 12),
+                                  _buildToolsPanelBody(context, state, embedded: true),
+                                ],
                               ),
                             ),
                           ),
+                        ),
+                        Expanded(child: _buildCanvasWorkspace(state)),
+                        SizedBox(
+                          width: AppLayout.inspectRailWidth,
+                          child: DecoratedBox(
+                            decoration: const BoxDecoration(
+                              border: Border(
+                                left: BorderSide(color: AppColors.borderSubtle),
+                              ),
+                            ),
+                            child: RigRoomItemsDrawer(
+                              embedded: true,
+                              sidebarQuery: _sidebarQuery,
+                              sidebarCategory: _sidebarCategory,
+                              sidebarMinConfidence: _sidebarMinConfidence,
+                              onQueryChanged: (v) =>
+                                  setState(() => _sidebarQuery = v),
+                              onCategoryChanged: (cat) =>
+                                  setState(() => _sidebarCategory = cat),
+                              onMinConfidenceChanged: (v) =>
+                                  setState(() => _sidebarMinConfidence = v),
+                              onReplaceScanObject: (obj) =>
+                                  _showScanReplacePicker(state, obj),
+                              onDeleteScanObject: (obj) =>
+                                  _deleteScanObjectWithUndo(state, obj),
+                            ),
+                          ),
+                        ),
                       ],
-                    ),
-                  ),
-                  if (state.hasPendingPlacement) _buildPlacementBar(state),
-                  if (selectedScanObject != null) _buildScanInfoCard(state, selectedScanObject),
-                ],
-              ),
+                    )
+                  : _buildCanvasWorkspace(state),
             ),
           ],
         ),
@@ -221,7 +221,79 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, AppState state) {
+  Widget _buildCanvasWorkspace(AppState state) {
+    final selectedFurniture = state.selectedFurniture;
+    final selectedScanObject = state.selectedScanObject;
+    return Column(
+      children: [
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _buildCanvas(state),
+              if (selectedFurniture != null &&
+                  !state.hasPendingPlacement &&
+                  !_drag2dGestureStarted &&
+                  _drag2dItemId == null)
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  top: 4,
+                  child: _buildFurnitureInfoCard(state, selectedFurniture),
+                ),
+              if (_showDimensions && _viewMode == _RigViewMode.twoD) ...[
+                Positioned(
+                  left: 16,
+                  bottom: 12,
+                  child: _DimensionsHint(room: state.currentRoomData),
+                ),
+                if (selectedFurniture != null && !state.selectedIsScanObject)
+                  Positioned(
+                    right: 16,
+                    bottom: 12,
+                    child: _SelectedItemSizeChip(item: selectedFurniture),
+                  ),
+              ],
+              if (state.hasApplyGhost)
+                Positioned(
+                  top: _viewMode == _RigViewMode.model3D ? 40 : 56,
+                  left: 12,
+                  right: 12,
+                  child: _ApplyGhostBanner(
+                    onDismiss: state.clearApplyGhost,
+                  ),
+                ),
+              if (state.layoutConflicts.isNotEmpty &&
+                  (_dragItemId != null || _drag2dItemId != null))
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: AppColors.red.withValues(alpha: 0.55),
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        color: AppColors.red.withValues(alpha: 0.06),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (state.hasPendingPlacement) _buildPlacementBar(state),
+        if (selectedScanObject != null)
+          _buildScanInfoCard(state, selectedScanObject),
+      ],
+    );
+  }
+
+  Widget _buildHeader(
+    BuildContext context,
+    AppState state, {
+    required bool desktop,
+  }) {
     final dims = state.activeRoomLayout?.dimensions;
     final lengthMeters = dims != null && dims.lengthMeters > 0
         ? dims.lengthMeters
@@ -304,15 +376,18 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 Expanded(
                   child: _buildCompactViewChips(),
                 ),
-                const SizedBox(width: AppSpace.xs),
-                AdaptivePanelTriggers(
-                  controller: _adaptivePanelControllerFor(state),
-                  visible: const [
-                    ChromeRegion.view,
-                    ChromeRegion.tools,
-                    ChromeRegion.inspect,
-                  ],
-                ),
+                // Desktop hosts View/Tools/Inspect as side rails — no sheet chips.
+                if (!desktop) ...[
+                  const SizedBox(width: AppSpace.xs),
+                  AdaptivePanelTriggers(
+                    controller: _adaptivePanelControllerFor(state),
+                    visible: const [
+                      ChromeRegion.view,
+                      ChromeRegion.tools,
+                      ChromeRegion.inspect,
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -321,21 +396,26 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
+  void _maybeCloseSupportingSheet() {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) nav.maybePop();
+  }
+
   AdaptivePanelController _adaptivePanelControllerFor(AppState state) {
     return AdaptivePanelController([
       AdaptivePanelSpec(
         region: ChromeRegion.view,
         preferTall: true,
-        builder: (ctx) => _buildViewPanelBody(state),
+        builder: (ctx) => _buildViewPanelBody(state, embedded: false),
       ),
       AdaptivePanelSpec(
         region: ChromeRegion.tools,
         preferTall: true,
-        builder: (ctx) => _buildToolsPanelBody(ctx, state),
+        builder: (ctx) => _buildToolsPanelBody(ctx, state, embedded: false),
       ),
       AdaptivePanelSpec(
         region: ChromeRegion.inspect,
-        builder: (ctx) => _buildInspectPanelBody(ctx, state),
+        builder: (ctx) => _buildInspectPanelBody(ctx, state, embedded: false),
       ),
     ]);
   }
@@ -371,7 +451,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  Widget _buildViewPanelBody(AppState state) {
+  Widget _buildViewPanelBody(AppState state, {required bool embedded}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -379,7 +459,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
           selected: _chromeForViewMode(_viewMode),
           onChanged: (m) {
             _applyChromeView(m);
-            Navigator.of(context).maybePop();
+            if (!embedded) _maybeCloseSupportingSheet();
           },
         ),
         const SizedBox(height: 16),
@@ -399,7 +479,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
               _pendingPreset = p;
               _viewMode = _RigViewMode.model3D;
             });
-            Navigator.of(context).maybePop();
+            if (!embedded) _maybeCloseSupportingSheet();
           },
         ),
         const SizedBox(height: 16),
@@ -423,7 +503,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       _focusToken++;
                       _viewMode = _RigViewMode.model3D;
                     });
-                    Navigator.of(context).maybePop();
+                    if (!embedded) _maybeCloseSupportingSheet();
                   },
             child: ListTile(
               enabled: state.selectedFurniture != null,
@@ -444,7 +524,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  Widget _buildToolsPanelBody(BuildContext ctx, AppState state) {
+  Widget _buildToolsPanelBody(
+    BuildContext ctx,
+    AppState state, {
+    required bool embedded,
+  }) {
     final selected = state.selectedFurniture;
     final canEdit = selected != null && !state.selectedIsScanObject && state.canMoveFurniture(selected);
     return Column(
@@ -633,7 +717,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  Widget _buildInspectPanelBody(BuildContext ctx, AppState state) {
+  Widget _buildInspectPanelBody(
+    BuildContext ctx,
+    AppState state, {
+    required bool embedded,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1110,12 +1198,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       final canMoveSelected = state.selectedFurniture != null &&
           !state.selectedIsScanObject &&
           state.canMoveFurniture(state.selectedFurniture!);
+      final desktop = AppLayout.isDesktop(context);
       return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12),
+        margin: EdgeInsets.symmetric(horizontal: desktop ? 0 : 12),
         decoration: BoxDecoration(
           color: AppColors.surface,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(desktop ? 0 : AppRadius.lg),
+          border: desktop ? null : Border.all(color: AppColors.border),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -1259,15 +1348,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
     // The floor plan stays axis-aligned: rotating it made every horizontal
     // swipe spin the room and threw off drag deltas. Orbiting lives in 3D.
+    final desktop = AppLayout.isDesktop(context);
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
+      margin: EdgeInsets.symmetric(horizontal: desktop ? 0 : 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(desktop ? 0 : 16),
+        border: desktop ? null : Border.all(color: AppColors.border),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(desktop ? 0 : 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final coverage = state.activeRoomLayout?.coverageGrid;
@@ -1473,15 +1563,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   Widget _buildPseudo3DCanvas(AppState state) {
+    final desktop = AppLayout.isDesktop(context);
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
+      margin: EdgeInsets.symmetric(horizontal: desktop ? 0 : 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(desktop ? 0 : 16),
+        border: desktop ? null : Border.all(color: AppColors.border),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(desktop ? 0 : 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final canvasSize = Size(constraints.maxWidth, constraints.maxHeight);

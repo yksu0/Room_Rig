@@ -13,6 +13,7 @@ import '../models/scan_layout_model.dart';
 import '../models/upgrade_catalog.dart';
 import '../services/layout_share_image.dart';
 import '../services/room_compare.dart';
+import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/onboarding_sheet.dart';
@@ -258,17 +259,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final state = context.watch<AppState>();
     final room = state.currentRoomData;
 
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpace.screen,
-            AppSpace.lg,
-            AppSpace.screen,
-            AppSpace.xxl,
-          ),
-          child: Column(
+    final desktop = AppLayout.isDesktop(context);
+    final page = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(context, room, state),
@@ -317,7 +309,28 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: AppSpace.section),
               _buildMetricsRow(context, state),
             ],
+    );
+
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            desktop ? AppSpace.xl : AppSpace.screen,
+            AppSpace.lg,
+            desktop ? AppSpace.xl : AppSpace.screen,
+            AppSpace.xxl,
           ),
+          child: desktop
+              ? Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: AppLayout.readingMaxWidth,
+                    ),
+                    child: page,
+                  ),
+                )
+              : page,
         ),
       ),
     );

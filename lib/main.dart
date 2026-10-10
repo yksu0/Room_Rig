@@ -19,7 +19,7 @@ import 'widgets/room_model_scene_pointer_guard.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Phones stay portrait-locked. Web/desktop unlocks so Chrome can use
-  // landscape windows without stretching a forced portrait layout.
+  // landscape windows as a real website layout.
   if (kIsWeb) {
     await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
   } else {
@@ -31,7 +31,6 @@ void main() async {
     systemNavigationBarColor: Color(0xFF0A0B0F),
     systemNavigationBarIconBrightness: Brightness.light,
   ));
-  // Decode catalog + upgrade sprites so Rig and Bench share the same art.
   await FurnitureSprites.warmCache({
     ...RigCatalog.items.map((e) => e.iconName),
     'fan',
@@ -62,8 +61,6 @@ class RoomRigApp extends StatelessWidget {
     return MaterialApp(
       title: 'Room Rig',
       debugShowCheckedModeBanner: false,
-      // Transparent so AR measure can show native camera through Scan.
-      // Each tab Scaffold sets its own opaque backgroundColor.
       theme: AppTheme.dark.copyWith(scaffoldBackgroundColor: Colors.transparent),
       navigatorObservers: [RoomModelScenePointerGuard()],
       home: const _MainShell(),
@@ -81,7 +78,6 @@ class _MainShell extends StatefulWidget {
 class _MainShellState extends State<_MainShell> {
   static const _screens = [
     HomeScreen(),
-    // `model` branch: Scan parked — focus Rig/Bench real GLB rooms.
     ScanFocusPlaceholderScreen(),
     RigCustomizerScreen(),
     BenchmarkScreen(),
@@ -116,87 +112,33 @@ class _MainShellState extends State<_MainShell> {
       }
     }
 
-    final size = MediaQuery.sizeOf(context);
-    final sideNav = AppLayout.useSideNav(size);
-    final maxW = AppLayout.contentMaxWidth(size);
-    final letterboxed = AppLayout.isLetterboxed(size);
-
+    final desktop = AppLayout.useSideNav(MediaQuery.sizeOf(context));
     final stack = IndexedStack(
       index: state.currentTab,
       children: _screens,
     );
 
-    final framed = _AppColumnFrame(
-      maxWidth: maxW,
-      letterboxed: letterboxed || sideNav,
-      child: sideNav
-          ? stack
-          : Column(
-              children: [
-                Expanded(child: stack),
-                _RigNavBar(currentIndex: state.currentTab),
-              ],
-            ),
-    );
+    // Desktop website shell: persistent left nav + full remaining width.
+    // Mobile: full-bleed screens + bottom tab bar.
+    if (desktop) {
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        body: Row(
+          children: [
+            _RigSideNav(currentIndex: state.currentTab),
+            Expanded(child: stack),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: sideNav
-          ? Row(
-              children: [
-                _RigSideNav(currentIndex: state.currentTab),
-                Expanded(child: framed),
-              ],
-            )
-          : framed,
-    );
-  }
-}
-
-/// Centers a mobile-width column on wide windows; phones stay full-bleed.
-class _AppColumnFrame extends StatelessWidget {
-  final double maxWidth;
-  final bool letterboxed;
-  final Widget child;
-
-  const _AppColumnFrame({
-    required this.maxWidth,
-    required this.letterboxed,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (!letterboxed && maxWidth.isInfinite) {
-      return ColoredBox(color: AppColors.bg, child: child);
-    }
-
-    return ColoredBox(
-      color: AppColors.bg,
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: AppColors.bg,
-              border: letterboxed
-                  ? const Border.symmetric(
-                      vertical: BorderSide(color: AppColors.borderSubtle),
-                    )
-                  : null,
-              boxShadow: letterboxed
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        blurRadius: 28,
-                        offset: const Offset(0, 8),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: child,
-          ),
-        ),
+      body: Column(
+        children: [
+          Expanded(child: stack),
+          _RigNavBar(currentIndex: state.currentTab),
+        ],
       ),
     );
   }
@@ -217,9 +159,9 @@ class _RigSideNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.surface.withValues(alpha: 0.96),
+      color: AppColors.surface,
       child: Container(
-        width: 88,
+        width: 92,
         decoration: const BoxDecoration(
           border: Border(right: BorderSide(color: AppColors.borderSubtle)),
         ),
@@ -227,19 +169,19 @@ class _RigSideNav extends StatelessWidget {
           right: false,
           child: Column(
             children: [
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               Text(
                 'ROOM\nRIG',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: AppColors.cyan.withValues(alpha: 0.9),
-                  fontSize: 10,
+                  color: AppColors.cyan.withValues(alpha: 0.95),
+                  fontSize: 11,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: 1.4,
+                  letterSpacing: 1.6,
                   height: 1.15,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               Expanded(
                 child: ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -259,7 +201,7 @@ class _RigSideNav extends StatelessWidget {
                         onTap: () => context.read<AppState>().setTab(i),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                            vertical: 12,
+                            vertical: 14,
                             horizontal: 6,
                           ),
                           child: Column(
@@ -321,7 +263,9 @@ class _RigNavBar extends StatelessWidget {
       padding: EdgeInsets.only(bottom: bottom),
       decoration: BoxDecoration(
         color: AppColors.surface.withValues(alpha: 0.96),
-        border: const Border(top: BorderSide(color: AppColors.borderSubtle, width: 1)),
+        border: const Border(
+          top: BorderSide(color: AppColors.borderSubtle, width: 1),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.45),
@@ -360,16 +304,21 @@ class _RigNavBar extends StatelessWidget {
                         child: SvgIcon(
                           item.$1,
                           size: 22,
-                          color: isSelected ? AppColors.cyan : AppColors.textMuted,
+                          color: isSelected
+                              ? AppColors.cyan
+                              : AppColors.textMuted,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         item.$2,
                         style: TextStyle(
-                          color: isSelected ? AppColors.cyan : AppColors.textMuted,
+                          color: isSelected
+                              ? AppColors.cyan
+                              : AppColors.textMuted,
                           fontSize: 11,
-                          fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                          fontWeight:
+                              isSelected ? FontWeight.w800 : FontWeight.w600,
                           letterSpacing: 0.2,
                         ),
                       ),

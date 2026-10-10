@@ -1,37 +1,28 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
-/// Breakpoints for mobile-first Room Rig on wide Chrome / desktop windows.
+/// Breakpoints for mobile-first Room Rig that grows into a real desktop site.
 ///
-/// Phones keep full-bleed. Browser/desktop centers a phone-width column so
-/// controls and canvases do not stretch across an ultrawide monitor.
+/// Below [desktopMinWidth]: phone layout (bottom tabs, sheets, stacked chrome).
+/// At/above it: left app nav + full-width workspace (Rig rails, wider Bench/Hub).
 class AppLayout {
   AppLayout._();
 
-  /// Fill the window below this width (real phones / narrow windows).
-  static const double fillBelow = 560;
+  /// Desktop / website layout kicks in here (Chrome window, tablet landscape).
+  static const double desktopMinWidth = 900;
 
-  /// Centered phone column max width when the window is wider than [fillBelow].
-  static const double phoneColumnMax = 480;
+  /// Left tools rail on Rig (View + Tools).
+  static const double toolsRailWidth = 300;
 
-  /// Comfortable content width when a side nav is showing.
-  static const double desktopColumnMax = 720;
+  /// Right inspect rail on Rig (room items / conflicts).
+  static const double inspectRailWidth = 320;
 
-  /// Switch bottom tabs → left NavigationRail.
-  static const double sideNavMinWidth = 900;
+  /// Readable Hub / Bench text column when full-bleed would be too sparse.
+  static const double readingMaxWidth = 1200;
 
-  static bool get isBrowserSurface => kIsWeb;
+  static bool isDesktop(BuildContext context) =>
+      MediaQuery.sizeOf(context).width >= desktopMinWidth;
 
-  static bool useSideNav(Size size) => size.width >= sideNavMinWidth;
+  static bool isDesktopSize(Size size) => size.width >= desktopMinWidth;
 
-  /// Max width for the primary column (screens + bottom bar when stacked).
-  static double contentMaxWidth(Size size) {
-    if (size.width < fillBelow) return double.infinity;
-    if (useSideNav(size)) return desktopColumnMax;
-    return phoneColumnMax;
-  }
-
-  /// True when we are letterboxing the mobile UI in a wide window.
-  static bool isLetterboxed(Size size) =>
-      size.width >= fillBelow && !useSideNav(size);
+  static bool useSideNav(Size size) => isDesktopSize(size);
 }

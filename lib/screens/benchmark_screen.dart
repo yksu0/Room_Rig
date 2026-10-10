@@ -13,6 +13,7 @@ import '../services/airflow_simulator.dart';
 import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
 import '../services/layout_share_image.dart';
+import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import '../widgets/airflow_voxel_painter.dart';
 import '../widgets/bench_room_views.dart';
@@ -264,6 +265,26 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     final isAirflow = state.benchmarkMode == 'airflow';
     final isLighting = state.benchmarkMode == 'lighting';
 
+    final desktop = AppLayout.isDesktop(context);
+    final page = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildHeader(),
+        const SizedBox(height: AppSpace.xl),
+        _buildModeSelector(state),
+        const SizedBox(height: AppSpace.xl),
+        if (isAirflow)
+          ..._buildAirflowPrototype(state)
+        else if (isLighting)
+          LightingBenchPanel(onOrbitDraggingChanged: _setOrbitDragging)
+        else if (state.benchmarkMode == 'spatial')
+          SpatialBenchPanel(onOrbitDraggingChanged: _setOrbitDragging)
+        else
+          ErgonomicsBenchPanel(onOrbitDraggingChanged: _setOrbitDragging),
+        const SizedBox(height: AppSpace.xxl),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
@@ -271,31 +292,25 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           valueListenable: _scrollLocked,
           builder: (context, scrollLocked, _) {
             return SingleChildScrollView(
-              physics: scrollLocked ? const NeverScrollableScrollPhysics() : null,
-              padding: const EdgeInsets.fromLTRB(
-                AppSpace.screen,
+              physics: scrollLocked
+                  ? const NeverScrollableScrollPhysics()
+                  : null,
+              padding: EdgeInsets.fromLTRB(
+                desktop ? AppSpace.xl : AppSpace.screen,
                 AppSpace.lg,
-                AppSpace.screen,
+                desktop ? AppSpace.xl : AppSpace.screen,
                 AppSpace.xxl,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: AppSpace.xl),
-                  _buildModeSelector(state),
-                  const SizedBox(height: AppSpace.xl),
-                  if (isAirflow)
-                    ..._buildAirflowPrototype(state)
-                  else if (isLighting)
-                    LightingBenchPanel(onOrbitDraggingChanged: _setOrbitDragging)
-                  else if (state.benchmarkMode == 'spatial')
-                    SpatialBenchPanel(onOrbitDraggingChanged: _setOrbitDragging)
-                  else
-                    ErgonomicsBenchPanel(onOrbitDraggingChanged: _setOrbitDragging),
-                  const SizedBox(height: AppSpace.xxl),
-                ],
-              ),
+              child: desktop
+                  ? Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: AppLayout.readingMaxWidth,
+                        ),
+                        child: page,
+                      ),
+                    )
+                  : page,
             );
           },
         ),

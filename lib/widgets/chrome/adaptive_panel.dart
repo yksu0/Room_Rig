@@ -48,9 +48,7 @@ class AdaptivePanelSpec {
 }
 
 /// Window-size helper (Material compact / medium / expanded).
-///
-/// App chrome letterboxing / side nav lives in [AppLayout] (`main.dart`).
-/// Supporting-pane side rails stay sheet-based until Rig hosts them.
+/// App shell side-nav lives in `main.dart` / [AppLayout].
 class AdaptivePanelLayout {
   /// Approximate expanded-width aspect (wide + short).
   static const double expandedMinAspect = 1.25;
@@ -58,10 +56,9 @@ class AdaptivePanelLayout {
   /// Medium width lower bound in logical pixels (Material ~600dp).
   static const double mediumMinWidth = 600;
 
-  /// When true, panes would render as side rails instead of modal sheets.
-  /// Still sheet-only — Rig has not mounted rail hosts yet.
+  /// Desktop Rig hosts View/Tools/Inspect as persistent rails.
   static bool useExpandedRails(BoxConstraints constraints) {
-    return false;
+    return constraints.maxWidth >= mediumMinWidth;
   }
 
   /// Left rail regions in expanded layout.
@@ -69,6 +66,59 @@ class AdaptivePanelLayout {
 
   /// Right rail regions in expanded layout.
   static const rightRail = [ChromeRegion.inspect, ChromeRegion.results];
+}
+
+/// Persistent desktop supporting pane (replaces modal sheets on wide layouts).
+class AdaptiveRailPane extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Widget child;
+  final Color accent;
+
+  const AdaptiveRailPane({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.child,
+    this.accent = AppColors.cyan,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: AppColors.surface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: accent),
+                const SizedBox(width: 8),
+                Text(
+                  title.toUpperCase(),
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.borderSubtle),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+              child: child,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Opens one supporting pane at a time in compact width (modal bottom sheet).
