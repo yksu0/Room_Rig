@@ -205,6 +205,7 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 0.85,
       targetDepthMeters: 0.4,
+      alignFootprint: true,
     ),
     'bookshelf': const MeshProfile(
       iconName: 'bookshelf',
@@ -214,6 +215,7 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 0.85,
       targetDepthMeters: 0.4,
+      alignFootprint: true,
     ),
     'wardrobe': const MeshProfile(
       iconName: 'wardrobe',
@@ -223,6 +225,7 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 0.9,
       targetDepthMeters: 0.55,
+      alignFootprint: true,
     ),
     'lamp': const MeshProfile(
       iconName: 'lamp',

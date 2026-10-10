@@ -1363,10 +1363,10 @@ class LayoutOptimizerCommon {
           );
         }
       } else if (hay.contains('shelf') || hay.contains('book') || hay.contains('wardrobe')) {
-        // Tall storage flush to a wall/corner — never mid-room (interior guides).
+        // Tall storage on a wall/corner — keep fully inside the grid (no overflow).
         final onRight = door == null || door.gridX < cols * 0.5;
         var sx = onRight ? (cols - f.width).clamp(0.0, cols - f.width) : 0.0;
-        var sy = (rows - f.height - 0.15).clamp(0.0, rows - f.height);
+        var sy = (rows - f.height).clamp(0.0, rows - f.height);
         // Prefer a free corner if the default is already claimed.
         if (desk != null) {
           final deskPose = targets[desk.id];

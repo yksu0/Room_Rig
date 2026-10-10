@@ -479,21 +479,25 @@
       });
     });
 
+    // Place wall *centers* outside the floor so only the interior face sits on
+    // the room edge. Centering on 0/w/d buried half the thickness in the room
+    // and made flush shelves / beds clip into the plaster.
     // north z=0 inward +Z; south z=d inward -Z; west x=0 inward +X; east x=w inward -X
+    const halfT = thick * 0.5;
     buildWallWithOpenings({
-      alongX: true, length: w, fixed: 0, height: h, thick,
+      alongX: true, length: w, fixed: -halfT, height: h, thick,
       openings: byWall.north, inwardSign: 1, wallMat, glassMat,
     });
     buildWallWithOpenings({
-      alongX: true, length: w, fixed: d, height: h, thick,
+      alongX: true, length: w, fixed: d + halfT, height: h, thick,
       openings: byWall.south, inwardSign: -1, wallMat, glassMat,
     });
     buildWallWithOpenings({
-      alongX: false, length: d, fixed: 0, height: h, thick,
+      alongX: false, length: d, fixed: -halfT, height: h, thick,
       openings: byWall.west, inwardSign: 1, wallMat, glassMat,
     });
     buildWallWithOpenings({
-      alongX: false, length: d, fixed: w, height: h, thick,
+      alongX: false, length: d, fixed: w + halfT, height: h, thick,
       openings: byWall.east, inwardSign: -1, wallMat, glassMat,
     });
 

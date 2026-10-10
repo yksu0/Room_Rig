@@ -202,6 +202,8 @@ class RoomPresets {
         const deskY = 1.0;
         final pcFp = GltfCatalog.orbitFootprint('pc');
         final monFp = GltfCatalog.orbitFootprint('monitor');
+        final shelfFp = GltfCatalog.orbitFootprint('shelf');
+        const cols = 6.0;
         return RoomData(
           name: 'Gaming Setup',
           subtitle: 'High-performance gaming room with RGB everything',
@@ -218,7 +220,8 @@ class RoomPresets {
             _f(id: 'ac', name: 'AC Unit', iconName: 'ac', category: 'airflow', gridX: 5, gridY: 0, airflowImpact: 0.9, cost: 450, description: 'Generates cold air streams to cool down the room rig.'),
             _f(id: 'window', name: 'Window', iconName: 'window', category: 'lighting', gridX: 2, gridY: 0, lightingImpact: 0.8, airflowImpact: 0.5, cost: 300, description: 'Provides natural light and ambient ventilation.'),
             _f(id: 'door', name: 'Entry Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, airflowImpact: 0.35, ergonomicsImpact: 0.2, cost: 220, description: 'Primary room entrance; keep approach path clear.'),
-            _f(id: 'shelf', name: 'Shelf', iconName: 'shelf', category: 'neutral', gridX: 5, gridY: 3, airflowImpact: -0.2, cost: 119, description: 'Storage unit; blockages can redirect airflow path.'),
+            // Fully inside the east wall (old gridX: 5 overflowed width past cols).
+            _f(id: 'shelf', name: 'Shelf', iconName: 'shelf', category: 'neutral', gridX: cols - shelfFp.width, gridY: 3, airflowImpact: -0.2, cost: 119, description: 'Storage unit; blockages can redirect airflow path.'),
             _f(id: 'fan', name: 'Stand Fan', iconName: 'fan', category: 'airflow', gridX: 4, gridY: 2, airflowImpact: 0.55, cost: 45, description: 'Oscillating pedestal fan; sweeps ~45° to push air around the room.'),
           ],
         );
@@ -226,7 +229,9 @@ class RoomPresets {
       case RoomPreset.homeOffice: {
         const deskX = 0.0;
         const deskY = 1.0;
+        const cols = 6.0;
         final monFp = GltfCatalog.orbitFootprint('monitor');
+        final shelfFp = GltfCatalog.orbitFootprint('shelf');
         return RoomData(
           name: 'Home Office',
           subtitle: 'Productive workspace optimized for deep work',
@@ -241,7 +246,7 @@ class RoomPresets {
             _f(id: 'window', name: 'Large Window', iconName: 'window', category: 'lighting', gridX: 3, gridY: 0, lightingImpact: 0.9, airflowImpact: 0.7, cost: 400, description: 'Wide exterior window for maximum natural light spread.'),
             _f(id: 'door', name: 'Office Door', iconName: 'door', category: 'neutral', gridX: 0, gridY: 6, airflowImpact: 0.3, ergonomicsImpact: 0.25, cost: 180, description: 'Entry door — leave a clear approach aisle.'),
             _f(id: 'plant', name: 'Plant', iconName: 'plant', category: 'airflow', gridX: 5, gridY: 2, airflowImpact: 0.3, ergonomicsImpact: 0.2, cost: 39, description: 'Breathes life into the office and purifies ambient air.'),
-            _f(id: 'bookshelf', name: 'Bookshelf', iconName: 'shelf', category: 'neutral', gridX: 4, gridY: 3, airflowImpact: -0.3, cost: 179, description: 'Heavy storage shelving; obstructs direct ventilation lines.'),
+            _f(id: 'bookshelf', name: 'Bookshelf', iconName: 'shelf', category: 'neutral', gridX: cols - shelfFp.width, gridY: 3, airflowImpact: -0.3, cost: 179, description: 'Heavy storage shelving; obstructs direct ventilation lines.'),
             _f(id: 'sofa', name: 'Sofa', iconName: 'sofa', category: 'neutral', gridX: 1, gridY: 5, airflowImpact: -0.3, ergonomicsImpact: 0.2, cost: 499, description: 'Secondary comfortable seating area for relaxation breaks.'),
           ],
         );
