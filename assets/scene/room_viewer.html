@@ -267,16 +267,7 @@
     );
     sky.position.set(w / 2, 0, d / 2);
     exteriorRoot.add(sky);
-
-    // Outdoor patio strip beyond the south wall (+Z)
-    const patio = new THREE.Mesh(
-      new THREE.PlaneGeometry(w + 1.2, 2.4),
-      new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.9 })
-    );
-    patio.rotation.x = -Math.PI / 2;
-    patio.position.set(w / 2, 0.001, d + 1.15);
-    patio.receiveShadow = true;
-    exteriorRoot.add(patio);
+    // No patio slab — it used to overlap ~5 cm past the south wall into the floor.
   }
 
   /** Build a wall along +X or +Z with rectangular openings cut as gaps. */
