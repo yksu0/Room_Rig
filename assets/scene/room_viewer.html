@@ -372,12 +372,13 @@
         roomRoot.add(sunIn);
         roomRoot.add(sunIn.target);
       } else if (isNiche) {
-        // Opaque recess so AC / vents do not punch a sky hole.
+        // Opaque plug = full wall thickness so a side view does not show a
+        // thin grey wafer floating in a sky gap between sill and header.
         const niche = new THREE.Mesh(
           new THREE.BoxGeometry(
-            alongX ? len * 0.98 : thick * 0.55,
+            alongX ? len * 0.98 : thick * 0.98,
             oh * 0.98,
-            alongX ? thick * 0.55 : len * 0.98
+            alongX ? thick * 0.98 : len * 0.98
           ),
           nicheMat
         );
@@ -385,11 +386,11 @@
           niche.position.set(
             (op.along0 + op.along1) / 2,
             (op.y0 + op.y1) / 2,
-            fixed + inwardSign * thick * 0.15
+            fixed
           );
         } else {
           niche.position.set(
-            fixed + inwardSign * thick * 0.15,
+            fixed,
             (op.y0 + op.y1) / 2,
             (op.along0 + op.along1) / 2
           );
@@ -397,8 +398,9 @@
         niche.castShadow = true;
         niche.receiveShadow = true;
         roomRoot.add(niche);
-        // Simple louver stripes (read as grille)
+        // Simple louver stripes on the room-facing face of the plug.
         const stripeN = Math.max(2, Math.min(6, Math.floor(oh / 0.06)));
+        const face = fixed + inwardSign * thick * 0.48;
         for (let i = 0; i < stripeN; i++) {
           const t = (i + 0.5) / stripeN;
           const sy = op.y0 + oh * t;
@@ -411,9 +413,9 @@
             new THREE.MeshStandardMaterial({ color: 0x6a7078, roughness: 0.4, metalness: 0.45 })
           );
           if (alongX) {
-            bar.position.set((op.along0 + op.along1) / 2, sy, fixed + inwardSign * thick * 0.42);
+            bar.position.set((op.along0 + op.along1) / 2, sy, face);
           } else {
-            bar.position.set(fixed + inwardSign * thick * 0.42, sy, (op.along0 + op.along1) / 2);
+            bar.position.set(face, sy, (op.along0 + op.along1) / 2);
           }
           roomRoot.add(bar);
         }
