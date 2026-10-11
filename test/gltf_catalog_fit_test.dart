@@ -79,6 +79,17 @@ void main() {
     }
   });
 
+  test('wall AC clear opening matches Hitachi GLB aspect (~3.9:1)', () {
+    final p = GltfCatalog.profileFor('ac');
+    expect(p.clearWidthMeters, closeTo(1.15, 0.01));
+    expect(p.clearHeightMeters, closeTo(0.30, 0.01));
+    expect(p.heightMeters, closeTo(0.30, 0.01));
+    // Width-limited wallOpening must not leave a tall empty niche.
+    final aspect = p.clearWidthMeters! / p.clearHeightMeters!;
+    expect(aspect, greaterThan(3.5));
+    expect(aspect, lessThan(4.2));
+  });
+
   test('Orbit meshHeight matches MeshProfile for every catalog kind', () {
     const kinds = FurnitureKind.values;
     for (final kind in kinds) {

@@ -579,7 +579,8 @@
     const sy = targetH > 0 ? targetH / Math.max(size.y, 1e-4) : sx;
     const sz = targetD / Math.max(size.z, 1e-4);
     if (mode === 'wallOpening' || mode === 'ignoreDepth') {
-      root.scale.setScalar(Math.min(sx, sy) * 0.98);
+      // Stay inside the clear opening; 0.99 leaves only a hairline vs the niche.
+      root.scale.setScalar(Math.min(sx, sy) * 0.99);
     } else if (mode === 'width' || mode === 'fillWidth') {
       root.scale.setScalar(sx * 0.98);
     } else if (mode === 'height') {

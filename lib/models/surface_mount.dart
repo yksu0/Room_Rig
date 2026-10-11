@@ -90,11 +90,11 @@ class SurfaceMounts {
   static const windowTop = 2.05;
   static double get doorTop => GltfCatalog.profileFor('door').openingHeightMeters;
   // Niche fittings — keep vertical span close to the GLB height so wall
-  // holes are not sky-sized. AC ~0.62 m; grille vents ~0.32 m.
+  // holes are not sky-sized. AC ~0.30 m (Hitachi aspect); grille vents ~0.32 m.
   static const ventBottom = 1.85;
   static const ventTop = 2.17;
-  static const acBottom = 1.55;
-  static const acTop = 2.17;
+  static const acBottom = 1.88;
+  static const acTop = 2.18;
   /// Desk surface height — same metre as Model `MeshProfile` for `desk`.
   static double get deskTop => GltfCatalog.profileFor('desk').heightMeters;
 

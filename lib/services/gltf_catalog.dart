@@ -360,18 +360,19 @@ class GltfCatalog {
     ),
     'ac': const MeshProfile(
       iconName: 'ac',
-      // Sketchfab trial: air_condition.glb (~4 MB). Keep ac_condenser.glb as fallback.
+      // Sketchfab Hitachi indoor unit (~4 MB). Native AABB ~0.73×0.19×0.27 —
+      // keep clear W×H near that aspect so wallOpening (min sx,sy) fills the niche.
       assetPath: '$hvacDir/air_condition.glb',
-      heightMeters: 0.62,
+      heightMeters: 0.30,
       role: MeshSimRole.emitter,
       airflowSolid: 0.25,
       wallCut: WallCutKind.niche,
-      wallCutPadMeters: 0.02,
-      clearWidthMeters: 0.9,
-      clearHeightMeters: 0.62,
+      wallCutPadMeters: 0.015,
+      clearWidthMeters: 1.15,
+      clearHeightMeters: 0.30,
       fitMode: MeshFitMode.wallOpening,
-      targetWidthMeters: 0.9,
-      targetDepthMeters: 0.14,
+      targetWidthMeters: 1.15,
+      targetDepthMeters: 0.22,
       // Kenney/HVAC wall meshes are often long on Z — rotate to local +X = along-wall.
       alignFootprint: true,
     ),
