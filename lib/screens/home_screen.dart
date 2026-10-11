@@ -15,6 +15,7 @@ import '../services/layout_share_image.dart';
 import '../services/room_compare.dart';
 import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
+import '../widgets/chrome/adaptive_panel.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/onboarding_sheet.dart';
 import '../widgets/room_icons.dart';
@@ -258,43 +259,131 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final room = state.currentRoomData;
-
     final desktop = AppLayout.isDesktop(context);
-    final page = Column(
+
+    if (desktop) {
+      final wideDesktop =
+          MediaQuery.sizeOf(context).width >= AppLayout.desktopMinWidth;
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.lg,
+                  AppSpace.sm,
+                  AppSpace.lg,
+                  AppSpace.xs,
+                ),
+                child: _buildHeader(context, room, state),
+              ),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: AppLayout.inspectRailWidthFor(context),
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            right: BorderSide(color: AppColors.borderSubtle),
+                          ),
+                        ),
+                        child: AdaptiveRailPane(
+                          title: 'Status',
+                          icon: Icons.insights_outlined,
+                          accent: AppColors.cyan,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ..._hubStatusBlocks(context, state),
+                              _buildScoreSection(context, state),
+                              if (state.roomIsReady &&
+                                  state.suggestedUpgrade() != null) ...[
+                                const SizedBox(height: AppSpace.md),
+                                _UpgradeSuggestionBanner(
+                                  suggestion: state.suggestedUpgrade()!,
+                                ),
+                              ],
+                              if (!wideDesktop) ...[
+                                const SizedBox(height: AppSpace.section),
+                                _buildMetricsRow(
+                                  context,
+                                  state,
+                                  includeTitle: true,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: ColoredBox(
+                        color: AppColors.bg,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildMyRooms(context, state),
+                              const SizedBox(height: AppSpace.section),
+                              _buildPresetSelector(context, state),
+                              const SizedBox(height: AppSpace.section),
+                              _buildQuickActions(context, state),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (wideDesktop)
+                      SizedBox(
+                        width: AppLayout.toolsRailWidthFor(context),
+                        child: DecoratedBox(
+                          decoration: const BoxDecoration(
+                            border: Border(
+                              left: BorderSide(color: AppColors.borderSubtle),
+                            ),
+                          ),
+                          child: AdaptiveRailPane(
+                            title: 'Specs',
+                            icon: Icons.meeting_room_outlined,
+                            accent: AppColors.cyan,
+                            child: _buildMetricsRow(
+                              context,
+                              state,
+                              includeTitle: false,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpace.screen,
+            AppSpace.lg,
+            AppSpace.screen,
+            AppSpace.xxl,
+          ),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(context, room, state),
               const SizedBox(height: AppSpace.xl),
-              if (!state.roomIsReady) ...[
-                _GettingStartedBanner(
-                  onScan: () => state.setTab(1),
-                  onCreate: () => _showCreateRoomSheet(context, state),
-                  onDemo: () => _startProfessorDemo(state),
-                ),
-                const SizedBox(height: AppSpace.xl),
-              ] else if (state.scanComplete && state.lastScanConfidence != null) ...[
-                _ScanConfidenceBanner(metrics: state.lastScanConfidence!),
-                const SizedBox(height: AppSpace.md),
-                _JourneySteps(state: state),
-                const SizedBox(height: AppSpace.xl),
-              ] else if (state.roomIsReady) ...[
-                _ManualRoomBanner(state: state),
-                const SizedBox(height: AppSpace.md),
-                _JourneySteps(state: state),
-                const SizedBox(height: AppSpace.xs),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: () => _startProfessorDemo(state),
-                    icon: Icon(Icons.school_outlined, size: 18, color: AppColors.green),
-                    label: Text(
-                      'Replay professor demo path',
-                      style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpace.xl),
-              ],
+              ..._hubStatusBlocks(context, state),
               _buildScoreSection(context, state),
               if (state.roomIsReady && state.suggestedUpgrade() != null) ...[
                 const SizedBox(height: AppSpace.md),
@@ -309,31 +398,53 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: AppSpace.section),
               _buildMetricsRow(context, state),
             ],
-    );
-
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            desktop ? AppSpace.xl : AppSpace.screen,
-            AppSpace.lg,
-            desktop ? AppSpace.xl : AppSpace.screen,
-            AppSpace.xxl,
           ),
-          child: desktop
-              ? Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: AppLayout.readingMaxWidth,
-                    ),
-                    child: page,
-                  ),
-                )
-              : page,
         ),
       ),
     );
+  }
+
+  /// Getting-started / journey banners shared by mobile stack and desktop Status rail.
+  List<Widget> _hubStatusBlocks(BuildContext context, AppState state) {
+    if (!state.roomIsReady) {
+      return [
+        _GettingStartedBanner(
+          onScan: () => state.setTab(1),
+          onCreate: () => _showCreateRoomSheet(context, state),
+          onDemo: () => _startProfessorDemo(state),
+        ),
+        const SizedBox(height: AppSpace.xl),
+      ];
+    }
+    if (state.scanComplete && state.lastScanConfidence != null) {
+      return [
+        _ScanConfidenceBanner(metrics: state.lastScanConfidence!),
+        const SizedBox(height: AppSpace.md),
+        _JourneySteps(state: state),
+        const SizedBox(height: AppSpace.xl),
+      ];
+    }
+    return [
+      _ManualRoomBanner(state: state),
+      const SizedBox(height: AppSpace.md),
+      _JourneySteps(state: state),
+      const SizedBox(height: AppSpace.xs),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => _startProfessorDemo(state),
+          icon: Icon(Icons.school_outlined, size: 18, color: AppColors.green),
+          label: Text(
+            'Replay professor demo path',
+            style: TextStyle(
+              color: AppColors.green,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: AppSpace.xl),
+    ];
   }
 
   Widget _buildHeader(BuildContext context, RoomData room, AppState state) {
@@ -1027,20 +1138,26 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMetricsRow(BuildContext context, AppState state) {
+  Widget _buildMetricsRow(
+    BuildContext context,
+    AppState state, {
+    bool includeTitle = true,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'ROOM SPECS',
-          style: TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 2,
+        if (includeTitle) ...[
+          Text(
+            'ROOM SPECS',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 2,
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
+          const SizedBox(height: 12),
+        ],
         GlassCard(
           child: Column(
             children: [
