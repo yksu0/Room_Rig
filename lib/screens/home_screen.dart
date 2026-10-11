@@ -531,21 +531,20 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Column(
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              Flexible(
-                child: Text(
-                  'Overall Rig Score',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+              Text(
+                'Overall Rig Score',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1,
                 ),
               ),
-              const SizedBox(width: 8),
               Material(
                 color: Colors.transparent,
                 child: InkWell(
@@ -576,7 +575,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
@@ -635,20 +633,83 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
           const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _tappableRing(state, 'airflow', state.airflowScore, 70, AppColors.airflowColor, 'Airflow'),
-              ScoreRing(score: state.overallScore, size: 104, color: AppColors.cyan, label: 'Overall'),
-              _tappableRing(state, 'lighting', state.lightingScore, 70, AppColors.lightingColor, 'Lighting'),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final tight = constraints.maxWidth < 360;
+              final side = tight ? 56.0 : 70.0;
+              final overall = tight ? 84.0 : 104.0;
+              return Row(
+                children: [
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: _tappableRing(
+                        state,
+                        'airflow',
+                        state.airflowScore,
+                        side,
+                        AppColors.airflowColor,
+                        'Airflow',
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: ScoreRing(
+                        score: state.overallScore,
+                        size: overall,
+                        color: AppColors.cyan,
+                        label: 'Overall',
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: _tappableRing(
+                        state,
+                        'lighting',
+                        state.lightingScore,
+                        side,
+                        AppColors.lightingColor,
+                        'Lighting',
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 14),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _tappableRing(state, 'ergonomics', state.ergonomicsScore, 64, AppColors.ergonomicsColor, 'Ergo'),
-              _tappableRing(state, 'spatial', state.spatialScore, 64, AppColors.spatialColor, 'Space'),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: _tappableRing(
+                    state,
+                    'ergonomics',
+                    state.ergonomicsScore,
+                    64,
+                    AppColors.ergonomicsColor,
+                    'Ergo',
+                  ),
+                ),
+              ),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: _tappableRing(
+                    state,
+                    'spatial',
+                    state.spatialScore,
+                    64,
+                    AppColors.spatialColor,
+                    'Space',
+                  ),
+                ),
+              ),
             ],
           ),
         ],
@@ -1207,14 +1268,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 4,
+                runSpacing: 4,
                 children: [
                   if (state.hasCompareSnapshot)
                     TextButton(
                       onPressed: () => _confirmRestoreOriginal(context, state),
                       child: const Text('Restore original'),
                     ),
-                  const Spacer(),
                   TextButton(
                     onPressed: () => Share.share(
                       state.buildShareReport(),

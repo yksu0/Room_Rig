@@ -128,7 +128,7 @@ void main() {
   group('catalog placement', () {
     test('adds an item, selects it, and keeps ids unique', () {
       final state = AppState();
-      const desk = RigCatalogEntry(
+      final desk = RigCatalogEntry(
         baseId: 'desk',
         name: 'Desk',
         iconName: 'desk',
@@ -151,7 +151,7 @@ void main() {
     test('placed item lands inside the room and clear of other furniture', () {
       final state = AppState();
       final room = state.currentRoomData;
-      const bed = RigCatalogEntry(
+      final bed = RigCatalogEntry(
         baseId: 'spare_bed',
         name: 'Bed',
         iconName: 'bed',
@@ -178,7 +178,7 @@ void main() {
 
     test('reports failure instead of stacking when the room is full', () {
       final state = AppState();
-      const filler = RigCatalogEntry(
+      final filler = RigCatalogEntry(
         baseId: 'filler',
         name: 'Filler',
         iconName: 'plant',
@@ -220,9 +220,14 @@ void main() {
       final before = state.activeRoomLayout;
       expect(before, isNotNull);
       final centerBefore = fanCenterX(state);
+      final fan = state.furniture.firstWhere((f) => f.id == 'fan');
+      // Open floor near the south wall — clear of the desk/bed cluster.
+      final targetX = 0.3;
+      final targetY = (state.currentRoomData.gridRows - fan.height - 0.3)
+          .clamp(0.0, state.currentRoomData.gridRows.toDouble());
 
       state.beginFurnitureGesture();
-      state.moveFurniture('fan', 2.0, 2.0);
+      state.moveFurniture('fan', targetX, targetY);
       expect(
         identical(state.activeRoomLayout, before),
         isTrue,
@@ -230,7 +235,7 @@ void main() {
       );
       expect(fanCenterX(state), centerBefore);
       // The editable furniture list is still live so the canvas can follow.
-      expect(state.furniture.firstWhere((f) => f.id == 'fan').gridX, isNot(4));
+      expect(state.furniture.firstWhere((f) => f.id == 'fan').gridX, isNot(fan.gridX));
 
       state.endFurnitureGesture();
       expect(identical(state.activeRoomLayout, before), isFalse);
@@ -317,6 +322,8 @@ void main() {
   group('2D floor plan', () {
     testWidgets('horizontal swipe on the plan no longer moves anything', (tester) async {
       final state = await pumpRig(tester);
+      await tester.tap(find.byKey(const ValueKey('chrome_view_edit')));
+      await tester.pumpAndSettle();
       final before = {for (final f in state.furniture) f.id: (f.gridX, f.gridY)};
 
       // Empty floor, away from any item: this used to spin the whole room.
@@ -332,6 +339,8 @@ void main() {
 
     testWidgets('dragging an item follows the finger', (tester) async {
       final state = await pumpRig(tester);
+      await tester.tap(find.byKey(const ValueKey('chrome_view_edit')));
+      await tester.pumpAndSettle();
       final fanBefore = state.furniture.firstWhere((f) => f.id == 'fan');
 
       // Items are IgnorePointer visuals; the plan Listener owns the drag.
@@ -357,13 +366,14 @@ void main() {
     testWidgets('drags the selected item across the floor', (tester) async {
       final state = await pumpRig(tester);
 
-      await tester.tap(find.text('3D'));
+      await tester.tap(find.byKey(const ValueKey('chrome_view_orbit')));
       await tester.pumpAndSettle();
 
       state.selectFurniture('fan');
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('rig3d_move_mode')));
+      await tester.tap(find.byKey(const ValueKey('rig3d_move_mode')).hitTestable());
       await tester.pumpAndSettle();
+      expect(find.textContaining('MOVE on'), findsWidgets);
       final before = state.furniture.firstWhere((f) => f.id == 'fan');
 
       // Aim at the item where it actually renders in the 3D canvas.
@@ -384,7 +394,11 @@ void main() {
       expect(projected, isNotNull);
       final start = canvasRect.topLeft + projected!.offset;
 
-      await tester.dragFrom(start, const Offset(0, 40));
+      // Pointer events (not dragFrom) so the Listener arms MOVE before Scale.
+      final gesture = await tester.startGesture(start);
+      await gesture.moveBy(const Offset(0, 100));
+      await tester.pump();
+      await gesture.up();
       await tester.pumpAndSettle();
 
       final after = state.furniture.firstWhere((f) => f.id == 'fan');
@@ -397,7 +411,7 @@ void main() {
     testWidgets('short drag on selected item orbits without moving furniture', (tester) async {
       final state = await pumpRig(tester);
 
-      await tester.tap(find.text('3D'));
+      await tester.tap(find.byKey(const ValueKey('chrome_view_orbit')));
       await tester.pumpAndSettle();
 
       state.selectFurniture('fan');
@@ -434,7 +448,7 @@ void main() {
     testWidgets('empty floor drag orbits camera without moving furniture', (tester) async {
       final state = await pumpRig(tester);
 
-      await tester.tap(find.text('3D'));
+      await tester.tap(find.byKey(const ValueKey('chrome_view_orbit')));
       await tester.pumpAndSettle();
       state.clearSelection();
       await tester.pumpAndSettle();
@@ -453,7 +467,7 @@ void main() {
     testWidgets('pending ghost can be dragged without tapping MOVE', (tester) async {
       final state = await pumpRig(tester);
 
-      await tester.tap(find.text('3D'));
+      await tester.tap(find.byKey(const ValueKey('chrome_view_orbit')));
       await tester.pumpAndSettle();
 
       final lamp = RigCatalog.items.firstWhere((e) => e.name == 'Task Lamp');

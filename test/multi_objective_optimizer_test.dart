@@ -33,8 +33,16 @@ void main() {
     );
 
     expect(result.furniture.length, baseline.length);
-    expect(result.reasons.first.contains('Weight mix'), isTrue);
-    expect(result.reasons.any((r) => r.contains('Blended')), isTrue);
+    expect(result.reasons.any((r) => r.contains('Weight mix')), isTrue);
+    // Best-of ranks independent proposals (blend / domain / rules) — winner
+    // may be any tag, but must record which candidate won.
+    expect(
+      result.reasons.any((r) =>
+          r.contains('Blended') ||
+          r.contains('Candidate:') ||
+          r.contains('Rules pack')),
+      isTrue,
+    );
     expect(result.airflowMetrics.circulationScore, greaterThanOrEqualTo(0));
     expect(result.lightingMetrics.exposureScore, greaterThanOrEqualTo(0));
     expect(result.ergonomicsMetrics.comfortScore, greaterThanOrEqualTo(0));

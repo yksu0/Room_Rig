@@ -18,8 +18,10 @@ void main() {
 
   Future<AppState> pumpRig(WidgetTester tester) async {
     final state = AppState();
-    await tester.binding.setSurfaceSize(const Size(1200, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: state,
@@ -107,17 +109,12 @@ void main() {
     expect(state.selectedIsScanObject, isFalse);
     expect(find.textContaining('Gaming Chair'), findsWidgets);
 
-    await tester.tap(find.text('Items'));
-    await tester.pumpAndSettle();
     expect(find.text('ROOM ITEMS'), findsOneWidget);
 
-    // Close drawer by selecting the same item again from list.
+    // Select the same item again from the embedded inspect rail.
     await tester.tap(find.text('Gaming Chair').last);
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('3D'));
-    await tester.pumpAndSettle();
-    // Toggle cleared selection if drawer tap toggled off; re-select for assert.
+    // Toggle cleared selection if list tap toggled off; re-select for assert.
     if (state.selectedItemId == null) {
       state.selectFurniture('chair');
       await tester.pump();

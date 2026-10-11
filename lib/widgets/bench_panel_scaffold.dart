@@ -1,4 +1,6 @@
 // lib/widgets/bench_panel_scaffold.dart
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../models/room_model.dart';
 import '../services/bench_layouts.dart';
@@ -415,13 +417,18 @@ class BenchPrimaryButton extends StatelessWidget {
           children: [
             SvgIcon(icon, size: 18, color: disabled ? AppColors.textMuted : Colors.white),
             const SizedBox(width: AppSpace.xs),
-            Text(
-              label,
-              style: TextStyle(
-                color: disabled ? AppColors.textMuted : Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 14,
-                letterSpacing: 1.1,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: disabled ? AppColors.textMuted : Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  letterSpacing: 1.1,
+                ),
               ),
             ),
           ],
@@ -685,18 +692,30 @@ class BenchResultsCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 14),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: rings
-                    .map(
-                      (r) => ScoreRing(
-                        score: r.score,
-                        size: r.size,
-                        color: r.color,
-                        label: r.label,
-                      ),
-                    )
-                    .toList(),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final n = rings.isEmpty ? 1 : rings.length;
+                  final maxRing = ((constraints.maxWidth - 8 * (n - 1)) / n)
+                      .clamp(48.0, 78.0);
+                  return Row(
+                    children: [
+                      for (var i = 0; i < rings.length; i++) ...[
+                        if (i > 0) const SizedBox(width: 8),
+                        Expanded(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: ScoreRing(
+                              score: rings[i].score,
+                              size: math.min(rings[i].size, maxRing),
+                              color: rings[i].color,
+                              label: rings[i].label,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
               const SizedBox(height: 14),
               BenchmarkValidationCard(validation: validation),

@@ -152,7 +152,19 @@ class RoomModelSceneState extends State<RoomModelScene> {
   }
 
   Future<void> _initController() async {
-    final controller = WebViewController()
+    // Widget tests (and rare embed hosts) may not register a WebViewPlatform.
+    late final WebViewController controller;
+    try {
+      controller = WebViewController();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _error = 'Model WebView unavailable in this environment';
+      });
+      return;
+    }
+    controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF87B8E0))
       ..addJavaScriptChannel(

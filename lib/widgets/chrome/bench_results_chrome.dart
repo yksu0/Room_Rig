@@ -31,12 +31,12 @@ class BenchLegend extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: const [
+          const Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            children: [
               _LegendSwatch(color: AppColors.green, label: 'Good'),
-              SizedBox(width: 12),
               _LegendSwatch(color: AppColors.amber, label: 'OK'),
-              SizedBox(width: 12),
               _LegendSwatch(color: AppColors.red, label: 'Poor'),
             ],
           ),

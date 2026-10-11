@@ -326,6 +326,14 @@ class LightingSimulator {
       final z = z0 + (z1 - z0) * t;
       for (final o in occluders) {
         if (x < o.minX || x > o.maxX || z < o.minZ || z > o.maxZ) continue;
+        // Desk / shelf lamps sit inside their host AABB — do not self-shadow
+        // the surface they are meant to light (task sampling uses desk center).
+        if (x0 >= o.minX &&
+            x0 <= o.maxX &&
+            z0 >= o.minZ &&
+            z0 <= o.maxZ) {
+          continue;
+        }
         if (o.height <= lightY * 0.45 && !o.isGlass) continue;
         if (o.isGlass) {
           // Glass: keep most daylight, slight color-neutral attenuation.

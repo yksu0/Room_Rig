@@ -181,8 +181,11 @@ class AppState extends ChangeNotifier {
   }
 
   /// When dirty, Hub rings use live geometry sims; BENCH OK locks last Apply/Auto-Rig.
+  /// A Bench Apply (`isOptimized`) keeps BENCH OK even if other modes stay dirty
+  /// after a single-domain lock (airflow Apply does not clear lighting/ergo).
   bool get scoresAreSimulated =>
-      _airflowMetricsDirty || _lightingMetricsDirty || _ergonomicsMetricsDirty;
+      !_isOptimized &&
+      (_airflowMetricsDirty || _lightingMetricsDirty || _ergonomicsMetricsDirty);
 
   /// Whether switching preset would discard meaningful user work.
   bool get hasLayoutWork =>

@@ -157,61 +157,74 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             _buildHeader(context, state, desktop: desktop),
             Expanded(
               child: desktop
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          width: AppLayout.toolsRailWidthFor(context),
-                          child: DecoratedBox(
-                            decoration: const BoxDecoration(
-                              border: Border(
-                                right: BorderSide(color: AppColors.borderSubtle),
+                  ? LayoutBuilder(
+                      builder: (context, constraints) {
+                        final toolsW = AppLayout.toolsRailWidthFor(context);
+                        final inspectW = AppLayout.inspectRailWidthFor(context);
+                        // Keep a usable canvas on landscape-phone / narrow desktop.
+                        final maxRail = (constraints.maxWidth - 280).clamp(0.0, constraints.maxWidth);
+                        final scale = (toolsW + inspectW) > maxRail && (toolsW + inspectW) > 0
+                            ? maxRail / (toolsW + inspectW)
+                            : 1.0;
+                        final tw = toolsW * scale;
+                        final iw = inspectW * scale;
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              width: tw,
+                              child: DecoratedBox(
+                                decoration: const BoxDecoration(
+                                  border: Border(
+                                    right: BorderSide(color: AppColors.borderSubtle),
+                                  ),
+                                ),
+                                child: AdaptiveRailPane(
+                                  title: 'Workspace',
+                                  icon: Icons.tune_rounded,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildViewPanelBody(state, embedded: true),
+                                      const SizedBox(height: 20),
+                                      const Divider(color: AppColors.borderSubtle),
+                                      const SizedBox(height: 12),
+                                      _buildToolsPanelBody(context, state, embedded: true),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
-                            child: AdaptiveRailPane(
-                              title: 'Workspace',
-                              icon: Icons.tune_rounded,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildViewPanelBody(state, embedded: true),
-                                  const SizedBox(height: 20),
-                                  const Divider(color: AppColors.borderSubtle),
-                                  const SizedBox(height: 12),
-                                  _buildToolsPanelBody(context, state, embedded: true),
-                                ],
+                            Expanded(child: _buildCanvasWorkspace(state)),
+                            SizedBox(
+                              width: iw,
+                              child: DecoratedBox(
+                                decoration: const BoxDecoration(
+                                  border: Border(
+                                    left: BorderSide(color: AppColors.borderSubtle),
+                                  ),
+                                ),
+                                child: RigRoomItemsDrawer(
+                                  embedded: true,
+                                  sidebarQuery: _sidebarQuery,
+                                  sidebarCategory: _sidebarCategory,
+                                  sidebarMinConfidence: _sidebarMinConfidence,
+                                  onQueryChanged: (v) =>
+                                      setState(() => _sidebarQuery = v),
+                                  onCategoryChanged: (cat) =>
+                                      setState(() => _sidebarCategory = cat),
+                                  onMinConfidenceChanged: (v) =>
+                                      setState(() => _sidebarMinConfidence = v),
+                                  onReplaceScanObject: (obj) =>
+                                      _showScanReplacePicker(state, obj),
+                                  onDeleteScanObject: (obj) =>
+                                      _deleteScanObjectWithUndo(state, obj),
+                                ),
                               ),
                             ),
-                          ),
-                        ),
-                        Expanded(child: _buildCanvasWorkspace(state)),
-                        SizedBox(
-                          width: AppLayout.inspectRailWidthFor(context),
-                          child: DecoratedBox(
-                            decoration: const BoxDecoration(
-                              border: Border(
-                                left: BorderSide(color: AppColors.borderSubtle),
-                              ),
-                            ),
-                            child: RigRoomItemsDrawer(
-                              embedded: true,
-                              sidebarQuery: _sidebarQuery,
-                              sidebarCategory: _sidebarCategory,
-                              sidebarMinConfidence: _sidebarMinConfidence,
-                              onQueryChanged: (v) =>
-                                  setState(() => _sidebarQuery = v),
-                              onCategoryChanged: (cat) =>
-                                  setState(() => _sidebarCategory = cat),
-                              onMinConfidenceChanged: (v) =>
-                                  setState(() => _sidebarMinConfidence = v),
-                              onReplaceScanObject: (obj) =>
-                                  _showScanReplacePicker(state, obj),
-                              onDeleteScanObject: (obj) =>
-                                  _deleteScanObjectWithUndo(state, obj),
-                            ),
-                          ),
-                        ),
-                      ],
+                          ],
+                        );
+                      },
                     )
                   : _buildCanvasWorkspace(state),
             ),
@@ -247,7 +260,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   _drag2dItemId == null)
                 Positioned(
                   left: 8,
-                  right: 8,
+                  // Orbit/Model keep a gutter so MOVE + yaw chrome stay tappable.
+                  right: _viewMode == _RigViewMode.twoD ? 8 : 100,
                   top: state.layoutConflicts.isNotEmpty
                       ? (_viewMode == _RigViewMode.model3D ? 84 : 52)
                       : 4,
@@ -377,28 +391,30 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             ],
           ),
           const SizedBox(height: AppSpace.sm),
-          SizedBox(
-            height: 48,
-            child: Row(
+          if (desktop)
+            SizedBox(
+              height: 48,
+              child: _buildCompactViewChips(),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
+                SizedBox(
+                  height: 48,
                   child: _buildCompactViewChips(),
                 ),
-                // Desktop hosts View/Tools/Inspect as side rails — no sheet chips.
-                if (!desktop) ...[
-                  const SizedBox(width: AppSpace.xs),
-                  AdaptivePanelTriggers(
-                    controller: _adaptivePanelControllerFor(state),
-                    visible: const [
-                      ChromeRegion.view,
-                      ChromeRegion.tools,
-                      ChromeRegion.inspect,
-                    ],
-                  ),
-                ],
+                const SizedBox(height: AppSpace.xs),
+                AdaptivePanelTriggers(
+                  controller: _adaptivePanelControllerFor(state),
+                  visible: const [
+                    ChromeRegion.view,
+                    ChromeRegion.tools,
+                    ChromeRegion.inspect,
+                  ],
+                ),
               ],
             ),
-          ),
         ],
       ),
     );

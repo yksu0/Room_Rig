@@ -507,11 +507,12 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
                   : switch (_layoutVariant) {
                       BenchLayoutKind.myRoom =>
                         (_layouts?.fellBackToSample ?? false)
-                            ? 'Reference room — Rig empty'
-                            : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items',
+                            ? 'Reference sample — Rig is empty (not your room)'
+                            : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
                       BenchLayoutKind.improved =>
                         _layouts?.improvedCaption ?? 'Improved · Auto-Rig',
-                      BenchLayoutKind.sample => 'Sample room',
+                      BenchLayoutKind.sample =>
+                        'Sample room — chair blocked, gear out of reach',
                     },
               style: const TextStyle(
                 color: AppColors.textPrimary,

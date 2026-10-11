@@ -336,6 +336,7 @@ class ChromeViewModeChips extends StatelessWidget {
           children: [
             for (final m in modes)
               Material(
+                key: ValueKey('chrome_view_${m.name}'),
                 color: selected == m
                     ? AppColors.cyan.withValues(alpha: 0.15)
                     : AppColors.card,

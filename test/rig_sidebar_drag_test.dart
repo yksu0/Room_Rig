@@ -4,8 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:room_rig/models/app_state.dart';
 import 'package:room_rig/screens/rig_customizer_screen.dart';
-import 'package:room_rig/widgets/empty_state.dart';
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -17,8 +15,11 @@ void main() {
 
   Future<AppState> pumpRig(WidgetTester tester) async {
     final state = AppState();
-    await tester.binding.setSurfaceSize(const Size(1200, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // Desktop shell: inspect rail already embeds LAYOUT ITEMS.
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: state,
@@ -33,19 +34,10 @@ void main() {
   testWidgets('sidebar opens and lists layout items', (tester) async {
     await pumpRig(tester);
 
-    expect(find.text('Items'), findsOneWidget);
-    await tester.tap(find.text('Items'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('ROOM ITEMS'), findsOneWidget);
     expect(find.text('LAYOUT ITEMS'), findsOneWidget);
+    expect(find.text('ROOM ITEMS'), findsOneWidget);
     expect(find.textContaining('Gaming Desk'), findsWidgets);
-
-    // Scroll drawer list to the empty scan state.
-    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
-    await tester.pumpAndSettle();
-    expect(find.byType(EmptyState), findsOneWidget);
-    expect(find.text('No scan objects yet'), findsOneWidget);
+    expect(find.textContaining('Gaming Chair'), findsWidgets);
   });
 
   testWidgets('2D drag moves furniture with collision snap', (tester) async {

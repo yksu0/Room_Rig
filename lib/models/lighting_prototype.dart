@@ -27,19 +27,23 @@ class LightingPrototypeLayouts {
   /// Desk in the daylight band with side-light geometry (OSHA: display at
   /// right angles to the window), lamp on-task, shelf cleared from the
   /// window path, bed on the dark perimeter.
+  ///
+  /// Positions sized for current metre footprints (desk 2×1, chair ~1.1²,
+  /// bed 2×2, shelf ~1.4×0.65) so Improved layouts stay collision-free.
   static List<FurnitureItem> optimized(List<FurnitureItem> source) {
     final positions = <String, ({double x, double y})>{
-      'window': (x: 2.0, y: 0.0),
-      'door': (x: 0.0, y: 6.2),
-      // Desk on west side; chair further west → seated faces east (window is north = side light).
-      'desk': (x: 1.2, y: 2.0),
-      'chair': (x: 0.15, y: 2.05),
-      'pc': (x: 2.4, y: 2.0),
-      'lamp': (x: 2.0, y: 2.0),
-      'shelf': (x: 5.0, y: 5.5),
-      'bed': (x: 3.0, y: 5.5),
-      'ac': (x: 5.0, y: 2.5),
-      'fan': (x: 0.15, y: 4.2),
+      'window': (x: 2.4, y: 0.0),
+      'door': (x: 0.0, y: 6.5),
+      // Desk in daylight band (west), edge-packed desktop trio on 2×1 desk.
+      'desk': (x: 0.3, y: 0.9),
+      'chair': (x: 0.75, y: 2.05),
+      'pc': (x: 0.3, y: 0.95),
+      'monitor': (x: 0.9, y: 0.95),
+      'lamp': (x: 1.8, y: 0.95),
+      'shelf': (x: 4.5, y: 6.0),
+      'bed': (x: 2.2, y: 5.5),
+      'ac': (x: 4.0, y: 0.0),
+      'fan': (x: 0.15, y: 3.8),
     };
     return _applyPositions(source, positions);
   }
