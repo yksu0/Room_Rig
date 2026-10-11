@@ -46,7 +46,7 @@ class HubScoreLabels {
   static const benchOk = 'BENCH OK';
   static const roughSubtitle = 'Run Bench to lock scores after layout changes.';
   static const honestyNote =
-      'ROUGH EST. = impact estimate until Bench Apply; BENCH OK = last Apply locked sim scores.';
+      'ROUGH EST. = live layout heuristics (geometry); BENCH OK = Bench Apply locked those sims. Overall matches Auto-Rig composite.';
 }
 
 class UpgradeCatalog {

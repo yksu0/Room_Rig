@@ -32,11 +32,11 @@ enum WorkClusterBias {
 class LayoutOptimizerCommon {
   LayoutOptimizerCommon._();
 
-  /// Chair pull-back used across Auto-Rig (workstation clearance practice).
-  static const chairPullback = ComfortHeuristics.chairPullbackMeters;
+  /// Chair pull-back in grid cells (see [ComfortHeuristics.chairPullbackCells]).
+  static const chairPullback = ComfortHeuristics.chairPullbackCells;
 
   /// Minimum clear cells in front of a door (entry circulation practice).
-  static const doorApproachDepth = ComfortHeuristics.doorApproachDepth;
+  static const doorApproachDepth = ComfortHeuristics.doorApproachDepthCells;
 
   static List<FurnitureItem> applyTargets({
     required List<FurnitureItem> source,
@@ -321,7 +321,9 @@ class LayoutOptimizerCommon {
       case WorkClusterBias.lighting:
         reasons.add('Desk offset for side daylight — screens at right angles to windows (OSHA)');
       case WorkClusterBias.ergonomics:
-        reasons.add('Desk with clear approach and ~${chairPullback.toStringAsFixed(1)} m chair pull-back');
+        reasons.add(
+          'Desk with clear approach and ~${ComfortHeuristics.chairPullbackMeters.toStringAsFixed(2)} m chair pull-back',
+        );
     }
 
     // Park desk-top gear first so the chair can align to the seated monitor,
@@ -354,7 +356,9 @@ class LayoutOptimizerCommon {
         door: door,
         alignWith: alignWith,
       );
-      reasons.add('Centered chair on the desk with ~${chairPullback.toStringAsFixed(1)} m pull-back');
+      reasons.add(
+        'Centered chair on the desk with ~${ComfortHeuristics.chairPullbackMeters.toStringAsFixed(2)} m pull-back',
+      );
       if (door != null) {
         final prospect = ComfortHeuristics.doorProspectScore(
           chair: chair.copyWith(

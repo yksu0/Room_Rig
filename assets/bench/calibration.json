@@ -1,11 +1,24 @@
 {
-  "version": 1,
-  "note": "Bench domains are deterministic heuristics — not CFD, radiosity, or ML. Scan YOLO lives under assets/models/ and is unrelated.",
+  "version": 2,
+  "note": "Bench domains are deterministic heuristics — not CFD, radiosity, or ML. Clearances are authored in grid cells; physical meters = cells × RoomScale.cellMeters (0.6). Hub Overall uses the same MultiObjectiveOptimizer.scoreLayout composite as Auto-Rig.",
+  "scale": {
+    "cellMeters": 0.6,
+    "chairPullbackCells": 0.95,
+    "chairPullbackMeters": 0.57,
+    "doorApproachDepthCells": 1.2,
+    "doorApproachDepthMeters": 0.72,
+    "hvacClearanceCells": 0.55,
+    "hvacClearanceMeters": 0.33,
+    "personRadiusCells": 0.45,
+    "minAisleMeters": 0.9,
+    "minAisleCells": 1.5
+  },
   "domains": {
     "airflow": {
       "model": "coarse_voxel_force_field",
       "not": "CFD / Navier-Stokes",
-      "roomMeters": { "width": 6.0, "depth": 8.0, "height": 2.8 },
+      "roomCells": { "width": 6, "depth": 8 },
+      "roomMeters": { "width": 3.6, "depth": 4.8, "height": 2.8 },
       "voxel": { "nx": 18, "ny": 10, "nz": 24 },
       "emitters": {
         "acColdStrength": 1.0,
@@ -13,7 +26,7 @@
         "fanPush": 0.7,
         "openingLeakFraction": 0.22
       },
-      "passBarCirculation": 55
+      "passBarCirculation": 50.5
     },
     "lighting": {
       "model": "2d_lux_proxy_with_soft_occlusion",
@@ -34,6 +47,10 @@
       "pathGrid": { "cols": 24, "rows": 32 },
       "deskTopItemsCountAsConflicts": false,
       "passBarComfort": 58
+    },
+    "spatial": {
+      "aisleMinCells": 1.5,
+      "aisleMinMeters": 0.9
     }
   }
 }

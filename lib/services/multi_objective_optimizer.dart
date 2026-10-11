@@ -128,7 +128,8 @@ class MultiObjectiveOptimizer {
 
   static const int _maxKeptCandidates = 4;
 
-  /// Weighted composite matching [AppState.overallScore] sim axes.
+  /// Weighted composite used by Auto-Rig rank and [AppState.overallScore].
+  /// Includes hard-conflict and work-cluster penalties so Hub and solver agree.
   static double scoreLayout({
     required List<FurnitureItem> furniture,
     required int gridCols,

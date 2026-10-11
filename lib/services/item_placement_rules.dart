@@ -9,11 +9,12 @@
  // - HVAC practice: keep furniture off supply/return faces (~6–18 in)
  // - Command / sleep privacy: bed not in door's straight inbound axis
 //
-// Grid cells ≈ 1 m. Clearances below are in cells.
+// Clearances below are in grid cells (× RoomScale.cellMeters for meters).
 import 'dart:math' as math;
 
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
+import 'comfort_heuristics.dart';
 
 /// Where a piece wants to live after Auto-Rig.
 enum PlacementZone {
@@ -51,7 +52,7 @@ class ItemPlacementRules {
   static const deskBedClearance = 1.05;
 
   /// Chair centered on the desk face with pull-back (see ComfortHeuristics).
-  static const chairPullback = 0.95;
+  static const chairPullback = ComfortHeuristics.chairPullbackCells;
 
   /// Tall storage / wardrobe should sit within this distance of a wall.
   static const wallFlushTolerance = 0.35;

@@ -131,13 +131,17 @@ class ErgonomicsSimSnapshot {
 }
 
 class ErgonomicsSimulator {
+  /// Default gaming-preset footprint (cells). Prefer caller room size when known.
   static const roomWidth = 6.0;
   static const roomDepth = 8.0;
 
-  /// Ideal chair offset behind desk front edge (grid cells ≈ meters).
-  /// Matches [ComfortHeuristics.chairPullbackMeters] (practice clearance).
-  static const idealChairGap = ComfortHeuristics.chairPullbackMeters;
+  /// Ideal chair offset behind desk front (grid cells).
+  static const idealChairGap = ComfortHeuristics.chairPullbackCells;
+
+  /// Minimum free depth behind chair (grid cells).
   static const minPullback = 0.85;
+
+  /// Seated reach radius (grid cells).
   static const reachRadius = 1.35;
 
   static const _pathGridCols = 24;

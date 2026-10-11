@@ -1,5 +1,7 @@
 // lib/models/room_scale.dart
 // One cell on the Rig/Bench grid is 0.6 m — same as scan sizing.
+// Simulators and comfort clearances work in grid cells; convert physical
+// meters with [cellsFromPhysicalMeters] so pull-back / aisle bars match UI scale.
 import 'scan_layout_model.dart';
 
 class RoomScale {
@@ -12,10 +14,14 @@ class RoomScale {
   static const double minMeters = 2.6;
   static const double maxMeters = 9.6;
 
+  /// Room outer size from measured meters → integer cell count (clamped).
   static int cellsFromMeters(double meters) {
     final clamped = meters.clamp(minMeters, maxMeters);
     return (clamped / cellMeters).round().clamp(minCells, maxCells);
   }
+
+  /// Physical clearance (meters) → fractional grid cells for sims / collision.
+  static double cellsFromPhysicalMeters(double meters) => meters / cellMeters;
 
   static double metersFromCells(num cells) => cells * cellMeters;
 

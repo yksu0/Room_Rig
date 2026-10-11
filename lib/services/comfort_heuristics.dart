@@ -10,6 +10,7 @@
 import 'dart:math';
 
 import '../models/room_model.dart';
+import '../models/room_scale.dart';
 import '../models/surface_mount.dart';
 import 'layout_collision.dart';
 
@@ -17,21 +18,45 @@ import 'layout_collision.dart';
 class ComfortHeuristics {
   ComfortHeuristics._();
 
-  /// Chair pull-back behind the desk front (~0.9–1.0 m).
-  /// Practice clearance for sit/stand and rolling (Panero-style interior
-  /// clearances). Not a literal ISO 9241-5 numeric requirement.
-  static const chairPullbackMeters = 0.95;
+  // Clearances below are authored in **grid cells** for the 6×8 demo footprint.
+  // Physical meters = cells × [RoomScale.cellMeters] (0.6 m). Full Panero ~0.95 m
+  // pull-back would be ~1.58 cells and does not fit every piece in that grid;
+  // we keep the calibrated cell targets and report honest meters in UI copy.
 
-  /// Clear strip inward from the door for entry circulation.
-  /// Code-adjacent residential planning habit; IBC/IRC regulate door clear
-  /// opening width, not bedroom furniture setbacks.
-  static const doorApproachDepth = 1.2;
+  /// Chair pull-back behind the desk front (grid cells).
+  /// ≈ 0.57 m at [RoomScale.cellMeters] — practice clearance, not ISO 9241-5.
+  static const chairPullbackCells = 0.95;
 
-  /// Keep floor furniture off supply / return / wall AC faces (~6–18 in practice).
+  static double get chairPullbackMeters =>
+      RoomScale.metersFromCells(chairPullbackCells);
+
+  /// Clear strip inward from the door (grid cells). ≈ 0.72 m physically.
+  /// Code-adjacent residential habit; not an IBC furniture setback.
+  static const doorApproachDepthCells = 1.2;
+
+  static double get doorApproachDepthMeters =>
+      RoomScale.metersFromCells(doorApproachDepthCells);
+
+  /// Alias used by older call sites (cells).
+  static const doorApproachDepth = doorApproachDepthCells;
+
+  /// Keep floor furniture off supply / return / wall AC faces (~0.33 m / 13 in).
   static const hvacClearanceCells = 0.55;
 
-  /// Approximate person radius for circulation (~18 in; Panero; Merrell 2011).
+  static double get hvacClearanceMeters =>
+      RoomScale.metersFromCells(hvacClearanceCells);
+
+  /// Approximate person radius for circulation (~0.27 m in this grid scale).
   static const personRadiusCells = 0.45;
+
+  static double get personRadiusMeters =>
+      RoomScale.metersFromCells(personRadiusCells);
+
+  /// Minimum residential walkway target (~0.9 m) in cells.
+  static const minAisleMeters = 0.9;
+
+  static double get minAisleCells =>
+      RoomScale.cellsFromPhysicalMeters(minAisleMeters);
 
   // ── Scores (0–1, higher is more comfortable) ───────────────────────────
 
