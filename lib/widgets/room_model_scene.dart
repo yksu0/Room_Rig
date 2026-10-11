@@ -279,7 +279,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
 
     final items = widget.furniture.map((f) {
       final profile = GltfCatalog.profileForItem(f);
-      final modelUrl = GltfCatalog.sceneUrlForIcon(f.iconName);
+      final modelUrl = GltfCatalog.sceneUrlForProfile(profile);
       final mount = SurfaceMounts.of(
         f,
         gridCols: cols,

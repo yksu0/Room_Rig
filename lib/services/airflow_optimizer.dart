@@ -52,7 +52,9 @@ class AirflowOptimizer {
 
     final portableAc = LayoutOptimizerCommon.firstWhere(furniture, (f) {
       final hay = '${f.id} ${f.name}'.toLowerCase();
-      return hay.contains('portable') && (hay.contains('ac') || f.iconName == 'ac');
+      return f.iconName == 'portableAc' ||
+          f.iconName == 'portable_ac' ||
+          (hay.contains('portable') && (hay.contains('ac') || f.iconName == 'ac'));
     });
     if (portableAc != null && !targets.containsKey(portableAc.id)) {
       targets[portableAc.id] = (

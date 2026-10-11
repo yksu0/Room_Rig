@@ -176,6 +176,8 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 0.65,
       targetDepthMeters: 0.65,
+      // Kenney seat faces -Z; Orbit yaw 0 = sit facing +Z.
+      localYawBiasDegrees: 180,
     ),
     'bed': const MeshProfile(
       iconName: 'bed',
@@ -185,6 +187,8 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 1.2,
       targetDepthMeters: 1.2,
+      // Kenney pillows already on -Z; Orbit headboard -Z / foot +Z — no flip.
+      localYawBiasDegrees: 0,
       alignFootprint: true,
     ),
     'sofa': const MeshProfile(
@@ -195,6 +199,8 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 1.2,
       targetDepthMeters: 0.6,
+      // Kenney seat faces -Z; Orbit yaw 0 = sit facing +Z.
+      localYawBiasDegrees: 180,
       alignFootprint: true,
     ),
     'shelf': const MeshProfile(
@@ -205,6 +211,8 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 0.85,
       targetDepthMeters: 0.4,
+      // Open face -Z → Orbit +Z.
+      localYawBiasDegrees: 180,
       alignFootprint: true,
     ),
     'bookshelf': const MeshProfile(
@@ -215,6 +223,7 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 0.85,
       targetDepthMeters: 0.4,
+      localYawBiasDegrees: 180,
       alignFootprint: true,
     ),
     'wardrobe': const MeshProfile(
@@ -225,6 +234,8 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 0.9,
       targetDepthMeters: 0.55,
+      // Doors / drawers on -Z → Orbit +Z.
+      localYawBiasDegrees: 180,
       alignFootprint: true,
     ),
     'lamp': const MeshProfile(
@@ -311,13 +322,16 @@ class GltfCatalog {
     // Sketchfab trial: fan.glb — large (~18 MB); swap back to stand_fan.glb if slow.
     'fan': const MeshProfile(
       iconName: 'fan',
-      assetPath: '$hvacDir/fan.glb',
+      // Prefer compact stand_fan (blow along +Z); fan.glb is a large Sketchfab trial.
+      assetPath: '$hvacDir/stand_fan.glb',
       heightMeters: 1.05,
       role: MeshSimRole.emitter,
       airflowSolid: 0.15,
       fitMode: MeshFitMode.height,
       targetWidthMeters: 0.42,
       targetDepthMeters: 0.42,
+      // Outlet / cage toward +Z matches Orbit throw and airflow yawAim.
+      localYawBiasDegrees: 0,
     ),
     'purifier': const MeshProfile(
       iconName: 'purifier',
@@ -328,6 +342,8 @@ class GltfCatalog {
       fitMode: MeshFitMode.height,
       targetWidthMeters: 0.4,
       targetDepthMeters: 0.4,
+      // Control face / grille bias toward +Z for Orbit aim.
+      localYawBiasDegrees: 0,
     ),
     'heater': const MeshProfile(
       iconName: 'heater',
@@ -338,6 +354,9 @@ class GltfCatalog {
       fitMode: MeshFitMode.uniform,
       targetWidthMeters: 0.7,
       targetDepthMeters: 0.25,
+      // Front panel already on +Z — matches Orbit fin face.
+      localYawBiasDegrees: 0,
+      alignFootprint: true,
     ),
     'ac': const MeshProfile(
       iconName: 'ac',
@@ -355,6 +374,19 @@ class GltfCatalog {
       targetDepthMeters: 0.14,
       // Kenney/HVAC wall meshes are often long on Z — rotate to local +X = along-wall.
       alignFootprint: true,
+    ),
+    // Floor portable cooler — NOT the wall-AC niche profile.
+    'portableAc': const MeshProfile(
+      iconName: 'portableAc',
+      assetPath: '$hvacDir/ac_condenser.glb',
+      heightMeters: 0.85,
+      role: MeshSimRole.emitter,
+      airflowSolid: 0.55,
+      fitMode: MeshFitMode.height,
+      targetWidthMeters: 0.45,
+      targetDepthMeters: 0.45,
+      // Condenser fan faces +Z — Orbit cold-jet aim.
+      localYawBiasDegrees: 0,
     ),
     'intake': const MeshProfile(
       iconName: 'intake',
@@ -444,6 +476,10 @@ class GltfCatalog {
 
   static MeshProfile profileFor(String iconName) {
     final key = iconName.trim();
+    // Legacy aliases written before portableAc was its own catalog key.
+    if (key == 'portable_ac' || key == 'portableac') {
+      return _profiles['portableAc']!;
+    }
     return _profiles[key] ??
         MeshProfile(
           iconName: key,
@@ -454,10 +490,27 @@ class GltfCatalog {
         );
   }
 
-  static MeshProfile profileForItem(FurnitureItem item) =>
-      profileFor(item.iconName);
+  /// Resolve by id/name when icon still says wall `ac` (older saves / presets).
+  static MeshProfile profileForItem(FurnitureItem item) {
+    final hay = '${item.id} ${item.name} ${item.iconName}'.toLowerCase();
+    if (hay.contains('portable') &&
+        (hay.contains('ac') ||
+            item.iconName == 'ac' ||
+            item.iconName == 'portableAc' ||
+            item.iconName == 'portable_ac')) {
+      return profileFor('portableAc');
+    }
+    return profileFor(item.iconName);
+  }
 
   static String? assetForIcon(String iconName) => profileFor(iconName).assetPath;
+
+  static String? sceneUrlForProfile(MeshProfile profile) {
+    final asset = profile.assetPath;
+    if (asset == null) return null;
+    final rel = asset.replaceFirst('assets/gltf/', '');
+    return '$sceneAssetBase$rel';
+  }
 
   static double defaultHeightMeters(String iconName) =>
       profileFor(iconName).heightMeters;

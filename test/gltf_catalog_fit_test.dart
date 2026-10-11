@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/rig_catalog.dart';
 import 'package:room_rig/models/room_model.dart';
+import 'package:room_rig/models/surface_mount.dart';
 import 'package:room_rig/services/gltf_catalog.dart';
 import 'package:room_rig/widgets/furniture_shapes.dart';
 
@@ -29,10 +30,44 @@ void main() {
     }
   });
 
-  test('Kenney desk bias +180; screens use yaw 0 (no extra flip)', () {
+  test('Kenney / Orbit yaw biases match +Z front convention', () {
     expect(GltfCatalog.profileFor('desk').localYawBiasDegrees, 180);
+    expect(GltfCatalog.profileFor('chair').localYawBiasDegrees, 180);
+    expect(GltfCatalog.profileFor('sofa').localYawBiasDegrees, 180);
+    expect(GltfCatalog.profileFor('wardrobe').localYawBiasDegrees, 180);
+    expect(GltfCatalog.profileFor('shelf').localYawBiasDegrees, 180);
+    expect(GltfCatalog.profileFor('bookshelf').localYawBiasDegrees, 180);
+    // Bed pillows already on -Z; screens / heater / fan already +Z.
+    expect(GltfCatalog.profileFor('bed').localYawBiasDegrees, 0);
     expect(GltfCatalog.profileFor('monitor').localYawBiasDegrees, 0);
     expect(GltfCatalog.profileFor('tv').localYawBiasDegrees, 0);
+    expect(GltfCatalog.profileFor('heater').localYawBiasDegrees, 0);
+    expect(GltfCatalog.profileFor('fan').localYawBiasDegrees, 0);
+  });
+
+  test('portable AC is a floor profile, not wall-AC niche', () {
+    final p = GltfCatalog.profileFor('portableAc');
+    expect(p.wallCut, WallCutKind.none);
+    expect(p.fitMode, isNot(MeshFitMode.wallOpening));
+    expect(p.hasModel, isTrue);
+    expect(p.assetPath, isNot(GltfCatalog.profileFor('ac').assetPath));
+
+    final legacy = FurnitureItem(
+      id: 'portable_ac',
+      name: 'Portable AC',
+      category: 'airflow',
+      iconName: 'ac',
+      gridX: 1,
+      gridY: 1,
+      width: 1,
+      height: 1,
+      airflowImpact: 0,
+      lightingImpact: 0,
+      ergonomicsImpact: 0,
+      cost: 0,
+    );
+    expect(GltfCatalog.profileForItem(legacy).iconName, 'portableAc');
+    expect(SurfaceMounts.isVent(legacy), isFalse);
   });
 
   test('wall openings align footprint so E/W walls are not stretched', () {
@@ -59,7 +94,8 @@ void main() {
   });
 
   test('Orbit footprints match metre targets for every catalog icon', () {
-    expect(GltfCatalog.orbitFootprint('fan').width, closeTo(0.55, 0.05));
+    // 0.42 m / 0.6 m cell → 0.7 cells.
+    expect(GltfCatalog.orbitFootprint('fan').width, closeTo(0.7, 0.05));
     expect(GltfCatalog.orbitFootprint('desk').width, closeTo(2.0, 0.01));
     expect(GltfCatalog.orbitFootprint('desk').depth, closeTo(1.0, 0.01));
 

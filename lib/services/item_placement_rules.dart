@@ -184,6 +184,7 @@ class ItemPlacementRules {
       case 'exhaust':
         return 'Wall grille; do not cover with tall storage.';
       case 'portable_ac':
+      case 'portableac':
         return 'Open floor volume with exhaust hose path; not jammed in a corner against walls.';
       case 'fan':
       case 'upg_fan':

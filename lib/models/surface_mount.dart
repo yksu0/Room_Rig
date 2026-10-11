@@ -135,7 +135,9 @@ class SurfaceMounts {
   static bool isVent(FurnitureItem f) {
     final id = f.id.toLowerCase();
     final name = f.name.toLowerCase();
-    if (id.contains('portable') ||
+    if (f.iconName == 'portableAc' ||
+        f.iconName == 'portable_ac' ||
+        id.contains('portable') ||
         name.contains('portable') ||
         id.contains('evaporative') ||
         name.contains('evaporative') ||
@@ -163,7 +165,12 @@ class SurfaceMounts {
     if (hay.contains('fan') || hay.contains('lamp')) return false;
     // "portable_ac" contains the substring "table" — coolers are never hosts.
     if (hay.contains('portable')) return false;
-    if (f.iconName == 'ac' || f.iconName == 'acUnit') return false;
+    if (f.iconName == 'ac' ||
+        f.iconName == 'acUnit' ||
+        f.iconName == 'portableAc' ||
+        f.iconName == 'portable_ac') {
+      return false;
+    }
     if (f.iconName == 'desk' || hay.contains('desk')) return true;
     return RegExp(r'\btable\b').hasMatch(hay) || f.iconName == 'table';
   }

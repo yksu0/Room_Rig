@@ -273,7 +273,7 @@ class RigCatalog {
     RigCatalogEntry.fromCatalog(
       baseId: 'portable_ac',
       name: 'Portable AC',
-      iconName: 'ac',
+      iconName: 'portableAc',
       category: 'airflow',
       airflowImpact: 0.75,
       cost: 380,

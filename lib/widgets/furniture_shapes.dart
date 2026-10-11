@@ -86,7 +86,7 @@ class FurnitureShapes {
       case FurnitureKind.tv:
         return 'tv';
       case FurnitureKind.portableAc:
-        return 'ac';
+        return 'portableAc';
       case FurnitureKind.fan:
         return 'fan';
       case FurnitureKind.heater:
@@ -126,7 +126,9 @@ class FurnitureShapes {
     if (iconName == 'monitor' || hay.contains('monitor')) return FurnitureKind.monitor;
     if (iconName == 'pc' || hay.contains('pc tower') || hay == 'pc') return FurnitureKind.pc;
     // "portable_ac" contains the letters "table" — check portable coolers first.
-    if ((hay.contains('portable') && (hay.contains('ac') || iconName == 'ac'))) {
+    if (iconName == 'portableAc' ||
+        iconName == 'portable_ac' ||
+        (hay.contains('portable') && (hay.contains('ac') || iconName == 'ac'))) {
       return FurnitureKind.portableAc;
     }
     if (RegExp(r'\btable\b').hasMatch(hay) || iconName == 'table') {
