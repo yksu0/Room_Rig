@@ -183,28 +183,33 @@ class BenchLayerToggles extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+    final chips = <Widget>[
+      if (onParticles != null)
+        _LayerChip(
+          label: 'Particles',
+          on: showParticles,
+          onTap: () => onParticles!(!showParticles),
+        ),
+      if (onHeatmap != null)
+        _LayerChip(
+          label: 'Heat map',
+          on: showHeatmap,
+          onTap: () => onHeatmap!(!showHeatmap),
+        ),
+      if (onPaths != null)
+        _LayerChip(
+          label: 'Paths',
+          on: showPaths,
+          onTap: () => onPaths!(!showPaths),
+        ),
+    ];
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Row(
       children: [
-        if (onParticles != null)
-          _LayerChip(
-            label: 'Particles',
-            on: showParticles,
-            onTap: () => onParticles!(!showParticles),
-          ),
-        if (onHeatmap != null)
-          _LayerChip(
-            label: 'Heat map',
-            on: showHeatmap,
-            onTap: () => onHeatmap!(!showHeatmap),
-          ),
-        if (onPaths != null)
-          _LayerChip(
-            label: 'Paths',
-            on: showPaths,
-            onTap: () => onPaths!(!showPaths),
-          ),
+        for (var i = 0; i < chips.length; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(child: chips[i]),
+        ],
       ],
     );
   }
@@ -220,8 +225,11 @@ class _LayerChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        width: double.infinity,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 9),
         decoration: BoxDecoration(
           color: on ? AppColors.cyan.withValues(alpha: 0.15) : AppColors.card,
           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -229,6 +237,9 @@ class _LayerChip extends StatelessWidget {
         ),
         child: Text(
           label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: on ? AppColors.cyan : AppColors.textMuted,
             fontSize: 11,

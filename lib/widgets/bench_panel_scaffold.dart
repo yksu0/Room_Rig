@@ -75,12 +75,38 @@ class BenchStepTabs extends StatelessWidget {
   }
 }
 
+/// Equal-width segment row for Workspace controls (Rig Edit|Orbit|Check language).
+class BenchSegmentBar extends StatelessWidget {
+  final List<Widget> children;
+  final double gap;
+
+  const BenchSegmentBar({
+    super.key,
+    required this.children,
+    this.gap = 6,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (children.isEmpty) return const SizedBox.shrink();
+    return Row(
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0) SizedBox(width: gap),
+          Expanded(child: children[i]),
+        ],
+      ],
+    );
+  }
+}
+
 /// Single selectable chip used for variants, 2D/3D toggles, etc.
 class BenchChip extends StatelessWidget {
   final String label;
   final bool selected;
   final Color color;
   final VoidCallback onTap;
+  final bool compact;
 
   const BenchChip({
     super.key,
@@ -88,14 +114,21 @@ class BenchChip extends StatelessWidget {
     required this.selected,
     required this.color,
     required this.onTap,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        width: double.infinity,
+        alignment: Alignment.center,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 4 : 8,
+          vertical: compact ? 9 : 10,
+        ),
         decoration: BoxDecoration(
           color: selected ? color.withValues(alpha: 0.15) : AppColors.card,
           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -103,9 +136,12 @@ class BenchChip extends StatelessWidget {
         ),
         child: Text(
           label,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: selected ? color : AppColors.textMuted,
-            fontSize: 12,
+            fontSize: compact ? 11 : 12,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -129,9 +165,7 @@ class BenchVariantChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+    return BenchSegmentBar(
       children: [
         BenchChip(
           label: 'My Room',
@@ -165,12 +199,24 @@ class BenchViewChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = children.length >= 4;
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: children,
+      child: BenchSegmentBar(
+        gap: compact ? 5 : 6,
+        children: [
+          for (final child in children)
+            if (child is BenchChip)
+              BenchChip(
+                label: child.label,
+                selected: child.selected,
+                color: child.color,
+                onTap: child.onTap,
+                compact: compact || child.compact,
+              )
+            else
+              child,
+        ],
       ),
     );
   }

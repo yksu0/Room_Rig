@@ -264,40 +264,30 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(AppSpace.lg, AppSpace.sm, AppSpace.lg, AppSpace.xs),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'BENCH CENTER',
-                      style: TextStyle(
-                        color: AppColors.cyan,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 2.8,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      room.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Flexible(child: _buildModeSelector(state, compact: true)),
-            ],
+          const Text(
+            'BENCH CENTER',
+            style: TextStyle(
+              color: AppColors.cyan,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2.8,
+            ),
           ),
+          const SizedBox(height: 2),
+          Text(
+            room.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _buildModeSelector(state, compact: true),
         ],
       ),
     );
@@ -337,46 +327,20 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       ('spatial', 'Space', AppColors.spatialColor),
     ];
 
-    // Compact chips — same language as Rig Edit | Orbit | Check.
-    return Row(
+    return BenchSegmentBar(
+      gap: compact ? 5 : 6,
       children: [
-        for (var i = 0; i < modes.length; i++) ...[
-          if (i > 0) SizedBox(width: compact ? 6 : 8),
-          Expanded(
-            child: GestureDetector(
-              onTap: () {
-                state.setBenchmarkMode(modes[i].$1);
-                _setOrbitDragging(false);
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 160),
-                padding: EdgeInsets.symmetric(vertical: compact ? 8 : 10),
-                decoration: BoxDecoration(
-                  color: state.benchmarkMode == modes[i].$1
-                      ? modes[i].$3.withValues(alpha: 0.14)
-                      : AppColors.card,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  border: Border.all(
-                    color: state.benchmarkMode == modes[i].$1
-                        ? modes[i].$3
-                        : AppColors.border,
-                  ),
-                ),
-                child: Text(
-                  modes[i].$2,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: state.benchmarkMode == modes[i].$1
-                        ? modes[i].$3
-                        : AppColors.textMuted,
-                    fontSize: compact ? 11 : 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
+        for (final mode in modes)
+          BenchChip(
+            label: mode.$2,
+            selected: state.benchmarkMode == mode.$1,
+            color: mode.$3,
+            compact: compact,
+            onTap: () {
+              state.setBenchmarkMode(mode.$1);
+              _setOrbitDragging(false);
+            },
           ),
-        ],
       ],
     );
   }
@@ -423,47 +387,31 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _chip(
-                  'My Room',
-                  _layoutVariant == BenchLayoutKind.myRoom,
-                  AppColors.cyan,
-                  () => _setLayoutVariant(BenchLayoutKind.myRoom),
-                ),
-                _chip(
-                  'Improved',
-                  _layoutVariant == BenchLayoutKind.improved,
-                  AppColors.green,
-                  () => _setLayoutVariant(BenchLayoutKind.improved),
-                ),
-                if (_layoutVariant == BenchLayoutKind.sample)
-                  _chip(
-                    'Sample',
-                    true,
-                    AppColors.amber,
-                    () => _setLayoutVariant(BenchLayoutKind.sample),
-                  ),
-              ],
+            BenchVariantChips(
+              selected: _layoutVariant,
+              onChanged: _setLayoutVariant,
+              includeSample: _layoutVariant == BenchLayoutKind.sample,
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            BenchViewChips(
               children: [
-                _chip('2D', _roomViewMode == _RoomViewMode.twoD, AppColors.cyan, () {
-                  setState(() => _roomViewMode = _RoomViewMode.twoD);
-                }),
-                _chip('3D', _roomViewMode == _RoomViewMode.threeD, AppColors.cyan, () {
-                  setState(() => _roomViewMode = _RoomViewMode.threeD);
-                }),
-                _chip(
-                  'Compare',
-                  _roomViewMode == _RoomViewMode.compare,
-                  AppColors.cyan,
-                  () => setState(() => _roomViewMode = _RoomViewMode.compare),
+                BenchChip(
+                  label: '2D',
+                  selected: _roomViewMode == _RoomViewMode.twoD,
+                  color: AppColors.cyan,
+                  onTap: () => setState(() => _roomViewMode = _RoomViewMode.twoD),
+                ),
+                BenchChip(
+                  label: '3D',
+                  selected: _roomViewMode == _RoomViewMode.threeD,
+                  color: AppColors.cyan,
+                  onTap: () => setState(() => _roomViewMode = _RoomViewMode.threeD),
+                ),
+                BenchChip(
+                  label: 'Compare',
+                  selected: _roomViewMode == _RoomViewMode.compare,
+                  color: AppColors.cyan,
+                  onTap: () =>
+                      setState(() => _roomViewMode = _RoomViewMode.compare),
                 ),
               ],
             ),
@@ -511,35 +459,26 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _chip(
-                  'My Room',
-                  _simVariant == BenchLayoutKind.myRoom,
-                  AppColors.cyan,
-                  () => setState(() => _simVariant = BenchLayoutKind.myRoom),
-                ),
-                _chip(
-                  'Improved',
-                  _simVariant == BenchLayoutKind.improved,
-                  AppColors.green,
-                  () => setState(() => _simVariant = BenchLayoutKind.improved),
-                ),
-              ],
+            BenchVariantChips(
+              selected: _simVariant,
+              onChanged: (v) => setState(() => _simVariant = v),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            BenchViewChips(
               children: [
-                _chip('2D', _simVizMode == AirflowVizMode.topDown2D, AppColors.cyan, () {
-                  setState(() => _simVizMode = AirflowVizMode.topDown2D);
-                }),
-                _chip('3D', _simVizMode == AirflowVizMode.orbit3D, AppColors.cyan, () {
-                  setState(() => _simVizMode = AirflowVizMode.orbit3D);
-                }),
+                BenchChip(
+                  label: '2D',
+                  selected: _simVizMode == AirflowVizMode.topDown2D,
+                  color: AppColors.cyan,
+                  onTap: () =>
+                      setState(() => _simVizMode = AirflowVizMode.topDown2D),
+                ),
+                BenchChip(
+                  label: '3D',
+                  selected: _simVizMode == AirflowVizMode.orbit3D,
+                  color: AppColors.cyan,
+                  onTap: () =>
+                      setState(() => _simVizMode = AirflowVizMode.orbit3D),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -1021,47 +960,30 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _chip(
-              'My Room',
-              _layoutVariant == BenchLayoutKind.myRoom,
-              AppColors.cyan,
-              () => _setLayoutVariant(BenchLayoutKind.myRoom),
-            ),
-            _chip(
-              'Improved',
-              _layoutVariant == BenchLayoutKind.improved,
-              AppColors.green,
-              () => _setLayoutVariant(BenchLayoutKind.improved),
-            ),
-            if (_layoutVariant == BenchLayoutKind.sample)
-              _chip(
-                'Sample',
-                true,
-                AppColors.amber,
-                () => _setLayoutVariant(BenchLayoutKind.sample),
-              ),
-          ],
+        BenchVariantChips(
+          selected: _layoutVariant,
+          onChanged: _setLayoutVariant,
+          includeSample: _layoutVariant == BenchLayoutKind.sample,
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        BenchViewChips(
           children: [
-            _chip('2D', _roomViewMode == _RoomViewMode.twoD, AppColors.cyan, () {
-              setState(() => _roomViewMode = _RoomViewMode.twoD);
-            }),
-            _chip('3D', _roomViewMode == _RoomViewMode.threeD, AppColors.cyan, () {
-              setState(() => _roomViewMode = _RoomViewMode.threeD);
-            }),
-            _chip(
-              'Compare',
-              _roomViewMode == _RoomViewMode.compare,
-              AppColors.cyan,
-              () => setState(() => _roomViewMode = _RoomViewMode.compare),
+            BenchChip(
+              label: '2D',
+              selected: _roomViewMode == _RoomViewMode.twoD,
+              color: AppColors.cyan,
+              onTap: () => setState(() => _roomViewMode = _RoomViewMode.twoD),
+            ),
+            BenchChip(
+              label: '3D',
+              selected: _roomViewMode == _RoomViewMode.threeD,
+              color: AppColors.cyan,
+              onTap: () => setState(() => _roomViewMode = _RoomViewMode.threeD),
+            ),
+            BenchChip(
+              label: 'Compare',
+              selected: _roomViewMode == _RoomViewMode.compare,
+              color: AppColors.cyan,
+              onTap: () => setState(() => _roomViewMode = _RoomViewMode.compare),
             ),
           ],
         ),
@@ -1364,35 +1286,24 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
         ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _chip(
-              'My Room',
-              _simVariant == BenchLayoutKind.myRoom,
-              AppColors.cyan,
-              () => setState(() => _simVariant = BenchLayoutKind.myRoom),
-            ),
-            _chip(
-              'Improved',
-              _simVariant == BenchLayoutKind.improved,
-              AppColors.green,
-              () => setState(() => _simVariant = BenchLayoutKind.improved),
-            ),
-          ],
+        BenchVariantChips(
+          selected: _simVariant,
+          onChanged: (v) => setState(() => _simVariant = v),
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        BenchViewChips(
           children: [
-            _chip('2D', _simVizMode == AirflowVizMode.topDown2D, AppColors.cyan, () {
-              setState(() => _simVizMode = AirflowVizMode.topDown2D);
-            }),
-            _chip('3D', _simVizMode == AirflowVizMode.orbit3D, AppColors.cyan, () {
-              setState(() => _simVizMode = AirflowVizMode.orbit3D);
-            }),
+            BenchChip(
+              label: '2D',
+              selected: _simVizMode == AirflowVizMode.topDown2D,
+              color: AppColors.cyan,
+              onTap: () => setState(() => _simVizMode = AirflowVizMode.topDown2D),
+            ),
+            BenchChip(
+              label: '3D',
+              selected: _simVizMode == AirflowVizMode.orbit3D,
+              color: AppColors.cyan,
+              onTap: () => setState(() => _simVizMode = AirflowVizMode.orbit3D),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -1599,29 +1510,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           lowerIsBetter: true,
         ),
       ],
-    );
-  }
-
-  Widget _chip(String label, bool selected, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.15) : AppColors.card,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: selected ? color : AppColors.border),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? color : AppColors.textMuted,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
     );
   }
 
