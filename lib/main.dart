@@ -1,5 +1,4 @@
 // lib/main.dart
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -18,13 +17,13 @@ import 'widgets/room_model_scene_pointer_guard.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Phones stay portrait-locked. Web/desktop unlocks so Chrome can use
-  // landscape windows as a real website layout.
-  if (kIsWeb) {
-    await SystemChrome.setPreferredOrientations(DeviceOrientation.values);
-  } else {
-    await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  }
+  // Portrait + landscape so phones can use the same wide shell as Chrome.
+  // Skip upside-down portrait (awkward for camera / one-handed use).
+  await SystemChrome.setPreferredOrientations(const [
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
@@ -158,10 +157,13 @@ class _RigSideNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = AppLayout.isLandscapeShell(MediaQuery.sizeOf(context)) &&
+        MediaQuery.sizeOf(context).width < AppLayout.desktopMinWidth;
+    final navWidth = compact ? 72.0 : 92.0;
     return Material(
       color: AppColors.surface,
       child: Container(
-        width: 92,
+        width: navWidth,
         decoration: const BoxDecoration(
           border: Border(right: BorderSide(color: AppColors.borderSubtle)),
         ),
@@ -169,25 +171,25 @@ class _RigSideNav extends StatelessWidget {
           right: false,
           child: Column(
             children: [
-              const SizedBox(height: 16),
+              SizedBox(height: compact ? 10 : 16),
               Text(
-                'ROOM\nRIG',
+                compact ? 'RIG' : 'ROOM\nRIG',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: AppColors.cyan.withValues(alpha: 0.95),
-                  fontSize: 11,
+                  fontSize: compact ? 10 : 11,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1.6,
                   height: 1.15,
                 ),
               ),
-              const SizedBox(height: 20),
+              SizedBox(height: compact ? 12 : 20),
               Expanded(
                 child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
                   itemCount: _items.length,
                   separatorBuilder: (context, index) =>
-                      const SizedBox(height: 6),
+                      SizedBox(height: compact ? 4 : 6),
                   itemBuilder: (context, i) {
                     final item = _items[i];
                     final selected = i == currentIndex;
@@ -200,28 +202,30 @@ class _RigSideNav extends StatelessWidget {
                         borderRadius: BorderRadius.circular(AppRadius.sm),
                         onTap: () => context.read<AppState>().setTab(i),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 14,
-                            horizontal: 6,
+                          padding: EdgeInsets.symmetric(
+                            vertical: compact ? 10 : 14,
+                            horizontal: 4,
                           ),
                           child: Column(
                             children: [
                               SvgIcon(
                                 item.$1,
-                                size: 22,
+                                size: compact ? 20 : 22,
                                 color: selected
                                     ? AppColors.cyan
                                     : AppColors.textMuted,
                               ),
-                              const SizedBox(height: 6),
+                              SizedBox(height: compact ? 4 : 6),
                               Text(
                                 item.$2,
                                 textAlign: TextAlign.center,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: selected
                                       ? AppColors.cyan
                                       : AppColors.textMuted,
-                                  fontSize: 10,
+                                  fontSize: compact ? 9 : 10,
                                   fontWeight: selected
                                       ? FontWeight.w800
                                       : FontWeight.w600,

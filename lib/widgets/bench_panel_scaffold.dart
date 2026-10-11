@@ -947,7 +947,7 @@ class BenchDesktopShell extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SizedBox(
-          width: AppLayout.toolsRailWidth,
+          width: AppLayout.toolsRailWidthFor(context),
           child: DecoratedBox(
             decoration: const BoxDecoration(
               border: Border(
@@ -978,7 +978,7 @@ class BenchDesktopShell extends StatelessWidget {
           ),
         ),
         SizedBox(
-          width: AppLayout.inspectRailWidth,
+          width: AppLayout.inspectRailWidthFor(context),
           child: DecoratedBox(
             decoration: const BoxDecoration(
               border: Border(

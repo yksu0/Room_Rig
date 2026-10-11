@@ -86,8 +86,10 @@ class _ScanLumaPreviewState extends State<ScanLumaPreview> {
     var luma = bytes;
     var decW = w;
     var decH = h;
-    // Back-camera frames are landscape; the app is locked to portrait.
-    if (decW > decH) {
+    // Sensor frames are landscape; rotate only when the UI is portrait.
+    final portraitUi =
+        MediaQuery.orientationOf(context) == Orientation.portrait;
+    if (portraitUi && decW > decH) {
       final rotated = rotateLuma90Cw(luma, decW, decH);
       luma = rotated.$1;
       decW = rotated.$2;

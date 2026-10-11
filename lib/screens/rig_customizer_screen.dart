@@ -161,7 +161,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         SizedBox(
-                          width: AppLayout.toolsRailWidth,
+                          width: AppLayout.toolsRailWidthFor(context),
                           child: DecoratedBox(
                             decoration: const BoxDecoration(
                               border: Border(
@@ -186,7 +186,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                         ),
                         Expanded(child: _buildCanvasWorkspace(state)),
                         SizedBox(
-                          width: AppLayout.inspectRailWidth,
+                          width: AppLayout.inspectRailWidthFor(context),
                           child: DecoratedBox(
                             decoration: const BoxDecoration(
                               border: Border(
