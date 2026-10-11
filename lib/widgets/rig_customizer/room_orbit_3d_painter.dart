@@ -496,40 +496,64 @@ class RoomOrbit3DPainter extends CustomPainter {
     Size size,
     CameraPose cam,
   ) {
-    // An AC head visibly stands off the wall, so it gets a body with depth
-    // rather than a flat decal.
-    final inner = fittingFace(span, mount.bottomY, mount.topY, mount.protrusion);
+    final id = item.id.toLowerCase();
+    final isWallAc = id == 'ac' ||
+        id.startsWith('ac_') ||
+        item.label.toLowerCase().contains('wall ac') ||
+        (item.label.toLowerCase().contains('ac') &&
+            !item.label.toLowerCase().contains('portable'));
+    // Wall AC: shallow wide split head. Grilles: thinner flush plate.
+    final proud = isWallAc ? math.min(mount.protrusion, 0.16) : math.min(mount.protrusion, 0.08);
+    final inner = fittingFace(span, mount.bottomY, mount.topY, proud);
     final outer = fittingFace(span, mount.bottomY, mount.topY, 0.01);
+    final faceColor = isWallAc
+        ? AppColors.airflowColor.withValues(alpha: item.selected ? 0.58 : 0.40)
+        : AppColors.airflowColor.withValues(alpha: item.selected ? 0.48 : 0.32);
 
     final bodyFaces = <RoomFace>[
-      RoomFace(inner, AppColors.airflowColor.withValues(alpha: item.selected ? 0.55 : 0.38)),
-      // Underside, where the air actually leaves the unit.
+      RoomFace(inner, faceColor),
       RoomFace(
         [outer[0], inner[0], inner[1], outer[1]],
-        AppColors.airflowColor.withValues(alpha: 0.5),
+        AppColors.airflowColor.withValues(alpha: 0.48),
       ),
       RoomFace(
         [outer[3], inner[3], inner[2], outer[2]],
-        AppColors.airflowColor.withValues(alpha: 0.26),
+        AppColors.airflowColor.withValues(alpha: 0.24),
       ),
+      if (isWallAc) ...[
+        RoomFace(
+          [outer[0], outer[3], inner[3], inner[0]],
+          AppColors.airflowColor.withValues(alpha: 0.3),
+        ),
+        RoomFace(
+          [outer[1], inner[1], inner[2], outer[2]],
+          AppColors.airflowColor.withValues(alpha: 0.3),
+        ),
+      ],
     ];
 
+    final louverCount = isWallAc ? 5 : 3;
     final louvers = <(Offset, Offset)>[];
-    for (int i = 1; i <= 3; i++) {
-      final y = mount.bottomY + (mount.topY - mount.bottomY) * (i / 5);
-      final a = _projectAlongWall(span, 0.08, y, mount.protrusion + 0.01, size, cam);
-      final b = _projectAlongWall(span, 0.92, y, mount.protrusion + 0.01, size, cam);
+    for (int i = 1; i <= louverCount; i++) {
+      final y = mount.bottomY + (mount.topY - mount.bottomY) * (i / (louverCount + 1));
+      final a = _projectAlongWall(span, 0.06, y, proud + 0.01, size, cam);
+      final b = _projectAlongWall(span, 0.94, y, proud + 0.01, size, cam);
       if (a != null && b != null) louvers.add((a, b));
     }
 
-    // Short arrows showing the throw direction into the room and downward.
     final throwLines = <(Offset, Offset)>[];
-    for (final t in const [0.25, 0.5, 0.75]) {
-      final from = _projectAlongWall(span, t, mount.bottomY, mount.protrusion, size, cam);
-      final toX = span.x0 + (span.x1 - span.x0) * t + span.inwardX * 0.95;
-      final toZ = span.z0 + (span.z1 - span.z0) * t + span.inwardZ * 0.95;
-      final to = RoomProjection.project(OrbitVec3(toX, mount.bottomY - 0.55, toZ), size, cam);
-      if (from != null && to != null) throwLines.add((from, to.offset));
+    if (isWallAc) {
+      for (final t in const [0.2, 0.5, 0.8]) {
+        final from = _projectAlongWall(span, t, mount.bottomY + 0.02, proud, size, cam);
+        final toX = span.x0 + (span.x1 - span.x0) * t + span.inwardX * 0.85;
+        final toZ = span.z0 + (span.z1 - span.z0) * t + span.inwardZ * 0.85;
+        final to = RoomProjection.project(
+          OrbitVec3(toX, mount.bottomY - 0.35, toZ),
+          size,
+          cam,
+        );
+        if (from != null && to != null) throwLines.add((from, to.offset));
+      }
     }
 
     for (final face in bodyFaces) {
@@ -549,8 +573,8 @@ class RoomOrbit3DPainter extends CustomPainter {
         if (!isInner) return;
 
         final louverPaint = Paint()
-          ..color = AppColors.airflowColor.withValues(alpha: 0.75)
-          ..strokeWidth = 1.2;
+          ..color = AppColors.airflowColor.withValues(alpha: 0.78)
+          ..strokeWidth = isWallAc ? 1.35 : 1.15;
         for (final (a, b) in louvers) {
           canvas.drawLine(a, b, louverPaint);
         }

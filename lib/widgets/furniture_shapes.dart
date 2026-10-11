@@ -332,16 +332,22 @@ class FurnitureShapes {
           ...box(x1 - leg, 0, z1 - leg, x1, top - thick, z1, 0.4),
         ];
       case FurnitureKind.chair: {
-        final seat = h * 0.40;
+        // Kenney desk chair: sit toward +Z, backrest on -Z.
+        final seat = h * 0.42;
+        final cx = x + width * 0.5;
+        final cz = z + depth * 0.5;
         return [
-          ...box(x + width * 0.16, 0, z + depth * 0.18, x + width * 0.28, seat - 0.04, z + depth * 0.30, 0.38),
-          ...box(x1 - width * 0.28, 0, z + depth * 0.18, x1 - width * 0.16, seat - 0.04, z + depth * 0.30, 0.38),
-          ...box(x + width * 0.16, 0, z1 - depth * 0.30, x + width * 0.28, seat - 0.04, z1 - depth * 0.16, 0.38),
-          ...box(x1 - width * 0.28, 0, z1 - depth * 0.30, x1 - width * 0.16, seat - 0.04, z1 - depth * 0.16, 0.38),
-          ...box(x + width * 0.14, seat - 0.07, z + depth * 0.16, x1 - width * 0.14, seat, z1 - depth * 0.10, 0.58),
-          ...box(x + width * 0.12, seat, z + depth * 0.06, x1 - width * 0.12, h * 0.92, z + depth * 0.28, 0.78),
-          ...box(x + width * 0.08, seat, z + depth * 0.22, x + width * 0.16, seat + h * 0.15, z1 - depth * 0.18, 0.5),
-          ...box(x1 - width * 0.16, seat, z + depth * 0.22, x1 - width * 0.08, seat + h * 0.15, z1 - depth * 0.18, 0.5),
+          // Star base + stem
+          ...box(cx - width * 0.34, 0, cz - depth * 0.06, cx + width * 0.34, h * 0.04, cz + depth * 0.06, 0.4),
+          ...box(cx - width * 0.06, 0, cz - depth * 0.34, cx + width * 0.06, h * 0.04, cz + depth * 0.34, 0.4),
+          ...box(cx - width * 0.07, h * 0.04, cz - depth * 0.07, cx + width * 0.07, seat - 0.04, cz + depth * 0.07, 0.42),
+          // Seat pan
+          ...box(x + width * 0.14, seat - 0.06, z + depth * 0.22, x1 - width * 0.14, seat, z1 - depth * 0.08, 0.62),
+          // Backrest (-Z)
+          ...box(x + width * 0.16, seat, z + depth * 0.04, x1 - width * 0.16, h * 0.96, z + depth * 0.26, 0.8),
+          // Armrests
+          ...box(x + width * 0.06, seat, z + depth * 0.28, x + width * 0.16, seat + h * 0.18, z1 - depth * 0.14, 0.52),
+          ...box(x1 - width * 0.16, seat, z + depth * 0.28, x1 - width * 0.06, seat + h * 0.18, z1 - depth * 0.14, 0.52),
         ];
       }
       case FurnitureKind.monitor:
@@ -366,11 +372,15 @@ class FurnitureShapes {
           ...box(x1 - width * 0.46, h * 0.84, z + depth * 0.04, x1 - width * 0.08, h, z + depth * 0.22, 0.8),
         ];
       case FurnitureKind.sofa:
+        // Lounge sofa: seat + cushions toward +Z, back on -Z.
         return [
-          ...box(x + width * 0.08, h * 0.09, z + depth * 0.22, x1 - width * 0.08, h * 0.47, z1 - depth * 0.06, 0.55),
-          ...box(x, h * 0.47, z, x1, h * 0.89, z + depth * 0.30, 0.74),
-          ...box(x, h * 0.21, z + depth * 0.16, x + width * 0.10, h * 0.73, z1, 0.62),
-          ...box(x1 - width * 0.10, h * 0.21, z + depth * 0.16, x1, h * 0.73, z1, 0.62),
+          ...box(x + width * 0.06, 0, z + depth * 0.18, x1 - width * 0.06, h * 0.12, z1 - depth * 0.04, 0.4),
+          ...box(x + width * 0.10, h * 0.12, z + depth * 0.28, x1 - width * 0.10, h * 0.48, z1 - depth * 0.06, 0.58),
+          ...box(x + width * 0.12, h * 0.48, z + depth * 0.32, x + width * 0.48, h * 0.58, z1 - depth * 0.10, 0.7),
+          ...box(x + width * 0.52, h * 0.48, z + depth * 0.32, x1 - width * 0.12, h * 0.58, z1 - depth * 0.10, 0.7),
+          ...box(x + width * 0.04, h * 0.22, z + depth * 0.02, x1 - width * 0.04, h * 0.92, z + depth * 0.28, 0.78),
+          ...box(x, h * 0.18, z + depth * 0.18, x + width * 0.12, h * 0.72, z1 - depth * 0.04, 0.64),
+          ...box(x1 - width * 0.12, h * 0.18, z + depth * 0.18, x1, h * 0.72, z1 - depth * 0.04, 0.64),
         ];
       case FurnitureKind.wardrobe:
         return [
@@ -405,26 +415,44 @@ class FurnitureShapes {
           ...box(x, h * 0.28, z + depth * 0.58, x1, h, z1 - depth * 0.06, 0.84),
         ];
       case FurnitureKind.portableAc:
+        // Floor condenser: body + front grille (+Z) + top outlet + hose stub (-Z).
         return [
-          ...box(x + width * 0.14, 0, z + depth * 0.16, x1 - width * 0.14, h * 0.90, z1 - depth * 0.10, 0.6),
-          ...box(x + width * 0.22, h * 0.67, z + depth * 0.08, x1 - width * 0.22, h * 0.82, z + depth * 0.18, 0.45),
-          ...box(x + width * 0.22, h * 0.23, z1 - depth * 0.16, x1 - width * 0.22, h * 0.74, z1 - depth * 0.06, 0.4),
-          ...box(x + width * 0.42, h * 0.90, z + depth * 0.22, x1 - width * 0.42, h, z + depth * 0.40, 0.75),
+          ...box(x + width * 0.16, 0, z + depth * 0.14, x1 - width * 0.16, h * 0.08, z1 - depth * 0.10, 0.45),
+          ...box(x + width * 0.18, h * 0.08, z + depth * 0.16, x1 - width * 0.18, h * 0.88, z1 - depth * 0.12, 0.62),
+          ...box(x + width * 0.24, h * 0.20, z1 - depth * 0.14, x1 - width * 0.24, h * 0.78, z1 - depth * 0.02, 0.42),
+          ...box(x + width * 0.28, h * 0.32, z1 - depth * 0.10, x1 - width * 0.28, h * 0.38, z1, 0.75),
+          ...box(x + width * 0.28, h * 0.48, z1 - depth * 0.10, x1 - width * 0.28, h * 0.54, z1, 0.75),
+          ...box(x + width * 0.28, h * 0.64, z1 - depth * 0.10, x1 - width * 0.28, h * 0.70, z1, 0.75),
+          ...box(x + width * 0.34, h * 0.88, z + depth * 0.28, x1 - width * 0.34, h, z1 - depth * 0.28, 0.78),
+          ...box(x + width * 0.40, h * 0.55, z + depth * 0.02, x1 - width * 0.40, h * 0.72, z + depth * 0.16, 0.5),
         ];
-      case FurnitureKind.fan:
+      case FurnitureKind.fan: {
+        // Pedestal fan: cage faces +Z (thin disk at front of cell).
+        final cx = x + width * 0.5;
+        final cz = z + depth * 0.55;
+        final r = math.min(width, depth) * 0.42;
         return [
-          ...box(x + width * 0.28, 0, z + depth * 0.28, x1 - width * 0.28, h * 0.09, z1 - depth * 0.28, 0.45),
-          ...box(x + width * 0.44, h * 0.09, z + depth * 0.44, x1 - width * 0.44, h * 0.72, z1 - depth * 0.44, 0.4),
-          ...box(x + width * 0.36, h * 0.68, z + depth * 0.36, x1 - width * 0.36, h * 0.82, z1 - depth * 0.36, 0.7),
-          ...box(x + width * 0.08, h * 0.72, z + depth * 0.38, x1 - width * 0.08, h, z1 - depth * 0.22, 0.55),
+          ...box(cx - width * 0.28, 0, cz - depth * 0.22, cx + width * 0.28, h * 0.07, cz + depth * 0.22, 0.48),
+          ...box(cx - width * 0.06, h * 0.07, cz - depth * 0.06, cx + width * 0.06, h * 0.62, cz + depth * 0.06, 0.4),
+          ...box(cx - r, h * 0.58, z1 - depth * 0.28, cx + r, h * 0.98, z1 - depth * 0.04, 0.55),
+          ...box(cx - r * 0.22, h * 0.68, z1 - depth * 0.20, cx + r * 0.22, h * 0.88, z1 - depth * 0.02, 0.78),
         ];
+      }
       case FurnitureKind.heater:
+        // Panel radiator: thin depth, fins on +Z face.
         return [
-          ...box(x + width * 0.08, 0, z + depth * 0.22, x1 - width * 0.08, h * 0.87, z1 - depth * 0.16, 0.58),
-          ...box(x + width * 0.16, h * 0.17, z1 - depth * 0.20, x + width * 0.22, h * 0.74, z1 - depth * 0.10, 0.8),
-          ...box(x + width * 0.38, h * 0.17, z1 - depth * 0.20, x + width * 0.44, h * 0.74, z1 - depth * 0.10, 0.8),
-          ...box(x + width * 0.60, h * 0.17, z1 - depth * 0.20, x + width * 0.66, h * 0.74, z1 - depth * 0.10, 0.8),
-          ...box(x + width * 0.78, h * 0.17, z1 - depth * 0.20, x + width * 0.84, h * 0.74, z1 - depth * 0.10, 0.8),
+          ...box(x + width * 0.04, 0, z + depth * 0.28, x1 - width * 0.04, h * 0.06, z1 - depth * 0.18, 0.42),
+          ...box(x + width * 0.06, h * 0.06, z + depth * 0.30, x1 - width * 0.06, h * 0.92, z1 - depth * 0.22, 0.58),
+          for (final t in const [0.14, 0.30, 0.46, 0.62, 0.78])
+            ...box(
+              x + width * t,
+              h * 0.14,
+              z1 - depth * 0.24,
+              x + width * (t + 0.08),
+              h * 0.84,
+              z1 - depth * 0.06,
+              0.8,
+            ),
         ];
       case FurnitureKind.taskLamp:
         return [
@@ -445,10 +473,14 @@ class FurnitureShapes {
           ...box(x + width * 0.16, y, z + depth * 0.16, x1 - width * 0.16, y + h * 0.67, z1 - depth * 0.16, 0.75),
         ];
       case FurnitureKind.purifier:
+        // Tower scrubber: tall body, front intake (+Z), top outlet.
         return [
-          ...box(x + width * 0.18, 0, z + depth * 0.18, x1 - width * 0.18, h * 0.89, z1 - depth * 0.18, 0.58),
-          ...box(x + width * 0.28, h * 0.69, z + depth * 0.10, x1 - width * 0.28, h * 0.83, z + depth * 0.22, 0.4),
-          ...box(x + width * 0.30, h * 0.89, z + depth * 0.28, x1 - width * 0.30, h, z1 - depth * 0.28, 0.72),
+          ...box(x + width * 0.22, 0, z + depth * 0.22, x1 - width * 0.22, h * 0.06, z1 - depth * 0.22, 0.45),
+          ...box(x + width * 0.20, h * 0.06, z + depth * 0.20, x1 - width * 0.20, h * 0.88, z1 - depth * 0.20, 0.6),
+          ...box(x + width * 0.28, h * 0.22, z1 - depth * 0.22, x1 - width * 0.28, h * 0.72, z1 - depth * 0.06, 0.4),
+          ...box(x + width * 0.32, h * 0.34, z1 - depth * 0.16, x1 - width * 0.32, h * 0.40, z1 - depth * 0.02, 0.72),
+          ...box(x + width * 0.32, h * 0.50, z1 - depth * 0.16, x1 - width * 0.32, h * 0.56, z1 - depth * 0.02, 0.72),
+          ...box(x + width * 0.30, h * 0.88, z + depth * 0.28, x1 - width * 0.30, h, z1 - depth * 0.28, 0.78),
         ];
       case FurnitureKind.smartBlinds:
         return [
@@ -557,10 +589,21 @@ class FurnitureShapes {
           );
         }
       case FurnitureKind.chair:
-        rrect(inset(0.16, 0.08, 0.84, 0.34), heavy);
-        rrect(inset(0.18, 0.32, 0.82, 0.90));
-        rrect(inset(0.08, 0.36, 0.20, 0.82));
-        rrect(inset(0.80, 0.36, 0.92, 0.82));
+        // Back at top (-Z); seat toward bottom (+Z); small star base.
+        rrect(inset(0.18, 0.06, 0.82, 0.32), heavy);
+        rrect(inset(0.20, 0.30, 0.80, 0.78));
+        rrect(inset(0.08, 0.34, 0.18, 0.72));
+        rrect(inset(0.82, 0.34, 0.92, 0.72));
+        canvas.drawLine(
+          Offset(size.width * 0.22, size.height * 0.88),
+          Offset(size.width * 0.78, size.height * 0.88),
+          stroke,
+        );
+        canvas.drawLine(
+          Offset(size.width * 0.5, size.height * 0.78),
+          Offset(size.width * 0.5, size.height * 0.96),
+          stroke,
+        );
       case FurnitureKind.monitor:
         // Front = +localY (bottom of plan cell) so yaw 0 faces +Z / south.
         // Screen on the front edge; stand behind toward -Y — never the reverse
@@ -588,10 +631,11 @@ class FurnitureShapes {
         rrect(inset(0.14, 0.12, 0.46, 0.26));
         rrect(inset(0.54, 0.12, 0.86, 0.26));
       case FurnitureKind.sofa:
-        rrect(inset(0.06, 0.08, 0.94, 0.36), heavy);
-        rrect(inset(0.14, 0.32, 0.86, 0.90));
-        rrect(inset(0.04, 0.28, 0.18, 0.90));
-        rrect(inset(0.82, 0.28, 0.96, 0.90));
+        rrect(inset(0.04, 0.06, 0.96, 0.34), heavy);
+        rrect(inset(0.14, 0.30, 0.48, 0.88));
+        rrect(inset(0.52, 0.30, 0.86, 0.88));
+        rrect(inset(0.02, 0.26, 0.16, 0.90));
+        rrect(inset(0.84, 0.26, 0.98, 0.90));
       case FurnitureKind.wardrobe:
         rrect(inset(0.10, 0.06, 0.90, 0.94), heavy);
         canvas.drawLine(
@@ -621,31 +665,34 @@ class FurnitureShapes {
         rrect(inset(0.28, 0.70, 0.72, 0.92));
         rrect(inset(0.04, 0.18, 0.96, 0.68), heavy);
       case FurnitureKind.portableAc:
-        rrect(inset(0.18, 0.12, 0.82, 0.88), heavy);
-        for (final t in const [0.32, 0.48, 0.64]) {
+        rrect(inset(0.22, 0.14, 0.78, 0.86), heavy);
+        // Front grille toward +Z (bottom of plan cell).
+        for (final t in const [0.40, 0.54, 0.68]) {
           canvas.drawLine(
-            Offset(size.width * 0.28, size.height * t),
-            Offset(size.width * 0.72, size.height * t),
+            Offset(size.width * 0.30, size.height * t),
+            Offset(size.width * 0.70, size.height * t),
             stroke,
           );
         }
-        rrect(inset(0.40, 0.06, 0.60, 0.16));
+        rrect(inset(0.38, 0.06, 0.62, 0.16));
+        rrect(inset(0.42, 0.86, 0.58, 0.96));
       case FurnitureKind.fan:
-        canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.58), size.shortestSide * 0.16, fill);
-        canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.42), size.shortestSide * 0.34, fill);
-        canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.42), size.shortestSide * 0.34, stroke);
-        canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.42), 3, stroke);
+        // Cage toward +Z (bottom of plan cell); pedestal toward center.
+        canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.42), size.shortestSide * 0.10, fill);
         canvas.drawLine(
-          Offset(size.width * 0.5, size.height * 0.42),
-          Offset(size.width * 0.5, size.height * 0.12),
+          Offset(size.width * 0.5, size.height * 0.48),
+          Offset(size.width * 0.5, size.height * 0.62),
           stroke,
         );
+        canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.72), size.shortestSide * 0.30, fill);
+        canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.72), size.shortestSide * 0.30, stroke);
+        canvas.drawCircle(Offset(size.width * 0.5, size.height * 0.72), 3, stroke);
       case FurnitureKind.heater:
-        rrect(inset(0.10, 0.28, 0.90, 0.78), heavy);
-        for (final t in const [0.28, 0.44, 0.60, 0.76]) {
+        rrect(inset(0.08, 0.22, 0.92, 0.72), heavy);
+        for (final t in const [0.22, 0.36, 0.50, 0.64, 0.78]) {
           canvas.drawLine(
-            Offset(size.width * t, size.height * 0.34),
-            Offset(size.width * t, size.height * 0.72),
+            Offset(size.width * t, size.height * 0.28),
+            Offset(size.width * t, size.height * 0.66),
             stroke,
           );
         }
