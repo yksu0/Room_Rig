@@ -2,6 +2,9 @@
 
 Scripts here are tracked; heavy outputs are gitignored (`ml/.venv/`, `ml/out/`, `ml/datasets/`, `ml/runs/`, `assets/models/*.tflite`).
 
+**Auto-Rig layout ranker (branch `auto_sort`)** — distill simulator scores into a
+pairwise sorter: see [`autorug_rank/README.md`](autorug_rank/README.md).
+
 **Windows TFLite export fails** (onnx2tf). Convert with WSL Ubuntu — see **[TFLITE_EXPORT_WSL.md](TFLITE_EXPORT_WSL.md)** for install + convert steps and paths.
 
 ## Train a Room Rig detector (recommended)

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "seed": 42,
+  "rooms": 4,
+  "layouts": 24,
+  "pairs": 55,
+  "train_layouts": 18,
+  "val_layouts": 6,
+  "negatives_per_mix": 2,
+  "smoke": true,
+  "generated_at": "2026-10-14T10:55:23.482908Z"
+}
