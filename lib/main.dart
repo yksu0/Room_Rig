@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'models/app_state.dart';
 import 'models/rig_catalog.dart';
+import 'services/autorug_ranker.dart';
 import 'services/furniture_sprites.dart';
 import 'theme/app_layout.dart';
 import 'theme/app_theme.dart';
@@ -44,6 +45,12 @@ void main() async {
     'exhaust',
     'ceilingLight',
   });
+  // Distilled Auto-Rig ranker (opt-in via AutoRigRanker.enabled).
+  try {
+    await AutoRigRanker.load();
+  } catch (_) {
+    // Keep pipeline sort if weights are missing / mismatched.
+  }
   runApp(
     ChangeNotifierProvider(
       create: (_) => AppState(),

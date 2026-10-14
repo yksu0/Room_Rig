@@ -37,20 +37,36 @@ flutter test tool/dump_autorug_rank_dataset.dart --dart-define=AUTORUG_SMOKE=tru
 flutter test tool/dump_autorug_rank_dataset.dart --dart-define=AUTORUG_ROOMS=80 --dart-define=AUTORUG_OUT=ml/datasets/autorug_rank
 ```
 
-## Train (pairwise RankNet-style head)
+## Train (pairwise + pointwise)
 
 ```powershell
 python -m venv ml\.venv
 ml\.venv\Scripts\pip install -r ml\autorug_rank\requirements.txt
 ml\.venv\Scripts\python ml\autorug_rank\train_ranker.py --data ml/autorug_rank/smoke
+# Full dump:
+ml\.venv\Scripts\python ml\autorug_rank\train_ranker.py --data ml/datasets/autorug_rank
 ```
 
-Checkpoint → `ml/runs/autorug_rank/` (gitignored). Eval prints pairwise accuracy
-on the val split vs simulator winners.
+Checkpoint → `ml/runs/autorug_rank/ranker.joblib` (gitignored). Eval prints pairwise
+accuracy, pointwise MAE, top-1/top-2, and mean Hub regret. Training also writes
+deployable `assets/models/autorug_rank_ridge.json`.
+
+## On-device sort (Dart ridge)
+
+Loaded in `main.dart`. Sorting stays **pipeline-by-default**; enable with:
+
+```dart
+AutoRigRanker.enabled = true;
+// or: MultiObjectiveOptimizer.optimizeCandidates(..., useAiSort: true)
+```
+
+Latest val (40 rooms × 5 mixes, proposals only): pairwise ~0.87, ridge mean
+regret ~1.4 Hub points, HGB top-2 ~0.76. Exact top-1 stays hard because Auto-Rig
+proposals are near-tied — regret matters more than exact match.
 
 ## Next milestones
 
-1. Scale dump to thousands of rooms
-2. Match ≥ ~85% top-1 vs current Auto-Rig on holdout
-3. Export TFLite scorer and gate behind an Auto-Rig AI-sort flag
+1. Grow dump / features to lift proposal top-1 and top-2
+2. UI toggle for AI sort on Auto-Rig
+3. Optional TFLite HGB/MLP if ridge plateaus
 4. Optional: human preference fine-tune from Auto-Rig cycle UI

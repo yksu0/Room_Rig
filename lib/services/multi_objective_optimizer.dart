@@ -8,6 +8,7 @@ import 'ergonomics_optimizer.dart';
 import 'ergonomics_simulator.dart';
 import 'layout_collision.dart';
 import 'layout_optimizer_common.dart';
+import 'autorug_ranker.dart';
 import 'layout_orientation.dart';
 import 'lighting_optimizer.dart';
 import 'lighting_simulator.dart';
@@ -187,11 +188,15 @@ class MultiObjectiveOptimizer {
   }
 
   /// Ranked diverse candidates (best first). Used by Auto-Rig cycling.
+  ///
+  /// When [AutoRigRanker.enabled] and a loaded ranker exist, candidates are
+  /// sorted by the distilled AI score (simulator metrics still attached for UI).
   static List<MultiObjectiveResult> optimizeCandidates({
     required List<FurnitureItem> furniture,
     required int gridCols,
     required int gridRows,
     required MultiObjectiveWeights weights,
+    bool? useAiSort,
   }) {
     final baseline = furniture.map((f) => f.copyWith()).toList(growable: false);
     final w = weights.normalized();
@@ -335,7 +340,29 @@ class MultiObjectiveOptimizer {
       );
     }
 
-    scored.sort((a, b) => b.score.compareTo(a.score));
+    final ai = useAiSort ?? AutoRigRanker.enabled;
+    final ranker = AutoRigRanker.instance;
+    if (ai && ranker != null) {
+      scored.sort((a, b) {
+        final sa = ranker.score(
+          furniture: a.furniture,
+          gridCols: gridCols,
+          gridRows: gridRows,
+          weights: w,
+        );
+        final sb = ranker.score(
+          furniture: b.furniture,
+          gridCols: gridCols,
+          gridRows: gridRows,
+          weights: w,
+        );
+        final byAi = sb.compareTo(sa);
+        if (byAi != 0) return byAi;
+        return b.score.compareTo(a.score);
+      });
+    } else {
+      scored.sort((a, b) => b.score.compareTo(a.score));
+    }
 
     // Keep top diverse layouts (fingerprint already unique; cap count).
     final kept = scored.take(_maxKeptCandidates).toList(growable: false);

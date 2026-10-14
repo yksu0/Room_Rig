@@ -58,30 +58,33 @@ void main() {
       final mixes = smoke
           ? [AutoRigTrainingExport.weightMixes.first]
           : AutoRigTrainingExport.weightMixes;
-      final weights = mixes[r % mixes.length];
 
-      examples.addAll(
-        AutoRigTrainingExport.exportCandidates(
-          roomId: roomId,
-          furniture: variant.furniture,
-          gridCols: variant.gridCols,
-          gridRows: variant.gridRows,
-          weights: weights,
-          split: split,
-        ),
-      );
-      examples.addAll(
-        AutoRigTrainingExport.exportHardNegatives(
-          roomId: roomId,
-          furniture: variant.furniture,
-          gridCols: variant.gridCols,
-          gridRows: variant.gridRows,
-          weights: weights,
-          split: split,
-          rng: rng,
-          count: negativesPerMix,
-        ),
-      );
+      for (var mi = 0; mi < mixes.length; mi++) {
+        final weights = mixes[mi];
+        final mixRoomId = mixes.length == 1 ? roomId : '${roomId}_w$mi';
+        examples.addAll(
+          AutoRigTrainingExport.exportCandidates(
+            roomId: mixRoomId,
+            furniture: variant.furniture,
+            gridCols: variant.gridCols,
+            gridRows: variant.gridRows,
+            weights: weights,
+            split: split,
+          ),
+        );
+        examples.addAll(
+          AutoRigTrainingExport.exportHardNegatives(
+            roomId: mixRoomId,
+            furniture: variant.furniture,
+            gridCols: variant.gridCols,
+            gridRows: variant.gridRows,
+            weights: weights,
+            split: split,
+            rng: rng,
+            count: negativesPerMix,
+          ),
+        );
+      }
     }
 
     final pairs = AutoRigTrainingExport.pairsFromExamples(examples);
