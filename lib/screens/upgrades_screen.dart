@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/upgrade_catalog.dart';
+import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
+import '../widgets/chrome/adaptive_panel.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/score_ring.dart';
@@ -15,6 +17,73 @@ class UpgradesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final desktop = AppLayout.isDesktop(context);
+
+    if (desktop) {
+      final wideDesktop =
+          MediaQuery.sizeOf(context).width >= AppLayout.desktopMinWidth;
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildHeader(state, desktop: true),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: AppLayout.inspectRailWidthFor(context),
+                      child: DecoratedBox(
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            right: BorderSide(color: AppColors.borderSubtle),
+                          ),
+                        ),
+                        child: AdaptiveRailPane(
+                          title: 'Impact',
+                          icon: Icons.trending_up_rounded,
+                          accent: AppColors.purple,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildImpactPreview(state),
+                              const SizedBox(height: AppSpace.sm),
+                              Text(
+                                UpgradeCatalog.honestyNote,
+                                style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 12,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: ColoredBox(
+                        color: AppColors.bg,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+                          child: _buildUpgradeList(
+                            context,
+                            state,
+                            multiColumn: wideDesktop,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -25,23 +94,28 @@ class UpgradesScreen extends StatelessWidget {
             _buildHeader(state),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.screen,
+                  0,
+                  AppSpace.screen,
+                  AppSpace.xxl,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildImpactPreview(state),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: AppSpace.sm),
                     Text(
                       UpgradeCatalog.honestyNote,
                       style: TextStyle(
                         color: AppColors.textMuted,
-                        fontSize: 11,
-                        height: 1.35,
+                        fontSize: 12,
+                        height: 1.4,
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: AppSpace.section),
                     _buildUpgradeList(context, state),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: AppSpace.xxl),
                   ],
                 ),
               ),
@@ -52,24 +126,50 @@ class UpgradesScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(AppState state) {
+  Widget _buildHeader(AppState state, {bool desktop = false}) {
     final addedCount = state.upgrades.where((u) => u['added'] as bool).length;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+      padding: EdgeInsets.fromLTRB(
+        desktop ? AppSpace.lg : AppSpace.screen,
+        desktop ? AppSpace.sm : AppSpace.lg,
+        desktop ? AppSpace.lg : AppSpace.screen,
+        desktop ? AppSpace.xs : AppSpace.md,
+      ),
       child: Row(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('UPGRADES', style: TextStyle(color: AppColors.cyan, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 3)),
-              const Text('Component Store', style: TextStyle(color: AppColors.textPrimary, fontSize: 26, fontWeight: FontWeight.w800)),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'UPGRADES',
+                  style: TextStyle(
+                    color: AppColors.cyan,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2.8,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.xxs),
+                Text(
+                  'Component Store',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: desktop ? 20 : 26,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const Spacer(),
           if (addedCount > 0)
             Text(
               '\$${state.upgradesCost.toStringAsFixed(0)} spent',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           if (addedCount > 0) const SizedBox(width: 8),
           if (addedCount > 0)
@@ -84,7 +184,14 @@ class UpgradesScreen extends StatelessWidget {
                 children: [
                   SvgIcon(RoomSvg.checkCircle, size: 14, color: AppColors.green),
                   const SizedBox(width: 5),
-                  Text('$addedCount installed', style: TextStyle(color: AppColors.green, fontSize: 12, fontWeight: FontWeight.w700)),
+                  Text(
+                    '$addedCount installed',
+                    style: TextStyle(
+                      color: AppColors.green,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -109,9 +216,15 @@ class UpgradesScreen extends StatelessWidget {
             children: [
               SvgIcon(RoomSvg.trendingUp, size: 18, color: AppColors.purple),
               const SizedBox(width: 8),
-              Text(
-                'Upgrade Impact Preview',
-                style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 15),
+              Flexible(
+                child: Text(
+                  'Upgrade Impact Preview',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
               ),
             ],
           ),
@@ -154,111 +267,158 @@ class UpgradesScreen extends StatelessWidget {
             const SizedBox(height: 16),
             const Text(
               'Catalog tags (not Hub score points). Hub rings use Bench sims / layout impacts.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 11, height: 1.35),
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 11,
+                height: 1.35,
+              ),
             ),
             const SizedBox(height: 10),
-            _BoostRow(label: 'Airflow tag', value: state.upgradeAirflowBonus, color: AppColors.airflowColor),
+            _BoostRow(
+              label: 'Airflow tag',
+              value: state.upgradeAirflowBonus,
+              color: AppColors.airflowColor,
+            ),
             const SizedBox(height: 6),
-            _BoostRow(label: 'Lighting tag', value: state.upgradeLightingBonus, color: AppColors.lightingColor),
+            _BoostRow(
+              label: 'Lighting tag',
+              value: state.upgradeLightingBonus,
+              color: AppColors.lightingColor,
+            ),
             const SizedBox(height: 6),
-            _BoostRow(label: 'Ergo tag', value: state.upgradeErgonomicsBonus, color: AppColors.ergonomicsColor),
+            _BoostRow(
+              label: 'Ergo tag',
+              value: state.upgradeErgonomicsBonus,
+              color: AppColors.ergonomicsColor,
+            ),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildUpgradeList(BuildContext context, AppState state) {
+  Widget _buildUpgradeList(
+    BuildContext context,
+    AppState state, {
+    bool multiColumn = false,
+  }) {
     final categories = [
       ('airflow', 'Airflow', AppColors.airflowColor, RoomSvg.airflow),
       ('lighting', 'Lighting', AppColors.lightingColor, RoomSvg.lightbulb),
       ('ergonomics', 'Ergonomics', AppColors.ergonomicsColor, RoomSvg.ergonomics),
     ];
 
+    Widget categoryColumn((String, String, Color, String) cat) {
+      final items = state.upgrades
+          .asMap()
+          .entries
+          .where((e) => e.value['type'] == cat.$1)
+          .toList();
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                SvgIcon(cat.$4, size: 16, color: cat.$3),
+                const SizedBox(width: 8),
+                Text(
+                  cat.$2.toUpperCase(),
+                  style: TextStyle(
+                    color: cat.$3,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...items.map((entry) {
+            final i = entry.key;
+            final u = entry.value;
+            final isAdded = u['added'] as bool;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _UpgradeCard(
+                upgrade: u,
+                isAdded: isAdded,
+                categoryColor: cat.$3,
+                onToggle: () => _toggleUpgrade(context, state, i, u, cat.$3),
+              ),
+            );
+          }),
+          if (!multiColumn) const SizedBox(height: 16),
+        ],
+      );
+    }
+
+    if (multiColumn) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < categories.length; i++) ...[
+            if (i > 0) const SizedBox(width: 14),
+            Expanded(child: categoryColumn(categories[i])),
+          ],
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: categories.map((cat) {
-        final items = state.upgrades
-            .asMap()
-            .entries
-            .where((e) => e.value['type'] == cat.$1)
-            .toList();
+      children: [for (final cat in categories) categoryColumn(cat)],
+    );
+  }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
-                children: [
-                  SvgIcon(cat.$4, size: 16, color: cat.$3),
-                  const SizedBox(width: 8),
-                  Text(
-                    cat.$2.toUpperCase(),
-                    style: TextStyle(color: cat.$3, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2),
-                  ),
-                ],
-              ),
-            ),
-            ...items.map((entry) {
-              final i = entry.key;
-              final u = entry.value;
-              final isAdded = u['added'] as bool;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _UpgradeCard(
-                  upgrade: u,
-                  isAdded: isAdded,
-                  categoryColor: cat.$3,
-                  onToggle: () async {
-                    final adding = !(u['added'] as bool);
-                    if (!adding) {
-                      final ok = await confirmAction(
-                        context,
-                        title: 'Remove ${u['name']}?',
-                        body: 'This removes the upgrade from your Rig layout.',
-                        confirmLabel: 'Remove',
-                        danger: true,
-                      );
-                      if (!ok || !context.mounted) return;
-                    }
-                    final ok = state.toggleUpgrade(i, pending: adding);
-                    if (!ok) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('No free cell — move furniture in Rig first'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                      return;
-                    }
-                    if (adding) {
-                      state.setTab(2);
-                    }
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          adding
-                              ? '${u['name']} — drag the ghost on Rig, then Place'
-                              : '${u['name']} removed from Rig',
-                        ),
-                        backgroundColor: cat.$3.withValues(alpha: 0.9),
-                        behavior: SnackBarBehavior.floating,
-                        action: SnackBarAction(
-                          label: 'OPEN RIG',
-                          textColor: Colors.black,
-                          onPressed: () => state.setTab(2),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              );
-            }),
-            const SizedBox(height: 16),
-          ],
-        );
-      }).toList(),
+  Future<void> _toggleUpgrade(
+    BuildContext context,
+    AppState state,
+    int i,
+    Map<String, dynamic> u,
+    Color categoryColor,
+  ) async {
+    final adding = !(u['added'] as bool);
+    if (!adding) {
+      final ok = await confirmAction(
+        context,
+        title: 'Remove ${u['name']}?',
+        body: 'This removes the upgrade from your Rig layout.',
+        confirmLabel: 'Remove',
+        danger: true,
+      );
+      if (!ok || !context.mounted) return;
+    }
+    final ok = state.toggleUpgrade(i, pending: adding);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No free cell — move furniture in Rig first'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    if (adding) {
+      state.setTab(2);
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          adding
+              ? '${u['name']} — drag the ghost on Rig, then Place'
+              : '${u['name']} removed from Rig',
+        ),
+        backgroundColor: categoryColor.withValues(alpha: 0.9),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: 'OPEN RIG',
+          textColor: Colors.black,
+          onPressed: () => state.setTab(2),
+        ),
+      ),
     );
   }
 }
@@ -286,33 +446,37 @@ class _UpgradeCard extends StatelessWidget {
       onTap: onToggle,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(AppSpace.md),
         decoration: BoxDecoration(
           color: isAdded ? categoryColor.withValues(alpha: 0.1) : AppColors.card,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
           border: Border.all(
             color: isAdded ? categoryColor : AppColors.border,
             width: isAdded ? 1.5 : 1,
           ),
-          boxShadow: isAdded ? [BoxShadow(color: categoryColor.withValues(alpha: 0.15), blurRadius: 16)] : [],
+          boxShadow: isAdded
+              ? [BoxShadow(color: categoryColor.withValues(alpha: 0.15), blurRadius: 16)]
+              : [],
         ),
         child: Row(
           children: [
-            // Icon box
             Container(
-              width: 44,
-              height: 44,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: categoryColor.withValues(alpha: isAdded ? 0.2 : 0.08),
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
                 border: Border.all(color: categoryColor.withValues(alpha: 0.3)),
               ),
               child: Center(
-                child: SvgIcon(upgradeSvgFor(upgrade['iconName'] as String), size: 22, color: categoryColor),
+                child: SvgIcon(
+                  upgradeSvgFor(upgrade['iconName'] as String),
+                  size: 22,
+                  color: categoryColor,
+                ),
               ),
             ),
-            const SizedBox(width: 12),
-            // Info
+            const SizedBox(width: AppSpace.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,47 +489,77 @@ class _UpgradeCard extends StatelessWidget {
                       fontSize: 14,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: AppSpace.xxs),
                   Text(
                     upgrade['desc'] as String,
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpace.xs),
                   Row(
                     children: [
                       Text(
                         '\$${(upgrade['price'] as num?)?.toStringAsFixed(0) ?? '0'}',
-                        style: TextStyle(color: AppColors.cyan, fontSize: 12, fontWeight: FontWeight.w800),
+                        style: TextStyle(
+                          color: AppColors.cyan,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: AppSpace.xs),
                       if (isAdded)
                         Text(
                           'Installed',
-                          style: TextStyle(color: categoryColor, fontSize: 10, fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                            color: categoryColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: AppSpace.xs),
                   Row(
                     children: [
-                      if (airBoost > 0) _SmallBoost(label: 'Air', value: airBoost, color: AppColors.airflowColor),
-                      if (airBoost > 0 && (lightBoost > 0 || ergoBoost > 0)) const SizedBox(width: 4),
-                      if (lightBoost > 0) _SmallBoost(label: 'Light', value: lightBoost, color: AppColors.lightingColor),
-                      if (lightBoost > 0 && ergoBoost > 0) const SizedBox(width: 4),
-                      if (ergoBoost > 0) _SmallBoost(label: 'Ergo', value: ergoBoost, color: AppColors.ergonomicsColor),
+                      if (airBoost > 0)
+                        _SmallBoost(
+                          label: 'Air',
+                          value: airBoost,
+                          color: AppColors.airflowColor,
+                        ),
+                      if (airBoost > 0 && (lightBoost > 0 || ergoBoost > 0))
+                        const SizedBox(width: 6),
+                      if (lightBoost > 0)
+                        _SmallBoost(
+                          label: 'Light',
+                          value: lightBoost,
+                          color: AppColors.lightingColor,
+                        ),
+                      if (lightBoost > 0 && ergoBoost > 0)
+                        const SizedBox(width: 6),
+                      if (ergoBoost > 0)
+                        _SmallBoost(
+                          label: 'Ergo',
+                          value: ergoBoost,
+                          color: AppColors.ergonomicsColor,
+                        ),
                     ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 10),
-            // Add / Remove toggle
+            const SizedBox(width: AppSpace.sm),
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: isAdded ? categoryColor.withValues(alpha: 0.2) : AppColors.surfaceAlt,
+                color: isAdded
+                    ? categoryColor.withValues(alpha: 0.2)
+                    : AppColors.surfaceAlt,
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isAdded ? categoryColor : AppColors.border,
@@ -389,7 +583,11 @@ class _SmallBoost extends StatelessWidget {
   final String label;
   final double value;
   final Color color;
-  const _SmallBoost({required this.label, required this.value, required this.color});
+  const _SmallBoost({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -411,13 +609,23 @@ class _BoostRow extends StatelessWidget {
   final String label;
   final double value;
   final Color color;
-  const _BoostRow({required this.label, required this.value, required this.color});
+  const _BoostRow({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        SizedBox(width: 110, child: Text(label, style: TextStyle(color: AppColors.textSecondary, fontSize: 12))),
+        SizedBox(
+          width: 110,
+          child: Text(
+            label,
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+        ),
         Expanded(
           child: LinearProgressIndicator(
             value: (value / 50).clamp(0.0, 1.0),
@@ -430,7 +638,11 @@ class _BoostRow extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           '+${value.toInt()}',
-          style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ],
     );

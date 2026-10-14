@@ -427,6 +427,7 @@ String furnitureSvgFor(String id) {
       return RoomSvg.pcTower;
     case 'ac':
     case 'portable_ac':
+    case 'portableac':
     case 'acunit':
       return RoomSvg.acUnit;
     case 'intake':

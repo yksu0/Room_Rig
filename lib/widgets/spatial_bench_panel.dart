@@ -10,15 +10,18 @@ import '../services/benchmark_validator.dart';
 import '../services/layout_share_image.dart';
 import '../services/spatial_analyzer.dart';
 import '../services/furniture_sprites.dart';
+import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
+import 'chrome/bench_results_chrome.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
+import 'room_model_scene.dart';
 import 'score_ring.dart';
 
 enum _SpatialStep { layout, analyze, results }
-enum _LayoutView { heatmap, room3d }
+enum _LayoutView { heatmap, room3d, model3d, compare }
 
 class SpatialBenchPanel extends StatefulWidget {
   final ValueChanged<bool>? onOrbitDraggingChanged;
@@ -70,6 +73,8 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       roomFurniture: state.committedFurniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
+      weights: state.optimizeWeights,
+      alternateIndex: state.benchAlternateCursor,
     );
     _layouts = layouts;
     _myRoomMetrics = SpatialAnalyzer.evaluate(
@@ -96,6 +101,9 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       _layoutVariant = kind;
       _analyzeVariant = kind;
       _showResults = false;
+      if (kind == BenchLayoutKind.sample) {
+        _layoutView = _LayoutView.heatmap;
+      }
     }
   }
 
@@ -105,11 +113,21 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       _seenFocusToken = state.benchLayoutFocusToken;
       _layoutVariant = state.benchLayoutFocus;
       _analyzeVariant = state.benchLayoutFocus;
+      if (state.benchLayoutFocus == BenchLayoutKind.sample) {
+        _layoutView = _LayoutView.heatmap;
+      }
     }
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
     );
-    if (_layouts != null && fp == _layouts!.fingerprint) return;
+    if (benchLayoutsInSync(
+      _layouts,
+      furnitureFingerprint: fp,
+      weightsCacheKey: state.optimizeWeights.cacheKey,
+      alternateCursor: state.benchAlternateCursor,
+    )) {
+      return;
+    }
     _recompute(state, resetStep: false);
   }
 
@@ -183,6 +201,8 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       _showResults = true;
       _step = _SpatialStep.results;
       _analyzeVariant = BenchLayoutKind.improved;
+      _layoutVariant = BenchLayoutKind.improved;
+      _layoutView = _LayoutView.compare;
     });
   }
 
@@ -208,6 +228,52 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
 
     final applyValidation = _validationForImproved(state);
     final applyBlocked = _improvedIsNoOp || applyValidation.hasHardLayoutConflicts;
+
+    Future<void> applyImproved() async {
+      if (!await confirmBenchApply(
+        context,
+        validation: applyValidation,
+        fellBackToSample: _layouts?.fellBackToSample ?? false,
+      )) {
+        return;
+      }
+      if (!context.mounted) return;
+      final before = List<FurnitureItem>.from(state.committedFurniture);
+      state.applyFurnitureLayout(
+        _furnitureFor(BenchLayoutKind.improved),
+        markOptimized: true,
+        lockMode: 'spatial',
+      );
+      final diff = summarizeLayoutDiff(before, state.furniture);
+      final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+      final room = state.currentRoomData;
+      final after = List<FurnitureItem>.from(state.furniture);
+      showBenchApplySnackBar(
+        context,
+        message: why.isEmpty ? 'Spatial applied · $diff' : 'Spatial applied · $diff · $why',
+        accentColor: AppColors.spatialColor,
+        onOpenRig: () => state.setTab(2),
+        onShareImage: () => LayoutShareImage.shareBeforeAfter(
+          gridCols: room.gridCols,
+          gridRows: room.gridRows,
+          before: before,
+          after: after,
+          footer: why.isEmpty ? diff : '$diff · $why',
+        ),
+      );
+    }
+
+    final resultsExtra = _improvedIsNoOp
+        ? benchImprovedNoOpBanner(
+            message:
+                'Improved layout matches your room — walkways are already clear enough to leave in place.',
+          )
+        : benchWhyWinsCard(
+            reasons: _layouts?.improvedReasons ?? const [],
+            accentColor: AppColors.spatialColor,
+          );
+
+    final desktop = AppLayout.isDesktop(context);
 
     return BenchPanelScaffold(
       accentColor: AppColors.spatialColor,
@@ -238,55 +304,373 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
         icon: RoomSvg.scan,
         onRun: _runAnalysis,
       ),
-      resultsExtra: _improvedIsNoOp
-          ? benchImprovedNoOpBanner(
-              message:
-                  'Improved layout matches your room — walkways are already clear enough to leave in place.',
-            )
-          : benchWhyWinsCard(
-              reasons: _layouts?.improvedReasons ?? const [],
-              accentColor: AppColors.spatialColor,
-            ),
+      resultsExtra: resultsExtra,
       resultsBody: _results(state),
       applyEnabled: !applyBlocked,
       applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
           : (_improvedIsNoOp ? 'Improved layout matches your room — nothing to apply.' : null),
-      onApply: () async {
-        if (!await confirmBenchApply(
-          context,
-          validation: applyValidation,
-          fellBackToSample: _layouts?.fellBackToSample ?? false,
-        )) {
-          return;
-        }
-        if (!context.mounted) return;
-        final before = List<FurnitureItem>.from(state.committedFurniture);
-        state.applyFurnitureLayout(
-          _furnitureFor(BenchLayoutKind.improved),
-          markOptimized: true,
-          lockMode: 'spatial',
+      onApply: applyImproved,
+      onRefresh: _rebuild,
+      desktopControls: desktop ? _desktopControls(state) : null,
+      desktopViewport: desktop ? _desktopViewport(state) : null,
+      desktopInspect: desktop
+          ? _desktopInspect(
+              state,
+              resultsExtra: resultsExtra,
+              onApply: applyBlocked ? null : applyImproved,
+              applyBlockedReason: applyValidation.hasHardLayoutConflicts
+                  ? 'Fix overlaps or blocked doorways before applying.'
+                  : (_improvedIsNoOp ? 'Improved layout matches your room — nothing to apply.' : null),
+            )
+          : null,
+    );
+  }
+
+  Widget _desktopControls(AppState state) {
+    switch (_step) {
+      case _SpatialStep.layout:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'WALKWAYS',
+              style: TextStyle(
+                color: AppColors.spatialColor,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Estimated floor use — not a measured survey.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 10),
+            BenchVariantChips(
+              selected: _layoutVariant,
+              onChanged: _setLayoutVariant,
+              includeSample: _layoutVariant == BenchLayoutKind.sample,
+            ),
+            BenchViewChips(
+              children: [
+                BenchChip(
+                  label: 'Map',
+                  selected: _layoutView == _LayoutView.heatmap,
+                  color: AppColors.spatialColor,
+                  onTap: () => setState(() => _layoutView = _LayoutView.heatmap),
+                ),
+                BenchChip(
+                  label: '3D',
+                  selected: _layoutView == _LayoutView.room3d,
+                  color: AppColors.spatialColor,
+                  onTap: () => setState(() => _layoutView = _LayoutView.room3d),
+                ),
+                BenchChip(
+                  label: 'Model',
+                  selected: _layoutView == _LayoutView.model3d,
+                  color: AppColors.spatialColor,
+                  onTap: () => setState(() => _layoutView = _LayoutView.model3d),
+                ),
+                BenchChip(
+                  label: 'Compare',
+                  selected: _layoutView == _LayoutView.compare,
+                  color: AppColors.spatialColor,
+                  onTap: () => setState(() => _layoutView = _LayoutView.compare),
+                ),
+              ],
+            ),
+            BenchAutoRigMixBar(
+              layouts: _layouts,
+              onTryAlternate: () {
+                context.read<AppState>().cycleBenchAlternate();
+                setState(() {
+                  _layoutVariant = BenchLayoutKind.improved;
+                  _layoutView = _LayoutView.compare;
+                });
+              },
+            ),
+            const SizedBox(height: 16),
+            BenchRunAction(
+              buttonLabel: 'RUN SPATIAL ANALYSIS',
+              icon: RoomSvg.scan,
+              onRun: _runAnalysis,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _layoutHint,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ],
         );
-        final diff = summarizeLayoutDiff(before, state.furniture);
-        final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
-        final room = state.currentRoomData;
-        final after = List<FurnitureItem>.from(state.furniture);
-        showBenchApplySnackBar(
-          context,
-          message: why.isEmpty ? 'Spatial applied · $diff' : 'Spatial applied · $diff · $why',
-          accentColor: AppColors.spatialColor,
-          onOpenRig: () => state.setTab(2),
-          onShareImage: () => LayoutShareImage.shareBeforeAfter(
+      case _SpatialStep.analyze:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'FLOOR HEATMAP',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            BenchVariantChips(
+              selected: _analyzeVariant,
+              onChanged: (v) => setState(() => _analyzeVariant = v),
+            ),
+            const SizedBox(height: 8),
+            const BenchLegend(caption: 'Floor use'),
+            const SizedBox(height: 16),
+            BenchRunAction(
+              buttonLabel: 'RUN SPATIAL ANALYSIS',
+              icon: RoomSvg.scan,
+              onRun: _runAnalysis,
+            ),
+          ],
+        );
+      case _SpatialStep.results:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'RESULTS',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'My Room vs Improved under your Rig Auto-Rig mix.',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 12),
+            BenchVariantChips(
+              selected: _analyzeVariant,
+              onChanged: (v) => setState(() => _analyzeVariant = v),
+            ),
+          ],
+        );
+    }
+  }
+
+  Widget _desktopViewport(AppState state) {
+    switch (_step) {
+      case _SpatialStep.layout:
+        return _layoutViewportCanvas(state);
+      case _SpatialStep.analyze:
+      case _SpatialStep.results:
+        return _analyzeViewportCanvas(state);
+    }
+  }
+
+  Widget _desktopInspect(
+    AppState state, {
+    required Widget resultsExtra,
+    required VoidCallback? onApply,
+    required String? applyBlockedReason,
+  }) {
+    switch (_step) {
+      case _SpatialStep.layout:
+        final notes = _notesFor(_layoutVariant);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _layoutView == _LayoutView.compare
+                  ? 'My Room vs Improved — same Auto-Rig mix as Rig'
+                  : switch (_layoutVariant) {
+                      BenchLayoutKind.myRoom =>
+                        (_layouts?.fellBackToSample ?? false)
+                            ? 'Reference room — your Rig is empty'
+                            : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
+                      BenchLayoutKind.improved =>
+                        _layouts?.improvedCaption ?? 'Improved — your room, Auto-Rig layout',
+                      BenchLayoutKind.sample => 'Sample room — door aisle blocked, floor packed',
+                    },
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...notes.map(
+              (n) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      switch (_layoutVariant) {
+                        BenchLayoutKind.improved => Icons.check_circle_outline,
+                        BenchLayoutKind.myRoom => Icons.grid_view_rounded,
+                        BenchLayoutKind.sample => Icons.warning_amber_rounded,
+                      },
+                      size: 14,
+                      color: switch (_layoutVariant) {
+                        BenchLayoutKind.improved => AppColors.green,
+                        BenchLayoutKind.myRoom => AppColors.cyan,
+                        BenchLayoutKind.sample => AppColors.amber,
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        n,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      case _SpatialStep.analyze:
+        final metrics = _activeMetrics;
+        if (metrics == null) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ScoreRing(score: metrics.utilizationScore, size: 72, color: AppColors.spatialColor, label: 'Use'),
+                ScoreRing(score: metrics.accessibilityScore, size: 88, color: AppColors.cyan, label: 'Access'),
+                ScoreRing(score: metrics.overallScore, size: 72, color: AppColors.green, label: 'Space'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            GlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Largest aisle ${RoomScale.formatCellsAsMeters(metrics.largestAisleCells)}  ·  '
+                    '${(metrics.walkableRatio * 100).round()}% walkable',
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...metrics.notes.map(
+                    (n) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(n, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      case _SpatialStep.results:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            resultsExtra,
+            const SizedBox(height: 12),
+            _results(state),
+            const SizedBox(height: 16),
+            BenchApplyRow(
+              onApply: onApply,
+              onRefresh: _rebuild,
+              blockedReason: applyBlockedReason,
+            ),
+          ],
+        );
+    }
+  }
+
+  Widget _layoutViewportCanvas(AppState state) {
+    final room = state.currentRoomData;
+    final furniture = _furnitureFor(_layoutVariant);
+    final metrics = SpatialAnalyzer.evaluate(
+      furniture: furniture,
+      gridCols: room.gridCols,
+      gridRows: room.gridRows,
+    );
+
+    if (_layoutView == _LayoutView.compare) {
+      return BenchSideBySidePlans(
+        gridCols: room.gridCols,
+        gridRows: room.gridRows,
+        myRoom: _furnitureFor(BenchLayoutKind.myRoom),
+        improved: _furnitureFor(BenchLayoutKind.improved),
+        accentColor: AppColors.spatialColor,
+      );
+    }
+    if (_layoutView == _LayoutView.heatmap) {
+      return _heatmapCanvas(room: room, furniture: furniture, metrics: metrics, expand: true);
+    }
+    if (_layoutView == _LayoutView.model3d) {
+      return ColoredBox(
+        color: AppColors.surface,
+        child: RoomModelScene(room: room, furniture: furniture),
+      );
+    }
+    return ColoredBox(
+      color: AppColors.surface,
+      child: BenchOrbitShell(
+        initialYaw: _defaultYaw,
+        initialPitch: _defaultPitch,
+        initialDistance: _defaultDistance,
+        initialLookAtX: room.gridCols * 0.5,
+        initialLookAtZ: room.gridRows * 0.5,
+        roomWidth: room.gridCols.toDouble(),
+        roomDepth: room.gridRows.toDouble(),
+        resetNonce: _layoutOrbitResetNonce,
+        onDoubleTap: () {
+          HapticFeedback.lightImpact();
+          setState(() => _layoutOrbitResetNonce++);
+        },
+        onDragChanged: widget.onOrbitDraggingChanged,
+        builder: (cam) => CustomPaint(
+          painter: BenchRoom3DPainter(
+            roomWidth: room.gridCols.toDouble(),
+            roomDepth: room.gridRows.toDouble(),
+            roomHeight: 2.8,
             gridCols: room.gridCols,
             gridRows: room.gridRows,
-            before: before,
-            after: after,
-            footer: why.isEmpty ? diff : '$diff · $why',
+            yaw: cam.yaw,
+            pitch: cam.pitch,
+            distance: cam.distance,
+            lookAtX: cam.lookAtX,
+            lookAtZ: cam.lookAtZ,
+            furniture: furniture,
           ),
-        );
-      },
-      onRefresh: _rebuild,
+          child: const SizedBox.expand(),
+        ),
+      ),
     );
+  }
+
+  Widget _analyzeViewportCanvas(AppState state) {
+    final metrics = _activeMetrics;
+    if (metrics == null) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.spatialColor));
+    }
+    final room = state.currentRoomData;
+    final furniture = _furnitureFor(_analyzeVariant);
+    return _heatmapCanvas(room: room, furniture: furniture, metrics: metrics, expand: true);
   }
 
   Widget _layoutSection(AppState state) {
@@ -320,7 +704,10 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
-          trailing: [
+          includeSample: _layoutVariant == BenchLayoutKind.sample,
+        ),
+        BenchViewChips(
+          children: [
             BenchChip(
               label: 'Map',
               selected: _layoutView == _LayoutView.heatmap,
@@ -333,7 +720,29 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
               color: AppColors.spatialColor,
               onTap: () => setState(() => _layoutView = _LayoutView.room3d),
             ),
+            BenchChip(
+              label: 'Model',
+              selected: _layoutView == _LayoutView.model3d,
+              color: AppColors.spatialColor,
+              onTap: () => setState(() => _layoutView = _LayoutView.model3d),
+            ),
+            BenchChip(
+              label: 'Compare',
+              selected: _layoutView == _LayoutView.compare,
+              color: AppColors.spatialColor,
+              onTap: () => setState(() => _layoutView = _LayoutView.compare),
+            ),
           ],
+        ),
+        BenchAutoRigMixBar(
+          layouts: _layouts,
+          onTryAlternate: () {
+            context.read<AppState>().cycleBenchAlternate();
+            setState(() {
+              _layoutVariant = BenchLayoutKind.improved;
+              _layoutView = _LayoutView.compare;
+            });
+          },
         ),
         const SizedBox(height: 12),
         GlassCard(
@@ -341,18 +750,44 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                switch (_layoutVariant) {
-                  BenchLayoutKind.myRoom => (_layouts?.fellBackToSample ?? false)
-                      ? 'Reference room — your Rig is empty'
-                      : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                  BenchLayoutKind.improved => 'Improved — your room, Auto-Rig layout',
-                  BenchLayoutKind.sample => 'Sample room — door aisle blocked, floor packed',
-                },
-                style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 14),
+                _layoutView == _LayoutView.compare
+                    ? 'My Room vs Improved — same Auto-Rig mix as Rig'
+                    : switch (_layoutVariant) {
+                        BenchLayoutKind.myRoom =>
+                          (_layouts?.fellBackToSample ?? false)
+                              ? 'Reference room — your Rig is empty'
+                              : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
+                        BenchLayoutKind.improved =>
+                          _layouts?.improvedCaption ??
+                              'Improved — your room, Auto-Rig layout',
+                        BenchLayoutKind.sample =>
+                          'Sample room — door aisle blocked, floor packed',
+                      },
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
               ),
               const SizedBox(height: 12),
-              if (_layoutView == _LayoutView.heatmap)
+              if (_layoutView == _LayoutView.compare)
+                BenchSideBySidePlans(
+                  gridCols: room.gridCols,
+                  gridRows: room.gridRows,
+                  myRoom: _furnitureFor(BenchLayoutKind.myRoom),
+                  improved: _furnitureFor(BenchLayoutKind.improved),
+                  accentColor: AppColors.spatialColor,
+                )
+              else if (_layoutView == _LayoutView.heatmap)
                 _heatmapView(room: room, furniture: furniture, metrics: metrics)
+              else if (_layoutView == _LayoutView.model3d)
+                SizedBox(
+                  height: 300,
+                  child: RoomModelScene(
+                    room: room,
+                    furniture: furniture,
+                  ),
+                )
               else
                 SizedBox(
                   height: 280,
@@ -451,6 +886,8 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
           selected: _analyzeVariant,
           onChanged: (v) => setState(() => _analyzeVariant = v),
         ),
+        const SizedBox(height: 8),
+        const BenchLegend(caption: 'Floor use'),
         const SizedBox(height: 12),
         _heatmapView(room: room, furniture: furniture, metrics: metrics),
         const SizedBox(height: 14),
@@ -493,47 +930,59 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
   }) {
     return SizedBox(
       height: 280,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
+      child: _heatmapCanvas(room: room, furniture: furniture, metrics: metrics),
+    );
+  }
+
+  Widget _heatmapCanvas({
+    required RoomData room,
+    required List<FurnitureItem> furniture,
+    required SpatialMetrics metrics,
+    bool expand = false,
+  }) {
+    final canvas = Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(expand ? 0 : 16),
+        border: expand ? null : Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: CustomPaint(
+        painter: _SpatialHeatPainter(
+          occupied: metrics.occupied,
+          cols: room.gridCols,
+          rows: room.gridRows,
+          furniture: furniture,
         ),
-        clipBehavior: Clip.antiAlias,
-        child: CustomPaint(
-          painter: _SpatialHeatPainter(
-            occupied: metrics.occupied,
-            cols: room.gridCols,
-            rows: room.gridRows,
-            furniture: furniture,
-          ),
-          child: const SizedBox.expand(),
-        ),
+        child: const SizedBox.expand(),
       ),
     );
+    if (expand) {
+      return ColoredBox(color: AppColors.surface, child: canvas);
+    }
+    return canvas;
   }
 
   Widget _results(AppState state) {
     final validation = _validationForImproved(state);
     final base = _myRoomMetrics!;
     final opt = _improvedMetrics!;
-    final sample = _sampleMetrics;
 
+    final spaceDelta = (opt.overallScore - base.overallScore).round();
+    final spaceLabel = spaceDelta >= 0 ? '+$spaceDelta' : '$spaceDelta';
     return BenchResultsCard(
       title: 'Walkway Space Bench',
+      accentColor: AppColors.spatialColor,
       validation: validation,
+      whyReasons: _layouts?.improvedReasons ?? const [],
       rings: [
         BenchScoreRingSpec(score: base.overallScore, color: AppColors.cyan, label: 'My Room'),
         BenchScoreRingSpec(score: opt.overallScore, color: AppColors.spatialColor, label: 'Improved'),
-        if (sample != null)
-          BenchScoreRingSpec(score: sample.overallScore, color: AppColors.amber, label: 'Sample')
-        else
-          BenchScoreRingSpec(score: state.spatialScore, color: AppColors.green, label: 'Score'),
       ],
       summaryText:
+          'Space $spaceLabel · '
           'Walkable +${((opt.walkableRatio - base.walkableRatio) * 100).toStringAsFixed(0)} pts · '
-          'Aisle +${(opt.largestAisleCells - base.largestAisleCells).toStringAsFixed(1)} cells · '
-          'Space +${(opt.overallScore - base.overallScore).toStringAsFixed(0)}',
+          'Aisle +${(opt.largestAisleCells - base.largestAisleCells).toStringAsFixed(1)} cells',
     );
   }
 

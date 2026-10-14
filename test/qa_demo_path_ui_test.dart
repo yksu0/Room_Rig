@@ -14,7 +14,6 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({
       'room_rig.onboarding_seen': true,
-      'room_rig.bench_sample_wow_seen': true,
     });
   });
 

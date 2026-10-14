@@ -109,12 +109,20 @@ class LightingOptimizer {
     final beforeMetrics = evaluate(before);
     final metrics = evaluate(next);
     if (metrics.exposureScore + 0.5 < beforeMetrics.exposureScore) {
+      // Still seat task lamps on the desk so "near the desk" holds even when
+      // we keep the user's floor plan.
+      final kept = LayoutOptimizerCommon.mountDeskTopItems(
+        before,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      );
       return LightingOptimizeResult(
-        furniture: before,
-        metrics: beforeMetrics,
+        furniture: kept,
+        metrics: evaluate(kept),
         reasons: [
           ...reasons,
           'Kept your layout — auto-arrange would not improve lighting',
+          'Task lamp seated on the desk',
         ],
       );
     }

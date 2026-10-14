@@ -3,6 +3,7 @@
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
 import 'airflow_optimizer.dart';
+import 'comfort_heuristics.dart';
 import 'ergonomics_optimizer.dart';
 import 'layout_collision.dart';
 import 'lighting_optimizer.dart';
@@ -70,7 +71,8 @@ class BenchmarkValidator {
   static const pathMin = 0.45;
   static const conflictMax = 0;
   static const walkableMin = 0.35;
-  static const aisleMinCells = 1.0;
+  /// ~0.9 m residential walkway at [RoomScale.cellMeters].
+  static double get aisleMinCells => ComfortHeuristics.minAisleCells;
   static const spatialUtilPass = 55.0;
 
   static BenchmarkValidation validateLayout({

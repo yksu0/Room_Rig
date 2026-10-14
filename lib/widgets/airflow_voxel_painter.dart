@@ -22,6 +22,7 @@ class AirflowVoxelPainter extends CustomPainter {
   final double time;
   final bool showVoxels;
   final bool showDeadZones;
+  final bool showParticles;
   final int gridCols;
   final int gridRows;
 
@@ -39,6 +40,7 @@ class AirflowVoxelPainter extends CustomPainter {
     this.lookAtZ,
     this.showVoxels = true,
     this.showDeadZones = true,
+    this.showParticles = true,
   }) : super(repaint: FurnitureSprites.revision);
 
   @override
@@ -180,6 +182,7 @@ class AirflowVoxelPainter extends CustomPainter {
     }
 
     // Ambient smoke first, thermal parcels on top (PC-case airflow style).
+    if (!showParticles) return;
     final ordered2d = [
       ...snapshot.particles.where((p) => p.isAmbient),
       ...snapshot.particles.where((p) => !p.isAmbient),
@@ -332,6 +335,7 @@ class AirflowVoxelPainter extends CustomPainter {
     }
 
     // Draw ambient tracers first (smoke fill), then thermal parcels on top.
+    if (!showParticles) return;
     final ordered = [
       ...snapshot.particles.where((p) => p.isAmbient),
       ...snapshot.particles.where((p) => !p.isAmbient),
@@ -408,6 +412,7 @@ class AirflowVoxelPainter extends CustomPainter {
       old.furniture != furniture ||
       old.showVoxels != showVoxels ||
       old.showDeadZones != showDeadZones ||
+      old.showParticles != showParticles ||
       old.gridCols != gridCols ||
       old.gridRows != gridRows;
 }

@@ -33,6 +33,8 @@ class RigRoomItemsDrawer extends StatelessWidget {
   final ValueChanged<double> onMinConfidenceChanged;
   final Future<void> Function(ScanObject obj) onReplaceScanObject;
   final void Function(ScanObject obj) onDeleteScanObject;
+  /// When true, render as a panel body (desktop rail) instead of a [Drawer].
+  final bool embedded;
 
   const RigRoomItemsDrawer({
     super.key,
@@ -44,6 +46,7 @@ class RigRoomItemsDrawer extends StatelessWidget {
     required this.onMinConfidenceChanged,
     required this.onReplaceScanObject,
     required this.onDeleteScanObject,
+    this.embedded = false,
   });
 
   @override
@@ -77,11 +80,7 @@ class RigRoomItemsDrawer extends StatelessWidget {
       return obj.confidence >= sidebarMinConfidence;
     }).toList(growable: false);
 
-    return Drawer(
-      backgroundColor: AppColors.surface,
-      width: 320,
-      child: SafeArea(
-        child: Column(
+    final body = Column(
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 12, 8),
@@ -498,8 +497,15 @@ class RigRoomItemsDrawer extends StatelessWidget {
               ),
             ),
           ],
-        ),
-      ),
+        );
+
+    if (embedded) {
+      return ColoredBox(color: AppColors.surface, child: body);
+    }
+    return Drawer(
+      backgroundColor: AppColors.surface,
+      width: 320,
+      child: SafeArea(child: body),
     );
   }
 }

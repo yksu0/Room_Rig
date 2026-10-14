@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/surface_mount.dart';
+import 'package:room_rig/services/layout_collision.dart';
 import 'package:room_rig/services/layout_optimizer_common.dart';
 import 'package:room_rig/services/multi_objective_optimizer.dart';
 
@@ -281,6 +282,42 @@ void main() {
       lessThan(4.5),
     );
     expect(reasons, isNotEmpty);
+  });
+
+  test('side-wall desk keeps PC / monitor / lamp from overlapping', () {
+    final room = RoomPresets.getPreset(RoomPreset.gamingSetup);
+    // Same path Auto-Rig uses: pin desk to the side wall then pack the top.
+    final after = LayoutOptimizerCommon.relinkPairedLayout(
+      items: room.furniture,
+      gridCols: room.gridCols,
+      gridRows: room.gridRows,
+    );
+    final tops = after
+        .where((f) => f.id == 'pc' || f.id == 'monitor' || f.id == 'lamp')
+        .toList();
+    expect(tops, hasLength(3));
+    final desk = after.firstWhere((f) => f.id == 'desk');
+    expect(desk.width < desk.height || desk.yawDegrees.abs() == 90, isTrue,
+        reason: 'desk should be oriented along a side wall');
+    final monitor = after.firstWhere((f) => f.id == 'monitor');
+    final deskMidY = desk.gridY + desk.height * 0.5;
+    final monMidY = monitor.gridY + monitor.height * 0.5;
+    expect(
+      (monMidY - deskMidY).abs(),
+      lessThan(0.35),
+      reason: 'monitor should sit near the center of the desk long edge',
+    );
+    for (final a in tops) {
+      expect(SurfaceMounts.hostUnder(a, after)?.id, desk.id);
+      for (final b in tops) {
+        if (identical(a, b)) continue;
+        expect(
+          LayoutCollision.overlaps(a, b),
+          isFalse,
+          reason: '${a.id} vs ${b.id} after side-wall pack',
+        );
+      }
+    }
   });
 
   test('Auto-Rig keeps desk-top gear on the desk after optimize', () {

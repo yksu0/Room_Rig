@@ -166,7 +166,7 @@ void main() {
     expect(blinds.physicalParent, 'window');
   });
 
-  test('TV wall-mounted uses must wall', () {
+  test('TV prefers wall but may sit on floor/table', () {
     final tv = PlacementCatalog.of(
       FurnitureItem(
         id: 'tv',
@@ -179,8 +179,8 @@ void main() {
         height: 1,
       ),
     );
-    expect(tv.wall, WallRequirement.must);
-    expect(tv.surface, PlacementSurface.wall);
+    expect(tv.wall, WallRequirement.preferred);
+    expect(tv.surface, PlacementSurface.floor);
   });
 
   test('preset floorLamp icon is not the desk task lamp', () {

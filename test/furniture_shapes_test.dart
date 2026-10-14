@@ -95,4 +95,33 @@ void main() {
     );
     expect(boxes.length, greaterThan(1), reason: 'purifier should not be a single generic cube');
   });
+
+  test('sofa back and portable AC grille sit on opposite Z faces', () {
+    FurnitureBox tallest(FurnitureKind kind) {
+      final parts = FurnitureShapes.boxes(
+        kind: kind,
+        x: 0,
+        z: 0,
+        width: 1,
+        depth: 1,
+        color: const Color(0xFFFFFFFF),
+      );
+      return parts.reduce((a, b) => a.y1 >= b.y1 ? a : b);
+    }
+
+    final sofaBack = tallest(FurnitureKind.sofa);
+    expect(sofaBack.z0, lessThan(0.35), reason: 'sofa back on -Z');
+
+    final pac = FurnitureShapes.boxes(
+      kind: FurnitureKind.portableAc,
+      x: 0,
+      z: 0,
+      width: 1,
+      depth: 1,
+      color: const Color(0xFFFFFFFF),
+    );
+    // Front grille bars are near +Z (large z).
+    final frontish = pac.where((b) => b.z1 > 0.9).toList();
+    expect(frontish, isNotEmpty, reason: 'portable AC needs +Z grille detail');
+  });
 }

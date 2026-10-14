@@ -103,10 +103,14 @@ void main() {
   test('bench calibration asset documents heuristic models', () async {
     final raw = await rootBundle.loadString('assets/bench/calibration.json');
     final json = jsonDecode(raw) as Map<String, dynamic>;
-    expect(json['version'], 1);
+    expect(json['version'], 2);
+    final scale = json['scale'] as Map<String, dynamic>;
+    expect(scale['cellMeters'], 0.6);
+    expect(scale['minAisleMeters'], 0.9);
     final domains = json['domains'] as Map<String, dynamic>;
     expect(domains['lighting']['inventGhostWindow'], isFalse);
     expect(domains['ergonomics']['deskTopItemsCountAsConflicts'], isFalse);
     expect(domains['airflow']['not'], contains('CFD'));
+    expect(domains['airflow']['passBarCirculation'], 50.5);
   });
 }

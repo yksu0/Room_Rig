@@ -24,57 +24,45 @@ class EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpace.lg,
+        vertical: AppSpace.xxl,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 64,
-            height: 64,
+            width: 72,
+            height: 72,
             decoration: BoxDecoration(
               color: accent.withValues(alpha: 0.12),
               shape: BoxShape.circle,
               border: Border.all(color: accent.withValues(alpha: 0.35)),
             ),
-            child: Center(child: SvgIcon(iconSvg, size: 28, color: accent)),
+            child: Center(child: SvgIcon(iconSvg, size: 30, color: accent)),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpace.md),
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
+            style: AppType.title(context).copyWith(fontSize: 18),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpace.sm),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              height: 1.35,
-            ),
+            style: AppType.body(context),
           ),
           if (actionLabel != null && onAction != null) ...[
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: onAction,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: accent.withValues(alpha: 0.45)),
-                ),
-                child: Text(
-                  actionLabel!,
-                  style: TextStyle(color: accent, fontWeight: FontWeight.w800, fontSize: 12),
-                ),
+            const SizedBox(height: AppSpace.lg),
+            FilledButton(
+              onPressed: onAction,
+              style: FilledButton.styleFrom(
+                backgroundColor: accent.withValues(alpha: 0.18),
+                foregroundColor: accent,
+                side: BorderSide(color: accent.withValues(alpha: 0.45)),
               ),
+              child: Text(actionLabel!),
             ),
           ],
         ],
@@ -99,32 +87,38 @@ class ErrorStateCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(AppSpace.md),
       decoration: BoxDecoration(
         color: AppColors.red.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: AppColors.red.withValues(alpha: 0.4)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, color: AppColors.red, size: 20),
-          const SizedBox(width: 10),
+          const Icon(Icons.error_outline_rounded, color: AppColors.red, size: 22),
+          const SizedBox(width: AppSpace.sm),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 13)),
-                const SizedBox(height: 4),
-                Text(message, style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                Text(
+                  title,
+                  style: AppType.bodyStrong(context).copyWith(fontSize: 13),
+                ),
+                const SizedBox(height: AppSpace.xxs),
+                Text(message, style: AppType.caption(context)),
                 if (onRetry != null) ...[
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: onRetry,
-                    child: Text(
-                      'Try again',
-                      style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w800, fontSize: 12),
+                  const SizedBox(height: AppSpace.sm),
+                  TextButton(
+                    onPressed: onRetry,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.red,
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
+                    child: const Text('Try again'),
                   ),
                 ],
               ],

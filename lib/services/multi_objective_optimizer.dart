@@ -128,7 +128,8 @@ class MultiObjectiveOptimizer {
 
   static const int _maxKeptCandidates = 4;
 
-  /// Weighted composite matching [AppState.overallScore] sim axes.
+  /// Weighted composite used by Auto-Rig rank and [AppState.overallScore].
+  /// Includes hard-conflict and work-cluster penalties so Hub and solver agree.
   static double scoreLayout({
     required List<FurnitureItem> furniture,
     required int gridCols,
@@ -503,6 +504,13 @@ class MultiObjectiveOptimizer {
       gridCols: gridCols,
       gridRows: gridRows,
     );
+    // Desk yaw/AABB can change in orientation — remount so tops do not mash.
+    mounted = LayoutOptimizerCommon.mountDeskTopItems(
+      mounted,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+    mounted = LayoutOptimizerCommon.separateDeskTopOverlaps(mounted);
     mounted = LayoutOptimizerCommon.clampItemsToRoomBounds(
       items: mounted,
       gridCols: gridCols,

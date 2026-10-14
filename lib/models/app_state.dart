@@ -21,6 +21,7 @@ import '../services/benchmark_validator.dart';
 import '../services/ergonomics_optimizer.dart';
 import '../services/ergonomics_simulator.dart';
 import '../services/layout_collision.dart';
+import '../services/layout_optimizer_common.dart';
 import '../services/layout_snap_guides.dart';
 import '../services/lighting_optimizer.dart';
 import '../services/lighting_simulator.dart';
@@ -37,6 +38,16 @@ class AppState extends ChangeNotifier {
   // Navigation
   int _currentTab = 0;
   int get currentTab => _currentTab;
+
+  /// When true, Flutter shell goes transparent so native ARCore camera shows through.
+  bool _arMeasurePassthrough = false;
+  bool get arMeasurePassthrough => _arMeasurePassthrough;
+
+  void setArMeasurePassthrough(bool value) {
+    if (_arMeasurePassthrough == value) return;
+    _arMeasurePassthrough = value;
+    notifyListeners();
+  }
 
   String? _tabNotice;
 
@@ -57,6 +68,9 @@ class AppState extends ChangeNotifier {
       endFurnitureGesture();
     }
     _currentTab = tab;
+    if (tab != 1 && _arMeasurePassthrough) {
+      _arMeasurePassthrough = false;
+    }
     if (tab == 0) {
       // Mid-scan seed layouts must not overwrite My Rooms snapshots.
       if (!isScanSessionActive) {
@@ -166,9 +180,12 @@ class AppState extends ChangeNotifier {
     return _scanComplete || source == 'manual' || source == 'demo';
   }
 
-  /// Scores are furniture-impact estimates until Bench/optimizer marks them clean.
+  /// When dirty, Hub rings use live geometry sims; BENCH OK locks last Apply/Auto-Rig.
+  /// A Bench Apply (`isOptimized`) keeps BENCH OK even if other modes stay dirty
+  /// after a single-domain lock (airflow Apply does not clear lighting/ergo).
   bool get scoresAreSimulated =>
-      _airflowMetricsDirty || _lightingMetricsDirty || _ergonomicsMetricsDirty;
+      !_isOptimized &&
+      (_airflowMetricsDirty || _lightingMetricsDirty || _ergonomicsMetricsDirty);
 
   /// Whether switching preset would discard meaningful user work.
   bool get hasLayoutWork =>
@@ -234,7 +251,14 @@ class AppState extends ChangeNotifier {
 
   void _loadPreset(RoomPreset preset) {
     final data = RoomPresets.getPreset(preset);
-    _furniture = RigCatalog.retainV1(List.from(data.furniture.map((f) => f.copyWith())));
+    var items = RigCatalog.retainV1(List.from(data.furniture.map((f) => f.copyWith())));
+    // Seat monitor / PC / lamp on the work desk immediately — not only after Improve.
+    items = LayoutOptimizerCommon.mountDeskTopItems(
+      items,
+      gridCols: data.gridCols,
+      gridRows: data.gridRows,
+    );
+    _furniture = items;
     _selectedPreset = preset;
     _activeRoomLayout = RoomLayoutModel.fromPreset(data, _furniture);
     _activeRoomId = 'room_${DateTime.now().millisecondsSinceEpoch}';
@@ -1500,6 +1524,11 @@ class AppState extends ChangeNotifier {
     _lightingMetricsDirty = true;
     _ergonomicsMetricsDirty = true;
     _lastOptimizeReasons = const [];
+    // Drop any pre-scan Auto-Rig / Restore snapshot so Best/Retry cannot
+    // resurrect furniture from a previous room.
+    _originalFurniture = null;
+    _originalScores = null;
+    _clearAutoRigCandidateCache();
     clearLayoutHistory();
     // Checkpoint stashes + persists once (includes "After scan" revision).
     checkpointActiveRoom('After scan');
@@ -1734,21 +1763,25 @@ class AppState extends ChangeNotifier {
 
   void setAirflowSlider(double v) {
     _airflowSlider = v.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
   void setLightingSlider(double v) {
     _lightingSlider = v.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
   void setErgonomicsSlider(double v) {
     _ergonomicsSlider = v.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
   void setSpatialSlider(double v) {
     _spatialSlider = v.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
@@ -1762,6 +1795,7 @@ class AppState extends ChangeNotifier {
     _lightingSlider = lighting.clamp(0.0, 1.0);
     _ergonomicsSlider = ergonomics.clamp(0.0, 1.0);
     if (spatial != null) _spatialSlider = spatial.clamp(0.0, 1.0);
+    _resetBenchAlternate();
     notifyListeners();
   }
 
@@ -1823,43 +1857,54 @@ class AppState extends ChangeNotifier {
   Map<String, double>? get originalScores => _originalScores;
   bool get hasCompareSnapshot => _originalFurniture != null;
 
-  double get _baseAirflowScore {
-    double score = 50;
-    for (final f in committedFurniture) {
-      score += f.airflowImpact * 15;
-    }
-    return score.clamp(0, 100);
+  String? _geometryScoreFp;
+  double? _geometryAir;
+  double? _geometryLight;
+  double? _geometryErgo;
+
+  String _committedPoseFingerprint() {
+    final parts = committedFurniture
+        .map((f) => '${f.id}:${f.gridX.toStringAsFixed(2)},'
+            '${f.gridY.toStringAsFixed(2)},'
+            '${f.width.toStringAsFixed(2)},${f.height.toStringAsFixed(2)},'
+            '${f.yawDegrees.toStringAsFixed(0)}')
+        .toList()
+      ..sort();
+    return parts.join('|');
   }
 
-  double get _baseLightingScore {
-    double score = 40;
-    for (final f in committedFurniture) {
-      score += f.lightingImpact * 12;
+  void _ensureGeometryScores() {
+    final fp = _committedPoseFingerprint();
+    if (_geometryScoreFp == fp &&
+        _geometryAir != null &&
+        _geometryLight != null &&
+        _geometryErgo != null) {
+      return;
     }
-    return score.clamp(0, 100);
+    _geometryScoreFp = fp;
+    _geometryAir =
+        AirflowOptimizer.evaluate(committedFurniture).circulationScore.clamp(0, 100);
+    _geometryLight =
+        LightingOptimizer.evaluate(committedFurniture).exposureScore.clamp(0, 100);
+    _geometryErgo =
+        ErgonomicsOptimizer.evaluate(committedFurniture).comfortScore.clamp(0, 100);
   }
 
-  double get _baseErgonomicsScore {
-    double score = 45;
-    for (final f in committedFurniture) {
-      score += f.ergonomicsImpact * 13;
-    }
-    return score.clamp(0, 100);
-  }
-
-  /// Sim circulation score when fresh; otherwise furniture-impact estimate.
+  /// Locked Bench/Auto-Rig sim when clean; otherwise live geometry (not impact tags).
   double get airflowScore {
     final sim = _airflowMetrics;
     if (sim != null && !_airflowMetricsDirty) {
       return sim.circulationScore.clamp(0, 100);
     }
-    return _baseAirflowScore;
+    _ensureGeometryScores();
+    return _geometryAir!;
   }
 
   double get baselineAirflowScore {
     final pre = _preOptimizeAirflowMetrics;
     if (pre != null) return pre.circulationScore.clamp(0, 100);
-    return _baseAirflowScore;
+    _ensureGeometryScores();
+    return _geometryAir!;
   }
 
   double get lightingScore {
@@ -1867,19 +1912,22 @@ class AppState extends ChangeNotifier {
     if (sim != null && !_lightingMetricsDirty) {
       return sim.exposureScore.clamp(0, 100);
     }
-    return _baseLightingScore;
+    _ensureGeometryScores();
+    return _geometryLight!;
   }
 
   double get baselineLightingScore {
     final pre = _preOptimizeLightingMetrics;
     if (pre != null) return pre.exposureScore.clamp(0, 100);
-    return _baseLightingScore;
+    _ensureGeometryScores();
+    return _geometryLight!;
   }
 
   double get baselineErgonomicsScore {
     final pre = _preOptimizeErgonomicsMetrics;
     if (pre != null) return pre.comfortScore.clamp(0, 100);
-    return _baseErgonomicsScore;
+    _ensureGeometryScores();
+    return _geometryErgo!;
   }
 
   double get ergonomicsScore {
@@ -1887,21 +1935,31 @@ class AppState extends ChangeNotifier {
     if (sim != null && !_ergonomicsMetricsDirty) {
       return sim.comfortScore.clamp(0, 100);
     }
-    return _baseErgonomicsScore;
+    _ensureGeometryScores();
+    return _geometryErgo!;
   }
 
   double get spatialScore => spatialMetrics.overallScore;
 
+  String? _overallScoreFp;
+  double? _overallScoreCache;
+
+  /// Same composite as Auto-Rig / Bench rank ([MultiObjectiveOptimizer.scoreLayout]).
   double get overallScore {
-    final total = _airflowSlider + _lightingSlider + _ergonomicsSlider + _spatialSlider;
-    if (total == 0) {
-      return (airflowScore + lightingScore + ergonomicsScore + spatialScore) / 4;
+    final fp =
+        '${_committedPoseFingerprint()}|${optimizeWeights.cacheKey}|${currentRoomData.gridCols}x${currentRoomData.gridRows}';
+    if (_overallScoreFp == fp && _overallScoreCache != null) {
+      return _overallScoreCache!;
     }
-    return (airflowScore * _airflowSlider +
-            lightingScore * _lightingSlider +
-            ergonomicsScore * _ergonomicsSlider +
-            spatialScore * _spatialSlider) /
-        total;
+    final score = MultiObjectiveOptimizer.scoreLayout(
+      furniture: committedFurniture,
+      gridCols: currentRoomData.gridCols,
+      gridRows: currentRoomData.gridRows,
+      weights: optimizeWeights,
+    );
+    _overallScoreFp = fp;
+    _overallScoreCache = score;
+    return score;
   }
 
   double get previousOverallScore {
@@ -1909,21 +1967,14 @@ class AppState extends ChangeNotifier {
     if (original != null && original['overall'] != null) {
       return original['overall']!;
     }
-    // Prefer frozen spatial from the pre-optimize snapshot so delta doesn't
-    // mix old air/light/ergo baselines with a later spatial rearrange.
-    final spatialPrev = original?['spatial'] ??
-        (_originalFurniture == null
-            ? spatialScore
-            : SpatialAnalyzer.evaluate(
-                furniture: _originalFurniture!,
-                gridCols: currentRoomData.gridCols,
-                gridRows: currentRoomData.gridRows,
-              ).overallScore);
-    return (baselineAirflowScore +
-            baselineLightingScore +
-            baselineErgonomicsScore +
-            spatialPrev) /
-        4;
+    final prior = _originalFurniture;
+    if (prior == null) return overallScore;
+    return MultiObjectiveOptimizer.scoreLayout(
+      furniture: prior,
+      gridCols: currentRoomData.gridCols,
+      gridRows: currentRoomData.gridRows,
+      weights: optimizeWeights,
+    );
   }
 
   String get scoreGrade {
@@ -1973,14 +2024,12 @@ class AppState extends ChangeNotifier {
       gridCols: currentRoomData.gridCols,
       gridRows: currentRoomData.gridRows,
     ).overallScore.clamp(0.0, 100.0).toDouble();
-    final total = _airflowSlider + _lightingSlider + _ergonomicsSlider + _spatialSlider;
-    final overall = total == 0
-        ? (air + light + ergo + spatial) / 4
-        : (air * _airflowSlider +
-                light * _lightingSlider +
-                ergo * _ergonomicsSlider +
-                spatial * _spatialSlider) /
-            total;
+    final overall = MultiObjectiveOptimizer.scoreLayout(
+      furniture: scored,
+      gridCols: currentRoomData.gridCols,
+      gridRows: currentRoomData.gridRows,
+      weights: optimizeWeights,
+    );
     _originalFurniture = _cloneFurniture(committedFurniture);
     _originalScores = {
       'airflow': air,
@@ -2026,8 +2075,10 @@ class AppState extends ChangeNotifier {
   /// Auto-Rig: scored best-of-N under the current weight mix.
   /// [goal] optionally applies a weight preset before solving.
   ///
-  /// Searches from the original compare snapshot when present, applies the
-  /// best first, then cycles ranked alternates on later taps.
+  /// Rearranges **only items already on the Rig** — never invents catalog stock.
+  /// If inventory still matches the Restore snapshot, searches from that pose so
+  /// “Try alternate” cycles the same ranked pool; after add/remove, searches the
+  /// live furniture list instead (so deleted pieces stay gone).
   void runOptimization({String? goal, bool tryAlternate = false}) {
     _abandonInFlightHydrate();
     // Drop unfinished Place ghosts so Auto-Rig does not treat them as real.
@@ -2043,10 +2094,17 @@ class AppState extends ChangeNotifier {
     _captureLightingBaselineIfNeeded();
     _captureErgonomicsBaselineIfNeeded();
 
-    final searchRoot = _originalFurniture ?? committedFurniture;
+    final live = committedFurniture;
+    final liveKey = _autoRigInventoryKey(live);
+    final original = _originalFurniture;
+    final sameInventory =
+        original != null && _autoRigInventoryKey(original) == liveKey;
+    // Pose root may be the Restore snapshot; inventory is always live ids only.
+    final searchRoot = sameInventory ? original! : live;
+    final allowedIds = {for (final f in live) f.id};
     final weights = optimizeWeights;
     final cacheKey =
-        '${weights.cacheKey}|${_autoRigInventoryKey(searchRoot)}|'
+        '${weights.cacheKey}|$liveKey|'
         '${currentRoomData.gridCols}x${currentRoomData.gridRows}';
 
     if (_autoRigCacheKey != cacheKey ||
@@ -2069,7 +2127,11 @@ class AppState extends ChangeNotifier {
     final result = _autoRigCandidates![_autoRigCursor];
     _lastAutoRigRankLabel = result.rankLabel;
 
-    _furniture = _cloneFurniture(result.furniture);
+    // Hard guard: never reintroduce pieces the user removed (or upgrades).
+    _furniture = _cloneFurniture([
+      for (final f in result.furniture)
+        if (allowedIds.contains(f.id)) f,
+    ]);
     _setAirflowMetrics(result.airflowMetrics);
     _setLightingMetrics(result.lightingMetrics);
     _setErgonomicsMetrics(result.ergonomicsMetrics);
@@ -2102,6 +2164,24 @@ class AppState extends ChangeNotifier {
   /// in. The Bench now derives its layouts from this furniture, so applying one
   /// is a rearrange of their own room — it must not swap their preset back to
   /// the gaming setup or throw away a completed scan.
+  /// Previous furniture after Bench Apply — Rig shows a short before/after ghost.
+  List<FurnitureItem>? _applyGhostBefore;
+  DateTime? _applyGhostUntil;
+  List<FurnitureItem>? get applyGhostBefore => _applyGhostBefore;
+  bool get hasApplyGhost {
+    final until = _applyGhostUntil;
+    return _applyGhostBefore != null &&
+        until != null &&
+        DateTime.now().isBefore(until);
+  }
+
+  void clearApplyGhost() {
+    if (_applyGhostBefore == null && _applyGhostUntil == null) return;
+    _applyGhostBefore = null;
+    _applyGhostUntil = null;
+    notifyListeners();
+  }
+
   void applyFurnitureLayout(
     List<FurnitureItem> items, {
     bool markOptimized = false,
@@ -2113,6 +2193,11 @@ class AppState extends ChangeNotifier {
     // Clear pending Place state; the incoming layout replaces the ghost entirely.
     cancelPendingPlacement(notify: false);
     _pushUndoCheckpoint();
+
+    if (markOptimized) {
+      _applyGhostBefore = _cloneFurniture(committedFurniture);
+      _applyGhostUntil = DateTime.now().add(const Duration(seconds: 10));
+    }
 
     // Snapshot BEFORE swap so Hub Score Delta compares sim-to-sim, not estimate-to-sim.
     final beforeAir = markOptimized ? AirflowOptimizer.evaluate(committedFurniture) : null;
@@ -2219,12 +2304,26 @@ class AppState extends ChangeNotifier {
   BenchLayoutKind _benchLayoutFocus = BenchLayoutKind.myRoom;
   int _benchLayoutFocusToken = 0;
 
+  /// Which ranked Auto-Rig candidate Bench Improved is previewing (shared).
+  int _benchAlternateCursor = 0;
+
   BenchLayoutKind get benchLayoutFocus => _benchLayoutFocus;
   int get benchLayoutFocusToken => _benchLayoutFocusToken;
+  int get benchAlternateCursor => _benchAlternateCursor;
 
   void focusBenchLayout(BenchLayoutKind kind) {
     _benchLayoutFocus = kind;
     _benchLayoutFocusToken++;
+    notifyListeners();
+  }
+
+  void _resetBenchAlternate() {
+    _benchAlternateCursor = 0;
+  }
+
+  /// Cycle Bench Improved to the next ranked Auto-Rig layout (same weight mix).
+  void cycleBenchAlternate() {
+    _benchAlternateCursor += 1;
     notifyListeners();
   }
 

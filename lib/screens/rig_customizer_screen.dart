@@ -14,6 +14,7 @@ import '../services/bench_layouts.dart';
 import '../models/scan_layout_model.dart';
 import '../services/layout_collision.dart';
 import '../services/layout_snap_guides.dart';
+import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import '../widgets/confirm_dialogs.dart';
 import '../widgets/rig_customizer/rig_scan_action_button.dart';
@@ -27,8 +28,10 @@ import '../widgets/rig_customizer/rig_furniture_cell.dart';
 import '../widgets/rig_customizer/rig_room_items_drawer.dart';
 import '../widgets/rig_customizer/room_grid_painter.dart';
 import '../widgets/rig_customizer/room_orbit_3d_painter.dart';
+import '../widgets/room_model_scene.dart';
+import '../widgets/chrome/adaptive_panel.dart';
 
-enum _RigViewMode { twoD, threeD }
+enum _RigViewMode { twoD, threeD, model3D }
 enum _OptimizeGoal { balanced, airflow, lighting, ergonomics, spatial }
 
 
@@ -57,7 +60,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   static const double _minTouchTarget = 46;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  _RigViewMode _viewMode = _RigViewMode.twoD;
+  _RigViewMode _viewMode = _RigViewMode.model3D;
   _OptimizeGoal _optimizeGoal = _OptimizeGoal.balanced;
   double _cameraYawRad = 0;
   double _cameraPitchRad = 0.34;
@@ -95,11 +98,32 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   bool _drag2dGestureStarted = false;
   static const _drag2dSlop = 10.0;
 
+  /// Adaptive supporting panes (compact sheet; expanded rails later).
+  CameraPreset? _pendingPreset;
+  bool _showMiniMap = false;
+  bool _showDimensions = false;
+  int _focusToken = 0;
+
+  ChromeViewMode _chromeForViewMode(_RigViewMode m) => switch (m) {
+        _RigViewMode.twoD => ChromeViewMode.edit,
+        _RigViewMode.threeD => ChromeViewMode.orbit,
+        _RigViewMode.model3D => ChromeViewMode.check,
+      };
+
+  void _applyChromeView(ChromeViewMode mode) {
+    setState(() {
+      _viewMode = switch (mode) {
+        ChromeViewMode.edit => _RigViewMode.twoD,
+        ChromeViewMode.orbit => _RigViewMode.threeD,
+        ChromeViewMode.check => _RigViewMode.model3D,
+      };
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final selectedFurniture = state.selectedFurniture;
-    final selectedScanObject = state.selectedScanObject;
     final canMoveSelected =
         selectedFurniture != null && !state.selectedIsScanObject;
     if (!canMoveSelected && _rigMoveMode) {
@@ -109,49 +133,100 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       });
     }
 
+    final desktop = AppLayout.isDesktop(context);
+
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: AppColors.bg,
-      endDrawer: RigRoomItemsDrawer(
-        sidebarQuery: _sidebarQuery,
-        sidebarCategory: _sidebarCategory,
-        sidebarMinConfidence: _sidebarMinConfidence,
-        onQueryChanged: (v) => setState(() => _sidebarQuery = v),
-        onCategoryChanged: (cat) => setState(() => _sidebarCategory = cat),
-        onMinConfidenceChanged: (v) => setState(() => _sidebarMinConfidence = v),
-        onReplaceScanObject: (obj) => _showScanReplacePicker(state, obj),
-        onDeleteScanObject: (obj) => _deleteScanObjectWithUndo(state, obj),
-      ),
+      endDrawer: desktop
+          ? null
+          : RigRoomItemsDrawer(
+              sidebarQuery: _sidebarQuery,
+              sidebarCategory: _sidebarCategory,
+              sidebarMinConfidence: _sidebarMinConfidence,
+              onQueryChanged: (v) => setState(() => _sidebarQuery = v),
+              onCategoryChanged: (cat) => setState(() => _sidebarCategory = cat),
+              onMinConfidenceChanged: (v) =>
+                  setState(() => _sidebarMinConfidence = v),
+              onReplaceScanObject: (obj) => _showScanReplacePicker(state, obj),
+              onDeleteScanObject: (obj) => _deleteScanObjectWithUndo(state, obj),
+            ),
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(context, state),
+            _buildHeader(context, state, desktop: desktop),
             Expanded(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        _buildCanvas(state),
-                        if (selectedFurniture != null &&
-                            !state.hasPendingPlacement &&
-                            !_drag2dGestureStarted &&
-                            _drag2dItemId == null)
-                          Positioned(
-                            left: 8,
-                            right: 8,
-                            top: 4,
-                            child: _buildFurnitureInfoCard(state, selectedFurniture),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (state.hasPendingPlacement) _buildPlacementBar(state),
-                  if (selectedScanObject != null) _buildScanInfoCard(state, selectedScanObject),
-                  _buildOptimizationPanel(state),
-                ],
-              ),
+              child: desktop
+                  ? LayoutBuilder(
+                      builder: (context, constraints) {
+                        final toolsW = AppLayout.toolsRailWidthFor(context);
+                        final inspectW = AppLayout.inspectRailWidthFor(context);
+                        // Keep a usable canvas on landscape-phone / narrow desktop.
+                        final maxRail = (constraints.maxWidth - 280).clamp(0.0, constraints.maxWidth);
+                        final scale = (toolsW + inspectW) > maxRail && (toolsW + inspectW) > 0
+                            ? maxRail / (toolsW + inspectW)
+                            : 1.0;
+                        final tw = toolsW * scale;
+                        final iw = inspectW * scale;
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              width: tw,
+                              child: DecoratedBox(
+                                decoration: const BoxDecoration(
+                                  border: Border(
+                                    right: BorderSide(color: AppColors.borderSubtle),
+                                  ),
+                                ),
+                                child: AdaptiveRailPane(
+                                  title: 'Workspace',
+                                  icon: Icons.tune_rounded,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildViewPanelBody(state, embedded: true),
+                                      const SizedBox(height: 20),
+                                      const Divider(color: AppColors.borderSubtle),
+                                      const SizedBox(height: 12),
+                                      _buildToolsPanelBody(context, state, embedded: true),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(child: _buildCanvasWorkspace(state)),
+                            SizedBox(
+                              width: iw,
+                              child: DecoratedBox(
+                                decoration: const BoxDecoration(
+                                  border: Border(
+                                    left: BorderSide(color: AppColors.borderSubtle),
+                                  ),
+                                ),
+                                child: RigRoomItemsDrawer(
+                                  embedded: true,
+                                  sidebarQuery: _sidebarQuery,
+                                  sidebarCategory: _sidebarCategory,
+                                  sidebarMinConfidence: _sidebarMinConfidence,
+                                  onQueryChanged: (v) =>
+                                      setState(() => _sidebarQuery = v),
+                                  onCategoryChanged: (cat) =>
+                                      setState(() => _sidebarCategory = cat),
+                                  onMinConfidenceChanged: (v) =>
+                                      setState(() => _sidebarMinConfidence = v),
+                                  onReplaceScanObject: (obj) =>
+                                      _showScanReplacePicker(state, obj),
+                                  onDeleteScanObject: (obj) =>
+                                      _deleteScanObjectWithUndo(state, obj),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    )
+                  : _buildCanvasWorkspace(state),
             ),
           ],
         ),
@@ -159,9 +234,109 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context, AppState state) {
+  Widget _buildCanvasWorkspace(AppState state) {
+    final selectedFurniture = state.selectedFurniture;
+    final selectedScanObject = state.selectedScanObject;
+    return Column(
+      children: [
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _buildCanvas(state),
+              // Overlay — never in header flow, so Edit/Orbit/Check do not jump.
+              if (state.layoutConflicts.isNotEmpty)
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  top: _viewMode == _RigViewMode.model3D ? 40 : 8,
+                  child: IgnorePointer(
+                    child: _ConflictBanner(conflicts: state.layoutConflicts),
+                  ),
+                ),
+              if (selectedFurniture != null &&
+                  !state.hasPendingPlacement &&
+                  !_drag2dGestureStarted &&
+                  _drag2dItemId == null)
+                Positioned(
+                  left: 8,
+                  // Orbit/Model keep a gutter so MOVE + yaw chrome stay tappable.
+                  right: _viewMode == _RigViewMode.twoD ? 8 : 100,
+                  top: state.layoutConflicts.isNotEmpty
+                      ? (_viewMode == _RigViewMode.model3D ? 84 : 52)
+                      : 4,
+                  child: _buildFurnitureInfoCard(state, selectedFurniture),
+                ),
+              if (_showDimensions && _viewMode == _RigViewMode.twoD) ...[
+                Positioned(
+                  left: 16,
+                  bottom: 12,
+                  child: _DimensionsHint(room: state.currentRoomData),
+                ),
+                if (selectedFurniture != null && !state.selectedIsScanObject)
+                  Positioned(
+                    right: 16,
+                    bottom: 12,
+                    child: _SelectedItemSizeChip(item: selectedFurniture),
+                  ),
+              ],
+              if (state.hasApplyGhost)
+                Positioned(
+                  top: _viewMode == _RigViewMode.model3D ? 40 : 56,
+                  left: 12,
+                  right: 12,
+                  child: _ApplyGhostBanner(
+                    onDismiss: state.clearApplyGhost,
+                  ),
+                ),
+              if (state.layoutConflicts.isNotEmpty &&
+                  (_dragItemId != null || _drag2dItemId != null))
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: AppColors.red.withValues(alpha: 0.55),
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        color: AppColors.red.withValues(alpha: 0.06),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (state.hasPendingPlacement) _buildPlacementBar(state),
+        if (selectedScanObject != null)
+          _buildScanInfoCard(state, selectedScanObject),
+      ],
+    );
+  }
+
+  Widget _buildHeader(
+    BuildContext context,
+    AppState state, {
+    required bool desktop,
+  }) {
+    final dims = state.activeRoomLayout?.dimensions;
+    final lengthMeters = dims != null && dims.lengthMeters > 0
+        ? dims.lengthMeters
+        : RoomScale.metersFromCells(state.currentRoomData.gridCols);
+    final widthMeters = dims != null && dims.widthMeters > 0
+        ? dims.widthMeters
+        : RoomScale.metersFromCells(state.currentRoomData.gridRows);
+    final heightMeters = dims != null && dims.heightMeters > 0
+        ? dims.heightMeters
+        : state.currentRoomData.heightMeters;
+    final sizeLabel =
+        '${RoomScale.formatMeters(lengthMeters)} × '
+        '${RoomScale.formatMeters(widthMeters)} × '
+        '${RoomScale.formatMeters(heightMeters)}';
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+      padding: const EdgeInsets.fromLTRB(AppSpace.screen, AppSpace.sm, AppSpace.screen, AppSpace.xs),
       child: Column(
         children: [
           Row(
@@ -172,19 +347,19 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   children: [
                     Text(
                       'RIG CUSTOMIZER',
-                      style: TextStyle(color: AppColors.cyan, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 3),
+                      style: TextStyle(color: AppColors.cyan, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2.8),
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       state.currentRoomData.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w800),
                     ),
+                    const SizedBox(height: 2),
                     Text(
-                      '${RoomScale.formatCellsAsMeters(state.currentRoomData.gridCols)} × '
-                      '${RoomScale.formatCellsAsMeters(state.currentRoomData.gridRows)} × '
-                      '${RoomScale.formatMeters(state.currentRoomData.heightMeters)}',
-                      style: const TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+                      sizeLabel,
+                      style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -195,7 +370,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 tooltip: 'Undo layout',
                 onTap: state.canUndoLayout ? state.undoLayout : null,
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: AppSpace.xs),
               _HistoryButton(
                 icon: Icons.redo_rounded,
                 enabled: state.canRedoLayout,
@@ -203,7 +378,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 onTap: state.canRedoLayout ? state.redoLayout : null,
               ),
               if (state.hasCompareSnapshot) ...[
-                const SizedBox(width: 4),
+                const SizedBox(width: AppSpace.xs),
                 _HistoryButton(
                   icon: Icons.restore_rounded,
                   enabled: true,
@@ -211,62 +386,509 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   onTap: () => _confirmRestoreOriginal(state),
                 ),
               ],
-              const SizedBox(width: 4),
-              GestureDetector(
-                onTap: () => _scaffoldKey.currentState?.openEndDrawer(),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: const Text(
-                    'Items',
-                    style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w800, fontSize: 12),
-                  ),
-                ),
-              ),
+              const SizedBox(width: AppSpace.xs),
+              _AddItemButton(onTap: _showAddItemSheet),
             ],
           ),
-          if (state.layoutConflicts.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _ConflictBanner(conflicts: state.layoutConflicts),
-          ],
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 40,
-            child: Row(
+          const SizedBox(height: AppSpace.sm),
+          if (desktop)
+            SizedBox(
+              height: 48,
+              child: _buildCompactViewChips(),
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(flex: 5, child: _buildViewToggle()),
-                const SizedBox(width: 6),
-                _InvasiveEditToggle(
-                  invasive: state.invasiveEdit,
-                  onChanged: state.setInvasiveEdit,
+                SizedBox(
+                  height: 48,
+                  child: _buildCompactViewChips(),
                 ),
-                const SizedBox(width: 6),
-                _AddItemButton(onTap: _showAddItemSheet),
-                const SizedBox(width: 4),
-                _IconToolButton(
-                  icon: Icons.auto_awesome_rounded,
-                  tooltip: 'Auto-Rig',
-                  accent: true,
-                  onTap: () => _runAutoRig(context, state),
+                const SizedBox(height: AppSpace.xs),
+                AdaptivePanelTriggers(
+                  controller: _adaptivePanelControllerFor(state),
+                  visible: const [
+                    ChromeRegion.view,
+                    ChromeRegion.tools,
+                    ChromeRegion.inspect,
+                  ],
                 ),
-                if (kDebugMode) ...[
-                  const SizedBox(width: 2),
-                  _IconToolButton(
-                    icon: Icons.science_rounded,
-                    tooltip: 'Sample Room on Bench',
-                    onTap: () => _openSampleRoom(state),
-                  ),
-                ],
               ],
             ),
-          ),
         ],
       ),
     );
+  }
+
+  void _maybeCloseSupportingSheet() {
+    final nav = Navigator.of(context);
+    if (nav.canPop()) nav.maybePop();
+  }
+
+  AdaptivePanelController _adaptivePanelControllerFor(AppState state) {
+    return AdaptivePanelController([
+      AdaptivePanelSpec(
+        region: ChromeRegion.view,
+        preferTall: true,
+        builder: (ctx) => _buildViewPanelBody(state, embedded: false),
+      ),
+      AdaptivePanelSpec(
+        region: ChromeRegion.tools,
+        preferTall: true,
+        builder: (ctx) => _buildToolsPanelBody(ctx, state, embedded: false),
+      ),
+      AdaptivePanelSpec(
+        region: ChromeRegion.inspect,
+        builder: (ctx) => _buildInspectPanelBody(ctx, state, embedded: false),
+      ),
+    ]);
+  }
+
+  Widget _buildCompactViewChips() {
+    final mode = _chromeForViewMode(_viewMode);
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          for (final m in const [
+            ChromeViewMode.edit,
+            ChromeViewMode.orbit,
+            ChromeViewMode.check,
+          ]) ...[
+            if (m != ChromeViewMode.edit) const SizedBox(width: 2),
+            Expanded(
+              child: _ViewModeChip(
+                label: m.label,
+                active: mode == m,
+                onTap: () => _applyChromeView(m),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewPanelBody(AppState state, {required bool embedded}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ChromeViewModeChips(
+          selected: _chromeForViewMode(_viewMode),
+          onChanged: (m) {
+            _applyChromeView(m);
+            if (!embedded) _maybeCloseSupportingSheet();
+          },
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'CAMERA PRESETS',
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.4,
+          ),
+        ),
+        const SizedBox(height: 8),
+        CameraPresetChips(
+          onSelect: (p) {
+            setState(() {
+              if (_viewMode == _RigViewMode.model3D) {
+                _pendingPreset = p;
+              } else {
+                // Stay on Orbit (or open Orbit from Edit) — do not force Check.
+                _viewMode = _RigViewMode.threeD;
+                _applyOrbitCameraPreset(p, state);
+              }
+            });
+            if (!embedded) _maybeCloseSupportingSheet();
+          },
+        ),
+        const SizedBox(height: 16),
+        SwitchListTile.adaptive(
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          title: const Text('Mini-map', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+          subtitle: const Text('Picture-in-picture floor plan', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          value: _showMiniMap,
+          activeThumbColor: AppColors.cyan,
+          onChanged: (v) => setState(() => _showMiniMap = v),
+        ),
+        Material(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: state.selectedFurniture == null
+                ? null
+                : () {
+                    setState(() {
+                      if (_viewMode == _RigViewMode.model3D) {
+                        _focusToken++;
+                      } else {
+                        _viewMode = _RigViewMode.threeD;
+                        _focusOrbitOnSelection(state);
+                      }
+                    });
+                    if (!embedded) _maybeCloseSupportingSheet();
+                  },
+            child: ListTile(
+              enabled: state.selectedFurniture != null,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              minVerticalPadding: 10,
+              leading: const Icon(Icons.center_focus_strong_rounded, color: AppColors.cyan, size: 24),
+              title: const Text('Focus selection', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+              subtitle: Text(
+                state.selectedFurniture == null
+                    ? 'Select an item first'
+                    : 'Frame ${state.selectedFurniture!.name}',
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Approximate Model camera presets for the Orbit painter (grid-cell space).
+  void _applyOrbitCameraPreset(CameraPreset preset, AppState state) {
+    final cols = state.currentRoomData.gridCols.toDouble();
+    final rows = state.currentRoomData.gridRows.toDouble();
+    final cx = cols * 0.5;
+    final cz = rows * 0.5;
+    final span = math.max(cols, rows);
+    switch (preset) {
+      case CameraPreset.birdseye:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = 0;
+        _cameraPitchRad = 1.15;
+        _cameraDistance = (span * 1.15).clamp(8.0, 28.0);
+        break;
+      case CameraPreset.cornerA:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = 0.75;
+        _cameraPitchRad = 0.38;
+        _cameraDistance = (span * 0.95).clamp(8.0, 24.0);
+        break;
+      case CameraPreset.cornerB:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = -2.35;
+        _cameraPitchRad = 0.38;
+        _cameraDistance = (span * 0.95).clamp(8.0, 24.0);
+        break;
+      case CameraPreset.eyeLevel:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = 0;
+        _cameraPitchRad = 0.18;
+        _cameraDistance = (span * 0.85).clamp(7.0, 22.0);
+        break;
+      case CameraPreset.door:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = math.pi;
+        _cameraPitchRad = 0.28;
+        _cameraDistance = (span * 0.9).clamp(7.0, 22.0);
+        break;
+      case CameraPreset.ceiling:
+        _lookAtX = cx;
+        _lookAtZ = cz;
+        _cameraYawRad = 0.4;
+        _cameraPitchRad = -0.35;
+        _cameraDistance = (span * 0.7).clamp(6.0, 18.0);
+        break;
+    }
+  }
+
+  void _focusOrbitOnSelection(AppState state) {
+    final item = state.selectedFurniture;
+    if (item == null || state.selectedIsScanObject) return;
+    final cols = state.currentRoomData.gridCols.toDouble();
+    final rows = state.currentRoomData.gridRows.toDouble();
+    _lookAtX = item.gridX + item.width * 0.5;
+    _lookAtZ = item.gridY + item.height * 0.5;
+    _cameraPitchRad = 0.42;
+    _cameraDistance = (math.max(cols, rows) * 0.55).clamp(5.0, 16.0);
+  }
+
+  Widget _buildToolsPanelBody(
+    BuildContext ctx,
+    AppState state, {
+    required bool embedded,
+  }) {
+    final selected = state.selectedFurniture;
+    final canEdit = selected != null && !state.selectedIsScanObject && state.canMoveFurniture(selected);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'EDIT',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.4),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _ToolActionChip(
+              label: 'Rotate −90°',
+              icon: Icons.rotate_left_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) _rotateSelected(state, selected, -90);
+              },
+            ),
+            _ToolActionChip(
+              label: 'Rotate +90°',
+              icon: Icons.rotate_right_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) _rotateSelected(state, selected, 90);
+              },
+            ),
+            _ToolActionChip(
+              label: 'Flip',
+              icon: Icons.flip_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) _rotateSelected(state, selected, 180);
+              },
+            ),
+            _ToolActionChip(
+              label: 'Duplicate',
+              icon: Icons.copy_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) state.duplicateFurniture(selected.id);
+              },
+            ),
+            _ToolActionChip(
+              label: 'Align wall',
+              icon: Icons.align_horizontal_left_rounded,
+              enabled: canEdit,
+              onTap: () {
+                if (selected != null) _alignSelectedToNearestWall(state, selected);
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SwitchListTile.adaptive(
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          title: const Text('Dimensions', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+          subtitle: const Text('Show cm labels on the plan', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          value: _showDimensions,
+          activeThumbColor: AppColors.cyan,
+          onChanged: (v) => setState(() => _showDimensions = v),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _InvasiveEditToggle(
+              invasive: state.invasiveEdit,
+              onChanged: state.setInvasiveEdit,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                state.invasiveEdit
+                    ? 'Invasive — wall mounts can move'
+                    : 'Non-invasive — wall mounts locked',
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        Text(
+          'AUTO-RIG GOAL',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.4),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _GoalChip(
+              label: 'Balanced',
+              color: AppColors.cyan,
+              active: _optimizeGoal == _OptimizeGoal.balanced,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.balanced);
+                state.applyOptimizeGoalPreset('balanced');
+              },
+            ),
+            _GoalChip(
+              label: 'Airflow',
+              color: AppColors.airflowColor,
+              active: _optimizeGoal == _OptimizeGoal.airflow,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.airflow);
+                state.applyOptimizeGoalPreset('airflow');
+              },
+            ),
+            _GoalChip(
+              label: 'Lighting',
+              color: AppColors.lightingColor,
+              active: _optimizeGoal == _OptimizeGoal.lighting,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.lighting);
+                state.applyOptimizeGoalPreset('lighting');
+              },
+            ),
+            _GoalChip(
+              label: 'Ergonomics',
+              color: AppColors.ergonomicsColor,
+              active: _optimizeGoal == _OptimizeGoal.ergonomics,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.ergonomics);
+                state.applyOptimizeGoalPreset('ergonomics');
+              },
+            ),
+            _GoalChip(
+              label: 'Space',
+              color: AppColors.spatialColor,
+              active: _optimizeGoal == _OptimizeGoal.spatial,
+              onTap: () {
+                setState(() => _optimizeGoal = _OptimizeGoal.spatial);
+                state.applyOptimizeGoalPreset('spatial');
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(64, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).maybePop();
+                  _runAutoRig(context, state);
+                },
+                icon: const Icon(Icons.auto_awesome_rounded, size: 20),
+                label: const Text('Run Auto-Rig'),
+              ),
+            ),
+            if (kDebugMode) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Sample on Bench',
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(48, 48),
+                  fixedSize: const Size(48, 48),
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).maybePop();
+                  _openSampleRoom(state);
+                },
+                icon: const Icon(Icons.science_rounded, color: AppColors.amber, size: 22),
+              ),
+            ],
+          ],
+        ),
+        if (state.lastOptimizeReasons.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          ...state.lastOptimizeReasons.take(2).map(
+            (r) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(r, style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildInspectPanelBody(
+    BuildContext ctx,
+    AppState state, {
+    required bool embedded,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Material(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              Navigator.of(ctx).maybePop();
+              _scaffoldKey.currentState?.openEndDrawer();
+            },
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              minVerticalPadding: 12,
+              leading: const Icon(Icons.list_alt_rounded, color: AppColors.cyan, size: 26),
+              title: const Text(
+                'Room items',
+                style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+              subtitle: Text(
+                '${state.furniture.length} pieces',
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted, size: 26),
+            ),
+          ),
+        ),
+        if (state.layoutConflicts.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            '${state.layoutConflicts.length} layout warning(s)',
+            style: const TextStyle(color: AppColors.amber, fontWeight: FontWeight.w700, fontSize: 12),
+          ),
+          const SizedBox(height: 6),
+          ...state.layoutConflicts.take(4).map(
+            (c) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                c.message,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _alignSelectedToNearestWall(AppState state, FurnitureItem item) {
+    final room = state.currentRoomData;
+    final cx = item.gridX + item.width * 0.5;
+    final cy = item.gridY + item.height * 0.5;
+    final distLeft = cx;
+    final distRight = room.gridCols - cx;
+    final distTop = cy;
+    final distBottom = room.gridRows - cy;
+    final minD = [distLeft, distRight, distTop, distBottom].reduce((a, b) => a < b ? a : b);
+    double nx = item.gridX;
+    double ny = item.gridY;
+    if (minD == distLeft) {
+      nx = 0;
+    } else if (minD == distRight) {
+      nx = (room.gridCols - item.width).toDouble();
+    } else if (minD == distTop) {
+      ny = 0;
+    } else {
+      ny = (room.gridRows - item.height).toDouble();
+    }
+    state.moveFurniture(item.id, nx, ny);
   }
 
   Future<void> _runAutoRig(BuildContext context, AppState state) async {
@@ -277,20 +899,25 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         backgroundColor: AppColors.surface,
         title: const Text('Run Auto-Rig?', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Auto-Rig scores several layouts and applies the best for your goal. '
-          'Use “Try alternate” to cycle other ranked layouts without changing weights.',
+          'Auto-Rig rearranges the items already on this Rig — it does not add '
+          'catalog pieces. Run best picks the top layout; Try alternate cycles '
+          'other ranked layouts for the same inventory.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
             onPressed: () => Navigator.of(ctx).pop(false),
             child: const Text('Cancel'),
           ),
           TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
             onPressed: () => Navigator.of(ctx).pop('alternate'),
             child: const Text('Try alternate'),
           ),
-          TextButton(
+          FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size(88, 44)),
             onPressed: () => Navigator.of(ctx).pop('best'),
             child: const Text('Run best'),
           ),
@@ -345,37 +972,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         backgroundColor: AppColors.card,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  Widget _buildViewToggle() {
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _ViewModeChip(
-              label: '2D',
-              active: _viewMode == _RigViewMode.twoD,
-              onTap: () => setState(() => _viewMode = _RigViewMode.twoD),
-            ),
-          ),
-          const SizedBox(width: 3),
-          Expanded(
-            child: _ViewModeChip(
-              label: '3D',
-              active: _viewMode == _RigViewMode.threeD,
-              onTap: () => setState(() => _viewMode = _RigViewMode.threeD),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -695,21 +1291,180 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   Widget _buildCanvas(AppState state) {
+    if (_viewMode == _RigViewMode.model3D) {
+      final canMoveSelected = state.selectedFurniture != null &&
+          !state.selectedIsScanObject &&
+          state.canMoveFurniture(state.selectedFurniture!);
+      final desktop = AppLayout.isDesktop(context);
+      return Container(
+        margin: EdgeInsets.symmetric(horizontal: desktop ? 0 : 12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(desktop ? 0 : AppRadius.lg),
+          border: desktop ? null : Border.all(color: AppColors.border),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              RoomModelScene(
+                room: state.currentRoomData,
+                furniture: state.furniture,
+                selectedId: state.selectedIsScanObject
+                    ? null
+                    : state.selectedFurniture?.id,
+                yaw: _cameraYawRad,
+                pitch: _cameraPitchRad,
+                distance: _cameraDistance.clamp(4.0, 20.0),
+                exploreChrome: ChromeViewMode.check,
+                pendingPreset: _pendingPreset,
+                showMiniMap: _showMiniMap,
+                focusToken: _focusToken,
+                moveMode: _rigMoveMode || state.hasPendingPlacement,
+                liveDrag: _dragItemId != null,
+                pendingPlacementId: state.pendingPlacementId,
+                dragBlocked: _dragItemId != null && state.dragPoseBlocked,
+                onPresetApplied: () {
+                  if (_pendingPreset != null) {
+                    setState(() => _pendingPreset = null);
+                  }
+                },
+                onSelect: (id) {
+                  if (!state.canMoveFurnitureId(id)) {
+                    state.selectFurniture(id);
+                    setState(() => _rigMoveMode = false);
+                    return;
+                  }
+                  state.selectFurniture(id);
+                  // Ghosts drag without MOVE; other items arm MOVE like Orbit tap.
+                  setState(() {
+                    _rigMoveMode = !state.isPendingPlacement(id);
+                  });
+                },
+                onDeselect: () {
+                  if (state.hasPendingPlacement) return;
+                  state.clearSelection();
+                  if (_rigMoveMode) setState(() => _rigMoveMode = false);
+                },
+                onDragStart: (id) {
+                  if (!state.canMoveFurnitureId(id)) return;
+                  state.selectFurniture(id);
+                  _dragItemId = id;
+                  _dragGrabOffset = null;
+                  state.beginFurnitureGesture();
+                  if (!_rigMoveMode && !state.isPendingPlacement(id)) {
+                    setState(() => _rigMoveMode = true);
+                  }
+                },
+                onDrag: (id, floorX, floorY) {
+                  if (_dragItemId != id) return;
+                  if (!state.canMoveFurnitureId(id)) return;
+                  final matches = state.furniture.where((f) => f.id == id);
+                  if (matches.isEmpty) return;
+                  final item = matches.first;
+                  _dragGrabOffset ??=
+                      Offset(floorX - item.gridX, floorY - item.gridY);
+                  final grab = _dragGrabOffset!;
+                  state.moveFurniture(
+                    id,
+                    floorX - grab.dx,
+                    floorY - grab.dy,
+                  );
+                },
+                onDragEnd: (id) {
+                  if (_dragItemId != null) {
+                    state.endFurnitureGesture();
+                  }
+                  setState(() {
+                    _dragItemId = null;
+                    _dragGrabOffset = null;
+                  });
+                },
+              ),
+              Positioned(
+                top: 8,
+                left: 10,
+                child: IgnorePointer(
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(
+                      state.hasPendingPlacement
+                          ? 'Drag the ghost to place · tap Place when ready'
+                          : _rigMoveMode
+                              ? 'MOVE on · drag item · tap empty to exit'
+                              : 'Orbit · tap item · MOVE to drag',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              if (canMoveSelected || _rigMoveMode || state.hasPendingPlacement)
+                Positioned(
+                  top: 8,
+                  right: 10,
+                  child: Material(
+                    color: _rigMoveMode
+                        ? AppColors.cyan
+                        : AppColors.surface.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(8),
+                    child: InkWell(
+                      key: const ValueKey('rig_model_move_mode'),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _rigMoveMode = !_rigMoveMode);
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          'MOVE',
+                          style: TextStyle(
+                            color:
+                                _rigMoveMode ? Colors.black : AppColors.cyan,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
     if (_viewMode == _RigViewMode.threeD) {
       return _buildPseudo3DCanvas(state);
     }
 
     // The floor plan stays axis-aligned: rotating it made every horizontal
     // swipe spin the room and threw off drag deltas. Orbiting lives in 3D.
+    final desktop = AppLayout.isDesktop(context);
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
+      margin: EdgeInsets.symmetric(horizontal: desktop ? 0 : 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(desktop ? 0 : 16),
+        border: desktop ? null : Border.all(color: AppColors.border),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(desktop ? 0 : 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final coverage = state.activeRoomLayout?.coverageGrid;
@@ -915,15 +1670,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   Widget _buildPseudo3DCanvas(AppState state) {
+    final desktop = AppLayout.isDesktop(context);
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
+      margin: EdgeInsets.symmetric(horizontal: desktop ? 0 : 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(desktop ? 0 : 16),
+        border: desktop ? null : Border.all(color: AppColors.border),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(desktop ? 0 : 16),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
@@ -1277,6 +2033,24 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     ),
                   ),
                 ),
+                if (_showMiniMap)
+                  Positioned(
+                    right: 10,
+                    bottom: 48,
+                    child: IgnorePointer(
+                      child: _OrbitMiniMap(
+                        room: state.currentRoomData,
+                        furniture: state.furniture,
+                        selectedId: state.selectedIsScanObject
+                            ? null
+                            : state.selectedFurniture?.id,
+                        lookAtX: _lookAtX ??
+                            state.currentRoomData.gridCols * 0.5,
+                        lookAtZ: _lookAtZ ??
+                            state.currentRoomData.gridRows * 0.5,
+                      ),
+                    ),
+                  ),
               ],
             );
           },
@@ -1863,110 +2637,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
-  }
-
-  Widget _buildOptimizationPanel(AppState state) {
-    final weights = state.optimizeWeights;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'AUTO-RIG GOAL',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 2),
-          ),
-          const SizedBox(height: 6),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _GoalChip(
-                  label: 'Balanced',
-                  color: AppColors.cyan,
-                  active: _optimizeGoal == _OptimizeGoal.balanced,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.balanced);
-                    state.applyOptimizeGoalPreset('balanced');
-                  },
-                ),
-                const SizedBox(width: 8),
-                _GoalChip(
-                  label: 'Airflow',
-                  color: AppColors.airflowColor,
-                  active: _optimizeGoal == _OptimizeGoal.airflow,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.airflow);
-                    state.applyOptimizeGoalPreset('airflow');
-                  },
-                ),
-                const SizedBox(width: 8),
-                _GoalChip(
-                  label: 'Lighting',
-                  color: AppColors.lightingColor,
-                  active: _optimizeGoal == _OptimizeGoal.lighting,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.lighting);
-                    state.applyOptimizeGoalPreset('lighting');
-                  },
-                ),
-                const SizedBox(width: 8),
-                _GoalChip(
-                  label: 'Ergonomics',
-                  color: AppColors.ergonomicsColor,
-                  active: _optimizeGoal == _OptimizeGoal.ergonomics,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.ergonomics);
-                    state.applyOptimizeGoalPreset('ergonomics');
-                  },
-                ),
-                const SizedBox(width: 8),
-                _GoalChip(
-                  label: 'Space',
-                  color: AppColors.spatialColor,
-                  active: _optimizeGoal == _OptimizeGoal.spatial,
-                  onTap: () {
-                    setState(() => _optimizeGoal = _OptimizeGoal.spatial);
-                    state.applyOptimizeGoalPreset('spatial');
-                  },
-                ),
-              ],
-            ),
-          ),
-          if (state.lastOptimizeReasons.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            ...state.lastOptimizeReasons.take(2).map(
-              (r) => Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.check_circle_outline, size: 12, color: AppColors.green),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        r,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 10, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ] else ...[
-            const SizedBox(height: 4),
-            Text(
-              weights.dominantGoal == null
-                  ? 'Star button runs Auto-Rig for the goal above.'
-                  : 'Dominant ${weights.dominantGoal} path.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
-            ),
-          ],
-        ],
-      ),
-    );
   }
 
   Widget _buildPlacementBar(AppState state) {
@@ -2700,21 +3370,26 @@ class _InvasiveEditToggle extends StatelessWidget {
       message: invasive
           ? 'Invasive — wall mounts can move'
           : 'Non-invasive — wall mounts locked',
-      child: GestureDetector(
-        onTap: () => onChanged(!invasive),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: accent.withValues(alpha: 0.7)),
-          ),
-          child: Icon(
-            invasive ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
-            size: 18,
-            color: accent,
+      child: Material(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: () => onChanged(!invasive),
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            width: 48,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: accent.withValues(alpha: 0.7)),
+            ),
+            child: Icon(
+              invasive ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
+              size: 22,
+              color: accent,
+            ),
           ),
         ),
       ),
@@ -2749,45 +3424,6 @@ class _AddItemButton extends StatelessWidget {
               style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w700, fontSize: 12),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _IconToolButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onTap;
-  final bool accent;
-
-  const _IconToolButton({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-    this.accent = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            gradient: accent ? AppColors.accentGradient : null,
-            color: accent ? null : AppColors.card,
-            borderRadius: BorderRadius.circular(10),
-            border: accent ? null : Border.all(color: AppColors.border),
-          ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: accent ? Colors.white : AppColors.cyan,
-          ),
         ),
       ),
     );
@@ -3167,6 +3803,266 @@ class _RotationButton extends StatelessWidget {
   }
 }
 
+class _ToolActionChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _ToolActionChip({
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: Material(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 18, color: AppColors.cyan),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ApplyGhostBanner extends StatelessWidget {
+  final VoidCallback onDismiss;
+  const _ApplyGhostBanner({required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.green.withValues(alpha: 0.14),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.compare_rounded, size: 18, color: AppColors.green),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Before/after · layout just applied from Bench',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: onDismiss,
+              icon: const Icon(Icons.close_rounded, size: 16, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DimensionsHint extends StatelessWidget {
+  final RoomData room;
+  const _DimensionsHint({required this.room});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = RoomScale.metersFromCells(room.gridCols);
+    final d = RoomScale.metersFromCells(room.gridRows);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Text(
+        '${RoomScale.formatMeters(w)} × ${RoomScale.formatMeters(d)} · cell ${(RoomScale.metersFromCells(1) * 100).round()} cm',
+        style: const TextStyle(
+          color: AppColors.cyan,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectedItemSizeChip extends StatelessWidget {
+  final FurnitureItem item;
+  const _SelectedItemSizeChip({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final wCm = (RoomScale.metersFromCells(item.width) * 100).round();
+    final dCm = (RoomScale.metersFromCells(item.height) * 100).round();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.cyan.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        '${item.name} · $wCm×$dCm cm',
+        style: const TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+/// Top-down floor plan overlay for Orbit (mirrors Model HTML minimap).
+class _OrbitMiniMap extends StatelessWidget {
+  final RoomData room;
+  final List<FurnitureItem> furniture;
+  final String? selectedId;
+  final double lookAtX;
+  final double lookAtZ;
+
+  const _OrbitMiniMap({
+    required this.room,
+    required this.furniture,
+    required this.selectedId,
+    required this.lookAtX,
+    required this.lookAtZ,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 108,
+      height: 86,
+      decoration: BoxDecoration(
+        color: const Color(0xD111141C),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: CustomPaint(
+        painter: _OrbitMiniMapPainter(
+          cols: room.gridCols.toDouble(),
+          rows: room.gridRows.toDouble(),
+          furniture: furniture,
+          selectedId: selectedId,
+          lookAtX: lookAtX,
+          lookAtZ: lookAtZ,
+        ),
+      ),
+    );
+  }
+}
+
+class _OrbitMiniMapPainter extends CustomPainter {
+  final double cols;
+  final double rows;
+  final List<FurnitureItem> furniture;
+  final String? selectedId;
+  final double lookAtX;
+  final double lookAtZ;
+
+  _OrbitMiniMapPainter({
+    required this.cols,
+    required this.rows,
+    required this.furniture,
+    required this.selectedId,
+    required this.lookAtX,
+    required this.lookAtZ,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bg = Paint()..color = const Color(0xFF1B2030);
+    canvas.drawRect(Offset.zero & size, bg);
+
+    const pad = 8.0;
+    final sx = (size.width - pad * 2) / math.max(cols, 0.1);
+    final sz = (size.height - pad * 2) / math.max(rows, 0.1);
+    final s = math.min(sx, sz);
+    final ox = (size.width - cols * s) * 0.5;
+    final oz = (size.height - rows * s) * 0.5;
+
+    final roomRect = Rect.fromLTWH(ox, oz, cols * s, rows * s);
+    canvas.drawRect(
+      roomRect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..color = AppColors.border
+        ..strokeWidth = 1,
+    );
+
+    for (final f in furniture) {
+      if (f.hidden) continue;
+      final r = Rect.fromLTWH(
+        ox + f.gridX * s,
+        oz + f.gridY * s,
+        math.max(0.15, f.width) * s,
+        math.max(0.15, f.height) * s,
+      );
+      canvas.drawRect(
+        r,
+        Paint()
+          ..color = f.id == selectedId
+              ? AppColors.cyan
+              : const Color(0xFF5A6280),
+      );
+    }
+
+    canvas.drawCircle(
+      Offset(ox + lookAtX * s, oz + lookAtZ * s),
+      3.5,
+      Paint()..color = const Color(0xFF2EE68A),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _OrbitMiniMapPainter old) {
+    return old.cols != cols ||
+        old.rows != rows ||
+        old.furniture != furniture ||
+        old.selectedId != selectedId ||
+        old.lookAtX != lookAtX ||
+        old.lookAtZ != lookAtZ;
+  }
+}
+
 class _GoalChip extends StatelessWidget {
   final String label;
   final Color color;
@@ -3177,22 +4073,28 @@ class _GoalChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: active ? color.withValues(alpha: 0.16) : AppColors.card,
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: active ? color : AppColors.border),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? color : AppColors.textSecondary,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+    return Material(
+      color: active ? color.withValues(alpha: 0.16) : AppColors.card,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: active ? color : AppColors.border),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: active ? color : AppColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ),

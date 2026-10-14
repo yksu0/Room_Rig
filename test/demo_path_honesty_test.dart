@@ -36,7 +36,7 @@ void main() {
     expect(RigCatalog.isV1Item(state.furniture.firstWhere((f) => f.id == 'upg_fan')), isTrue);
   });
 
-  test('Bench Apply Score Delta uses sim-before not dirty impact estimate', () {
+  test('Bench Apply Score Delta uses geometry-before not catalog impact tags', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
     state.acceptPresetAsReady();
@@ -48,9 +48,9 @@ void main() {
     state.moveFurniture(movable.id, movable.gridX + 0.5, movable.gridY);
     expect(state.scoresAreSimulated, isTrue);
 
+    // ROUGH rings are live geometry — same evaluator as Bench — not impact tags.
     final simBefore = AirflowOptimizer.evaluate(state.committedFurniture).circulationScore;
-    final dirtyEstimate = state.airflowScore;
-    expect(dirtyEstimate, isNot(closeTo(simBefore, 0.01)));
+    expect(state.airflowScore, closeTo(simBefore, 0.01));
 
     final before = List<FurnitureItem>.from(state.furniture.map((f) => f.copyWith()));
     state.applyFurnitureLayout(before, markOptimized: true);
@@ -58,7 +58,7 @@ void main() {
     expect(state.scoresAreSimulated, isFalse);
     expect(state.isOptimized, isTrue);
     expect(state.originalScores?['airflow'], closeTo(simBefore, 0.6));
-    // Delta must not be dirtyEstimate → post-sim (often a large negative swing).
+    // Apply of the same poses → modest overall delta (composite vs snapshot).
     final delta = state.overallScore - state.previousOverallScore;
     expect(delta.abs(), lessThan(25), reason: 'sim-to-sim delta should be modest');
   });

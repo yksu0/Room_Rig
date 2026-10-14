@@ -32,11 +32,11 @@ enum WorkClusterBias {
 class LayoutOptimizerCommon {
   LayoutOptimizerCommon._();
 
-  /// Chair pull-back used across Auto-Rig (workstation clearance practice).
-  static const chairPullback = ComfortHeuristics.chairPullbackMeters;
+  /// Chair pull-back in grid cells (see [ComfortHeuristics.chairPullbackCells]).
+  static const chairPullback = ComfortHeuristics.chairPullbackCells;
 
   /// Minimum clear cells in front of a door (entry circulation practice).
-  static const doorApproachDepth = ComfortHeuristics.doorApproachDepth;
+  static const doorApproachDepth = ComfortHeuristics.doorApproachDepthCells;
 
   static List<FurnitureItem> applyTargets({
     required List<FurnitureItem> source,
@@ -321,7 +321,9 @@ class LayoutOptimizerCommon {
       case WorkClusterBias.lighting:
         reasons.add('Desk offset for side daylight — screens at right angles to windows (OSHA)');
       case WorkClusterBias.ergonomics:
-        reasons.add('Desk with clear approach and ~${chairPullback.toStringAsFixed(1)} m chair pull-back');
+        reasons.add(
+          'Desk with clear approach and ~${ComfortHeuristics.chairPullbackMeters.toStringAsFixed(2)} m chair pull-back',
+        );
     }
 
     // Park desk-top gear first so the chair can align to the seated monitor,
@@ -354,7 +356,9 @@ class LayoutOptimizerCommon {
         door: door,
         alignWith: alignWith,
       );
-      reasons.add('Centered chair on the desk with ~${chairPullback.toStringAsFixed(1)} m pull-back');
+      reasons.add(
+        'Centered chair on the desk with ~${ComfortHeuristics.chairPullbackMeters.toStringAsFixed(2)} m pull-back',
+      );
       if (door != null) {
         final prospect = ComfortHeuristics.doorProspectScore(
           chair: chair.copyWith(
@@ -447,6 +451,19 @@ class LayoutOptimizerCommon {
       default:
         addFace('north', north.x, north.y);
     }
+    // Door view: also score orthogonal faces so a north-window desk can
+    // still put the seat where the entry stays in the forward hemisphere.
+    if (door != null) {
+      for (final extra in [
+        (face: 'south', x: south.x, y: south.y),
+        (face: 'north', x: north.x, y: north.y),
+        (face: 'east', x: east.x, y: east.y),
+        (face: 'west', x: west.x, y: west.y),
+      ]) {
+        if (candidates.any((c) => c.face == extra.face)) continue;
+        addFace(extra.face, extra.x, extra.y);
+      }
+    }
 
     ({double x, double y}) best = (
       x: candidates.first.x.clamp(0.0, maxX),
@@ -476,31 +493,31 @@ class LayoutOptimizerCommon {
         if (blocksOpening) continue;
       }
       foundClear = true;
-      var score = door == null
-          ? (i == 0 ? 1.0 : 0.45)
-          : ComfortHeuristics.doorProspectScore(
-              chair: trialChair,
-              desk: desk,
-              door: door,
-            );
-      if (door != null) {
+      var score = 0.0;
+      if (door == null) {
+        score = i == 0 ? 1.0 : 0.45;
+      } else {
+        // Prefer a seat that can see the entry — do not let the geometric
+        // primary work-face bonus swamp a back-to-the-door placement.
+        final prospect = ComfortHeuristics.doorProspectScore(
+          chair: trialChair,
+          desk: desk,
+          door: door,
+        );
+        score = prospect * 2.2;
+        score += i == 0 ? 0.12 : -0.05;
         final approach = _doorApproachRect(door, cols, rows);
         if (LayoutCollision.overlaps(trialChair, approach)) score -= 0.35;
       }
-      if (i == 0) {
-        score += 0.45;
-      } else {
-        score -= 0.2;
-      }
       // Prefer staying aligned with the screen along the work-face axis.
+      // Keep this secondary to door prospect when an entry exists.
       if (alignWith != null) {
         final ccx = clamped.x + chair.width * 0.5;
         final ccy = clamped.y + chair.height * 0.5;
-        if (workFace == 'south' || workFace == 'north') {
-          score += 1.0 - (ccx - ax).abs().clamp(0.0, 1.0);
-        } else {
-          score += 1.0 - (ccy - ay).abs().clamp(0.0, 1.0);
-        }
+        final align = (workFace == 'south' || workFace == 'north')
+            ? 1.0 - (ccx - ax).abs().clamp(0.0, 1.0)
+            : 1.0 - (ccy - ay).abs().clamp(0.0, 1.0);
+        score += door == null ? align : align * 0.25;
       }
       if (score > bestScore) {
         bestScore = score;
@@ -557,20 +574,21 @@ class LayoutOptimizerCommon {
       y = (window.gridY + 1.1).clamp(0.8, maxY);
     }
 
-    // Keep out of the door approach — flip to the opposite side wall if needed,
-    // never shove the desk into the room center.
+    // Keep out of the door approach — slide along the wall first. Flipping to
+    // the opposite side wall is OK for lighting/airflow, but for ergonomics it
+    // turns the seat's back to a west-wall door (chair faces the east wall).
     if (door != null) {
       final approach = _doorApproachRect(door, cols, rows);
       var trial = desk.copyWith(gridX: x, gridY: y);
       if (LayoutCollision.overlaps(trial, approach)) {
-        // Slide along the wall in Y first.
         if (door.gridY > rows * 0.5) {
           y = math.min(y, (door.gridY - desk.height - 0.6).clamp(0.5, maxY));
         } else {
           y = math.max(y, (door.gridY + door.height + 0.4).clamp(0.5, maxY));
         }
         trial = desk.copyWith(gridX: x, gridY: y);
-        if (LayoutCollision.overlaps(trial, approach)) {
+        if (LayoutCollision.overlaps(trial, approach) &&
+            bias != WorkClusterBias.ergonomics) {
           onEast = !onEast;
           x = onEast
               ? (cols - desk.width - wall).clamp(0.0, maxX)
@@ -676,7 +694,22 @@ class LayoutOptimizerCommon {
     desktopIdx.sort((a, b) => _deskItemRank(next[a]).compareTo(_deskItemRank(next[b])));
 
     final placedOnHost = <String, List<FurnitureItem>>{};
+    final cols0 = gridCols ?? math.max(8, (primary.gridX + primary.width + 4).ceil());
+    final rows0 = gridRows ?? math.max(8, (primary.gridY + primary.height + 4).ceil());
+    final clustered = _packCenteredWorkCluster(
+      next,
+      desktopIdx,
+      primary,
+      gridCols: cols0,
+      gridRows: rows0,
+    );
+    for (final i in clustered) {
+      final host = primary;
+      placedOnHost.putIfAbsent(host.id, () => <FurnitureItem>[]).add(next[i]);
+    }
+
     for (final i in desktopIdx) {
+      if (clustered.contains(i)) continue;
       var item = next[i];
       final host = _hostForDeskTopItem(
         item,
@@ -695,6 +728,29 @@ class LayoutOptimizerCommon {
         }
         item = item.copyWith(width: width, height: depth);
         next[i] = item;
+      } else if (hay.contains('monitor') ||
+          hay.contains('display') ||
+          item.iconName == 'monitor') {
+        // Keep Orbit's silhouette. Only clamp when the footprint cannot fit
+        // the desk — never flatten a normal 1×1 / ~0.9×0.6 monitor.
+        if (item.width > host.width - 0.05 || item.height > host.height - 0.05) {
+          item = item.copyWith(
+            width: math.min(item.width, math.max(0.7, host.width - 0.15)),
+            height: math.min(item.height, math.max(0.45, host.height - 0.15)),
+          );
+          next[i] = item;
+        }
+      } else if (hay.contains('pc') ||
+          hay.contains('tower') ||
+          item.iconName == 'pc') {
+        // Preserve tower proportions (Orbit uses ~0.45×0.5).
+        if (item.width > host.width - 0.05 || item.height > host.height - 0.05) {
+          item = item.copyWith(
+            width: math.min(item.width, 0.5),
+            height: math.min(item.height, 0.55),
+          );
+          next[i] = item;
+        }
       } else if (hay.contains('plant')) {
         item = item.copyWith(
           width: math.min(item.width, 0.5),
@@ -704,8 +760,8 @@ class LayoutOptimizerCommon {
       } else if ((hay.contains('lamp') || item.iconName == 'lamp') &&
           !hay.contains('floor')) {
         item = item.copyWith(
-          width: math.min(item.width, 0.4),
-          height: math.min(item.height, 0.4),
+          width: math.min(item.width, 0.35),
+          height: math.min(item.height, 0.35),
         );
         next[i] = item;
       }
@@ -730,6 +786,137 @@ class LayoutOptimizerCommon {
       others.add(seated);
     }
     return separateDeskTopOverlaps(next);
+  }
+
+  /// PC | monitor | lamp as one centered row on the desk back edge.
+  /// Returns desktop indices that were seated (so the greedy loop can skip them).
+  static Set<int> _packCenteredWorkCluster(
+    List<FurnitureItem> next,
+    List<int> desktopIdx,
+    FurnitureItem host, {
+    required int gridCols,
+    required int gridRows,
+  }) {
+    if (SurfaceMounts.isTableHost(host)) return {};
+
+    int? monI;
+    int? pcI;
+    int? lampI;
+    for (final i in desktopIdx) {
+      final f = next[i];
+      if (f.locked) continue;
+      final rank = _deskItemRank(f);
+      if (rank == 0 &&
+          (f.iconName == 'monitor' ||
+              ItemPlacementRules.hay(f).contains('monitor'))) {
+        monI ??= i;
+      } else if (rank == 1) {
+        pcI ??= i;
+      } else if (rank == 2 &&
+          (f.iconName == 'lamp' || ItemPlacementRules.hay(f).contains('lamp')) &&
+          !ItemPlacementRules.hay(f).contains('floor')) {
+        lampI ??= i;
+      }
+    }
+    if (monI == null) return {};
+
+    // Shrink task lamp so the trio fits a 2-cell desk with gaps.
+    if (lampI != null) {
+      final lamp = next[lampI];
+      next[lampI] = lamp.copyWith(
+        width: math.min(lamp.width, 0.35),
+        height: math.min(lamp.height, 0.35),
+      );
+    }
+
+    final workFace = ItemPlacementRules.deskWorkFace(host, gridCols, gridRows);
+    final alongX = workFace == 'south' || workFace == 'north';
+
+    FurnitureItem sized(int i) {
+      var f = next[i];
+      if (f.width > host.width - 0.05 || f.height > host.height - 0.05) {
+        if (_deskItemRank(f) == 0) {
+          f = f.copyWith(
+            width: math.min(f.width, math.max(0.7, host.width - 0.15)),
+            height: math.min(f.height, math.max(0.45, host.height - 0.15)),
+          );
+        } else if (_deskItemRank(f) == 1) {
+          f = f.copyWith(
+            width: math.min(f.width, 0.5),
+            height: math.min(f.height, 0.55),
+          );
+        }
+        next[i] = f;
+      }
+      return next[i];
+    }
+
+    final mon = sized(monI);
+    final pc = pcI != null ? sized(pcI) : null;
+    final lamp = lampI != null ? sized(lampI) : null;
+
+    double along(FurnitureItem f) => alongX ? f.width : f.height;
+    double depth(FurnitureItem f) => alongX ? f.height : f.width;
+
+    const g = _deskTopGap;
+    final parts = <FurnitureItem>[
+      if (pc != null) pc,
+      mon,
+      if (lamp != null) lamp,
+    ];
+    var total = 0.0;
+    for (var i = 0; i < parts.length; i++) {
+      total += along(parts[i]);
+      if (i > 0) total += g;
+    }
+    final deskAlong = alongX ? host.width : host.height;
+    if (total > deskAlong + 0.05) {
+      // Fall back to greedy slotting when the desk is too short.
+      return {};
+    }
+
+    final startAlong = (alongX ? host.gridX : host.gridY) + (deskAlong - total) * 0.5;
+    // Back edge (opposite the chair); each item uses its own depth inset.
+    double backFor(FurnitureItem f) => switch (workFace) {
+          'east' => host.gridX,
+          'west' => host.gridX + host.width - depth(f),
+          'north' => host.gridY + host.height - depth(f),
+          _ => host.gridY,
+        };
+
+    var cursor = startAlong;
+    void seat(int idx, FurnitureItem f) {
+      final b = backFor(f);
+      final seated = alongX
+          ? f.copyWith(gridX: cursor, gridY: b)
+          : f.copyWith(gridX: b, gridY: cursor);
+      next[idx] = seated;
+      cursor += along(f) + g;
+    }
+
+    final seatedIdx = <int>{};
+    if (pcI != null && pc != null) {
+      seat(pcI, pc);
+      seatedIdx.add(pcI);
+    }
+    seat(monI, mon);
+    seatedIdx.add(monI);
+    if (lampI != null && lamp != null) {
+      seat(lampI, lamp);
+      seatedIdx.add(lampI);
+    }
+
+    // Keep footprints inside the host AABB.
+    for (final i in seatedIdx) {
+      final f = next[i];
+      final maxX = host.gridX + host.width - f.width;
+      final maxY = host.gridY + host.height - f.height;
+      next[i] = f.copyWith(
+        gridX: f.gridX.clamp(host.gridX, math.max(host.gridX, maxX)),
+        gridY: f.gridY.clamp(host.gridY, math.max(host.gridY, maxY)),
+      );
+    }
+    return seatedIdx;
   }
 
   /// True for workstation gear that must share one work desk (never a lounge table).
@@ -830,11 +1017,13 @@ class LayoutOptimizerCommon {
         ItemPlacementRules.isTv(f)) {
       return 0;
     }
+    // PC before lamp — otherwise the lamp claims the beside-monitor slot and
+    // the tower falls through to the floor.
     if (hay.contains('pc') || hay.contains('tower') || hay.contains('computer')) {
-      return 4;
+      return 1;
     }
     if (hay.contains('plant')) return 5;
-    return 1; // lamp
+    return 2; // lamp
   }
 
   /// Desk-top slots relative to [workFace] (chair side):
@@ -900,16 +1089,18 @@ class LayoutOptimizerCommon {
     late double preferX;
     late double preferY;
     switch (rank) {
-      case 0: // monitor — centered on the back edge
-        preferX = host.width <= 2.01 && (workFace == 'south' || workFace == 'north')
-            ? loX
-            : backX.clamp(loX, hiX);
+      case 0: // monitor — centered on the back edge (PC / lamp flank it)
+        preferX = backX.clamp(loX, hiX);
         preferY = backY.clamp(loY, hiY);
-        if (workFace == 'east' || workFace == 'west') {
+        if (workFace == 'south' || workFace == 'north') {
+          preferX = (host.gridX + (host.width - item.width) * 0.5).clamp(loX, hiX);
+          preferY = backY.clamp(loY, hiY);
+        } else {
+          // Side-wall desk: long axis is Y — center the screen along that edge.
           preferX = backX.clamp(loX, hiX);
-          preferY = (loY + (hiY - loY) * 0.35).clamp(loY, hiY);
+          preferY = (host.gridY + (host.height - item.height) * 0.5).clamp(loY, hiY);
         }
-      case 4: // PC — wall edge, beside monitor along the wall (never toward chair)
+      case 1: // PC — wall edge, beside monitor along the wall (never toward chair)
         FurnitureItem? monitor;
         for (final o in alreadyOnHost) {
           final oh = '${o.id} ${o.name} ${o.iconName}'.toLowerCase();
@@ -918,9 +1109,9 @@ class LayoutOptimizerCommon {
             break;
           }
         }
-        final pcsOnHost = alreadyOnHost.where((o) => _deskItemRank(o) == 4).length;
-        if (pcsOnHost >= 1 || !fitsOnDesk) {
-          // Extra / oversized towers: floor flush to the same wall, still indoors.
+        final pcsOnHost = alreadyOnHost.where((o) => _deskItemRank(o) == 1).length;
+        // Only park on the floor when the tower cannot fit the desk top.
+        if (!fitsOnDesk) {
           preferX = switch (workFace) {
             'east' => 0.0,
             'west' => roomMaxX,
@@ -929,7 +1120,10 @@ class LayoutOptimizerCommon {
           preferY = host.gridY.clamp(0.0, roomMaxY);
           break;
         }
-        if (monitor != null) {
+        if (pcsOnHost >= 1) {
+          preferX = hiX;
+          preferY = backY.clamp(loY, hiY);
+        } else if (monitor != null) {
           final alongWall = _besideAlongWall(
             monitor: monitor,
             item: item,
@@ -941,6 +1135,7 @@ class LayoutOptimizerCommon {
           );
           preferX = alongWall.$1;
           preferY = alongWall.$2;
+          // Keep on the back edge; do not overwrite the along-wall offset.
           switch (workFace) {
             case 'east':
               preferX = loX;
@@ -949,7 +1144,6 @@ class LayoutOptimizerCommon {
             case 'north':
               preferY = hiY;
             case 'south':
-            default:
               preferY = loY;
           }
         } else {
@@ -978,6 +1172,17 @@ class LayoutOptimizerCommon {
           );
           preferX = alongWall.$1;
           preferY = alongWall.$2;
+          // Keep lamp on the wall/back edge — never between screen and chair.
+          switch (workFace) {
+            case 'east':
+              preferX = loX;
+            case 'west':
+              preferX = hiX;
+            case 'north':
+              preferY = hiY;
+            case 'south':
+              preferY = loY;
+          }
         } else {
           preferX = hiX;
           preferY = backY.clamp(loY, hiY);
@@ -1018,7 +1223,7 @@ class LayoutOptimizerCommon {
       for (final (x, y) in candidates) {
         final candidate = item.copyWith(gridX: x, gridY: y);
         if (blocksOpening(candidate)) continue;
-        if (rank == 4 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
+        if (rank == 1 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
           continue;
         }
         final clash = alreadyOnHost.any(
@@ -1030,7 +1235,7 @@ class LayoutOptimizerCommon {
       }
 
       // Walk the back edge on the desk before leaving the surface.
-      for (var t = 0.0; t <= 1.001; t += 0.2) {
+      for (var t = 0.0; t <= 1.001; t += 0.05) {
         final (x, y) = switch (workFace) {
           'east' => (loX, (loY + (hiY - loY) * t).clamp(loY, hiY)),
           'west' => (hiX, (loY + (hiY - loY) * t).clamp(loY, hiY)),
@@ -1039,7 +1244,7 @@ class LayoutOptimizerCommon {
         };
         final candidate = item.copyWith(gridX: x, gridY: y);
         if (blocksOpening(candidate)) continue;
-        if (rank == 4 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
+        if (rank == 1 && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
           continue;
         }
         final clash = alreadyOnHost.any(
@@ -1048,6 +1253,43 @@ class LayoutOptimizerCommon {
               SurfaceMounts.deskTopFootprintsConflict(candidate, o),
         );
         if (!clash) return clampRoom(x, y);
+      }
+    }
+
+    // PC that fits the desk must stay on the desk — never drop to the floor.
+    if (rank == 1 && fitsOnDesk) {
+      for (final (x, y) in <(double, double)>[
+        (hiX, backY.clamp(loY, hiY)),
+        (loX, backY.clamp(loY, hiY)),
+        (hiX, loY),
+        (loX, loY),
+        (hiX, hiY),
+        (loX, hiY),
+      ]) {
+        final candidate = item.copyWith(gridX: x, gridY: y);
+        if (blocksOpening(candidate)) continue;
+        if (_onWorkFaceSideOfDesk(candidate, host, workFace)) continue;
+        final clash = alreadyOnHost.any(
+          (o) =>
+              LayoutCollision.overlaps(candidate, o) &&
+              SurfaceMounts.deskTopFootprintsConflict(candidate, o),
+        );
+        if (!clash) return clampRoom(x, y);
+      }
+      // Prefer a free back-edge cell over stacking on the monitor.
+      for (var t = 0.0; t <= 1.001; t += 0.05) {
+        final y = (loY + (hiY - loY) * t).clamp(loY, hiY);
+        for (final x in [hiX, loX]) {
+          final candidate = item.copyWith(gridX: x, gridY: y);
+          if (blocksOpening(candidate)) continue;
+          if (_onWorkFaceSideOfDesk(candidate, host, workFace)) continue;
+          final clash = alreadyOnHost.any(
+            (o) =>
+                LayoutCollision.overlaps(candidate, o) &&
+                SurfaceMounts.deskTopFootprintsConflict(candidate, o),
+          );
+          if (!clash) return clampRoom(x, y);
+        }
       }
     }
 
@@ -1095,7 +1337,7 @@ class LayoutOptimizerCommon {
           y >= host.gridY - 0.01 &&
           x + item.width <= host.gridX + host.width + 0.01 &&
           y + item.height <= host.gridY + host.height + 0.01;
-      if (rank == 4 && onDesk && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
+      if (rank == 1 && onDesk && _onWorkFaceSideOfDesk(candidate, host, workFace)) {
         continue;
       }
       final clash = alreadyOnHost.any(
@@ -1106,12 +1348,30 @@ class LayoutOptimizerCommon {
       if (!clash) return (x, y);
     }
 
-    // Last resort: back corner of the desk if it fits, else wall-flush indoors.
+    // Last resort: first free back-edge cell — never intentionally stack.
     if (fitsOnDesk) {
-      return clampRoom(backX.clamp(loX, hiX), backY.clamp(loY, hiY));
+      for (var t = 0.0; t <= 1.001; t += 0.05) {
+        final (x, y) = switch (workFace) {
+          'east' => (loX, (loY + (hiY - loY) * t).clamp(loY, hiY)),
+          'west' => (hiX, (loY + (hiY - loY) * t).clamp(loY, hiY)),
+          'north' => ((loX + (hiX - loX) * t).clamp(loX, hiX), hiY),
+          _ => ((loX + (hiX - loX) * t).clamp(loX, hiX), loY),
+        };
+        final candidate = item.copyWith(gridX: x, gridY: y);
+        if (blocksOpening(candidate)) continue;
+        final clash = alreadyOnHost.any(
+          (o) =>
+              LayoutCollision.overlaps(candidate, o) &&
+              SurfaceMounts.deskTopFootprintsConflict(candidate, o),
+        );
+        if (!clash) return clampRoom(x, y);
+      }
     }
     return clampRoom(preferX, preferY);
   }
+
+  /// Gap between desk-top footprints along the wall (cells).
+  static const _deskTopGap = 0.05;
 
   /// Offset beside [monitor] along the wall axis (perpendicular to [workFace]).
   static (double, double) _besideAlongWall({
@@ -1124,10 +1384,11 @@ class LayoutOptimizerCommon {
     required double hiY,
     bool preferOpposite = false,
   }) {
+    const g = _deskTopGap;
     if (workFace == 'south' || workFace == 'north') {
       // Wall runs along X — sit left or right of the monitor, same back Y.
-      final left = monitor.gridX - item.width;
-      final right = monitor.gridX + monitor.width;
+      final left = monitor.gridX - item.width - g;
+      final right = monitor.gridX + monitor.width + g;
       final y = monitor.gridY.clamp(loY, hiY);
       if (!preferOpposite) {
         if (left >= loX - 0.01) return (left.clamp(loX, hiX), y);
@@ -1137,8 +1398,8 @@ class LayoutOptimizerCommon {
       return (left.clamp(loX, hiX), y);
     }
     // Wall runs along Y — sit north/south of the monitor, same back X.
-    final up = monitor.gridY - item.height;
-    final down = monitor.gridY + monitor.height;
+    final up = monitor.gridY - item.height - g;
+    final down = monitor.gridY + monitor.height + g;
     final x = monitor.gridX.clamp(loX, hiX);
     if (!preferOpposite) {
       if (up >= loY - 0.01) return (x, up.clamp(loY, hiY));
@@ -1307,10 +1568,10 @@ class LayoutOptimizerCommon {
           );
         }
       } else if (hay.contains('shelf') || hay.contains('book') || hay.contains('wardrobe')) {
-        // Tall storage flush to a wall/corner — never mid-room (interior guides).
+        // Tall storage on a wall/corner — keep fully inside the grid (no overflow).
         final onRight = door == null || door.gridX < cols * 0.5;
         var sx = onRight ? (cols - f.width).clamp(0.0, cols - f.width) : 0.0;
-        var sy = (rows - f.height - 0.15).clamp(0.0, rows - f.height);
+        var sy = (rows - f.height).clamp(0.0, rows - f.height);
         // Prefer a free corner if the default is already claimed.
         if (desk != null) {
           final deskPose = targets[desk.id];
@@ -1743,6 +2004,9 @@ class LayoutOptimizerCommon {
       gridCols: gridCols,
       gridRows: gridRows,
     );
+    // Yaw can swap desk AABBs — re-pack the top so PC/monitor/lamp stay clear.
+    next = mountDeskTopItems(next, gridCols: gridCols, gridRows: gridRows);
+    next = separateDeskTopOverlaps(next);
     return List.unmodifiable(next);
   }
 
@@ -1888,32 +2152,64 @@ class LayoutOptimizerCommon {
     );
     if (score >= 0.45) return next;
 
+    final door = findDoor(next);
+    final prospectBefore = ComfortHeuristics.doorProspectScore(
+      chair: chair,
+      desk: desk,
+      door: door,
+    );
+
     // Flip desk to the opposite side wall for side-light (OSHA-style guidance).
     final preferEast = desk.gridX + desk.width * 0.5 <= cols * 0.5;
-    final deskIdx = next.indexWhere((f) => f.id == desk.id);
-    if (deskIdx >= 0) {
-      next[deskIdx] = _orientDeskAlongSideWall(
-        desk,
-        cols: cols,
-        rows: rows,
-        preferEast: preferEast,
-      );
-    }
-    final deskNow = findDesk(next)!;
+    final trialDesk = _orientDeskAlongSideWall(
+      desk,
+      cols: cols,
+      rows: rows,
+      preferEast: preferEast,
+    );
+    ({double x, double y})? trialChairPose;
     if (chair != null && !chair.locked) {
-      final avoid = next.where((f) => f.id != chair.id).toList();
-      final pose = chairInFrontOfDesk(
-        deskNow,
+      final avoid = [
+        for (final f in next)
+          if (f.id == desk.id) trialDesk else if (f.id != chair.id) f,
+      ];
+      trialChairPose = chairInFrontOfDesk(
+        trialDesk,
         chair,
         cols: cols,
         rows: rows,
-        door: findDoor(next),
+        door: door,
         avoid: avoid,
         alignWith: findMonitor(next),
       );
+    }
+    final trialChair = chair == null || trialChairPose == null
+        ? chair
+        : chair.copyWith(gridX: trialChairPose.x, gridY: trialChairPose.y);
+    final prospectAfter = ComfortHeuristics.doorProspectScore(
+      chair: trialChair,
+      desk: trialDesk,
+      door: door,
+    );
+    // Side-light must not turn the seat's back to the door (prospect–refuge).
+    if (prospectBefore >= 0.45 && prospectAfter + 0.02 < prospectBefore) {
+      return next;
+    }
+    if (prospectAfter < 0.45 && prospectBefore >= prospectAfter) {
+      return next;
+    }
+
+    final deskIdx = next.indexWhere((f) => f.id == desk.id);
+    if (deskIdx >= 0) {
+      next[deskIdx] = trialDesk;
+    }
+    if (chair != null && trialChairPose != null && !chair.locked) {
       final chairIdx = next.indexWhere((f) => f.id == chair.id);
       if (chairIdx >= 0) {
-        next[chairIdx] = chair.copyWith(gridX: pose.x, gridY: pose.y);
+        next[chairIdx] = chair.copyWith(
+          gridX: trialChairPose.x,
+          gridY: trialChairPose.y,
+        );
       }
     }
     return mountDeskTopItems(next);
@@ -2239,7 +2535,14 @@ class LayoutOptimizerCommon {
     final chair = findChair(next);
     final door = findDoor(next);
     if (desk != null && !desk.locked) {
-      final preferEast = desk.gridX + desk.width * 0.5 > gridCols * 0.5;
+      var preferEast = desk.gridX + desk.width * 0.5 > gridCols * 0.5;
+      // Keep the desk on the door's wall side so the seat faces the entry half
+      // of the room (east-wall desk + west door ⇒ permanent back-to-door).
+      if (door != null) {
+        final doorCx = door.gridX + door.width * 0.5;
+        if (doorCx < gridCols * 0.4) preferEast = false;
+        if (doorCx > gridCols * 0.6) preferEast = true;
+      }
       final pinned = _pinDeskToSideWall(
         desk: desk,
         x: desk.gridX,
