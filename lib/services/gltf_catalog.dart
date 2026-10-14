@@ -319,11 +319,10 @@ class GltfCatalog {
       targetDepthMeters: 0.50,
     ),
     // HVAC GLBs under assets/gltf/hvac/ (see SOURCES.md).
-    // Sketchfab trial: fan.glb — large (~18 MB); swap back to stand_fan.glb if slow.
+    // Sketchfab stand fan (~18 MB). Compact fallback: stand_fan.glb.
     'fan': const MeshProfile(
       iconName: 'fan',
-      // Prefer compact stand_fan (blow along +Z); fan.glb is a large Sketchfab trial.
-      assetPath: '$hvacDir/stand_fan.glb',
+      assetPath: '$hvacDir/fan.glb',
       heightMeters: 1.05,
       role: MeshSimRole.emitter,
       airflowSolid: 0.15,
