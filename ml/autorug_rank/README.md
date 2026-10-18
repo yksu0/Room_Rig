@@ -51,6 +51,16 @@ Checkpoint → `ml/runs/autorug_rank/ranker.joblib` (gitignored). Eval prints pa
 accuracy, pointwise MAE, top-1/top-2, and mean Hub regret. Training also writes
 deployable `assets/models/autorug_rank_ridge.json`.
 
+## A/B: pipeline vs AI (Hub scores)
+
+Same Auto-Rig proposals, two sorts; Hub overall always from simulators:
+
+```powershell
+flutter test tool/compare_autorug_sort.dart --dart-define=AUTORUG_ROOMS=24
+```
+
+Writes `ml/runs/autorug_compare/summary.json` (agree rate, mean Hub, regret).
+
 ## On-device sort (Dart ridge)
 
 Loaded in `main.dart`. Sorting stays **pipeline-by-default**; enable with:
