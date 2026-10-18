@@ -19,6 +19,7 @@ import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import '../widgets/active_room_chip.dart';
 import '../widgets/confirm_dialogs.dart';
+import '../widgets/room_status_strip.dart';
 import '../widgets/rig_customizer/rig_scan_action_button.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/furniture_shapes.dart';
@@ -379,6 +380,22 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     Text(
                       sizeLabel,
                       style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    RoomStatusStrip(
+                      compact: true,
+                      onTapScores: () {
+                        if (!desktop) {
+                          _adaptivePanelControllerFor(state)
+                              .openPanel(context, ChromeRegion.inspect);
+                        }
+                      },
+                      onTapConflicts: () {
+                        if (!desktop) {
+                          _adaptivePanelControllerFor(state)
+                              .openPanel(context, ChromeRegion.inspect);
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -1448,6 +1465,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     ),
                   ),
                 ),
+              ),
+              const Positioned(
+                left: 10,
+                bottom: 10,
+                child: IgnorePointer(child: ModelHonestyBadge()),
               ),
               if (canMoveSelected || _rigMoveMode || state.hasPendingPlacement)
                 Positioned(

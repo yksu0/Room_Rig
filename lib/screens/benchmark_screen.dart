@@ -12,6 +12,7 @@ import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import '../widgets/active_room_chip.dart';
 import '../widgets/airflow_voxel_painter.dart';
+import '../widgets/room_status_strip.dart';
 import '../widgets/bench_room_views.dart';
 import '../widgets/bench_panel_scaffold.dart';
 import '../widgets/chrome/bench_results_chrome.dart';
@@ -280,6 +281,13 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             alignment: Alignment.centerLeft,
             child: ActiveRoomChip(),
           ),
+          const SizedBox(height: 8),
+          RoomStatusStrip(
+            compact: true,
+            onTapScores: () {
+              // Stay on Bench — scores already drive the active mode body.
+            },
+          ),
           const SizedBox(height: 10),
           _buildModeSelector(state, compact: true),
         ],
@@ -288,10 +296,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   }
 
   Widget _buildMobileHeader() {
-    return const Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           'BENCH CENTER',
           style: TextStyle(
             color: AppColors.cyan,
@@ -300,8 +308,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             letterSpacing: 2.8,
           ),
         ),
-        SizedBox(height: AppSpace.xxs),
-        Text(
+        const SizedBox(height: AppSpace.xxs),
+        const Text(
           'Room Stress Tests',
           style: TextStyle(
             color: AppColors.textPrimary,
@@ -309,11 +317,13 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             fontWeight: FontWeight.w800,
           ),
         ),
-        SizedBox(height: AppSpace.sm),
-        Align(
+        const SizedBox(height: AppSpace.sm),
+        const Align(
           alignment: Alignment.centerLeft,
           child: ActiveRoomChip(),
         ),
+        const SizedBox(height: AppSpace.sm),
+        RoomStatusStrip(compact: true),
       ],
     );
   }

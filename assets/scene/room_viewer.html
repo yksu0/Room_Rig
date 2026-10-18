@@ -194,7 +194,7 @@
       shadowSources = 1;
     }
 
-    // Task / floor lamps: local warm glow only (no castShadow).
+    // Task / floor lamps: local warm glow + emissive mesh (live “on” state).
     for (const { it, kind } of localLamps.slice(0, 4)) {
       const cfg = LOCAL_LAMPS[kind];
       const wrap = furnitureRoot.children.find((c) => c.userData.itemId === it.id);
@@ -209,11 +209,49 @@
           z = (box.min.z + box.max.z) * 0.5;
           y = box.min.y + (box.max.y - box.min.y) * cfg.heightFrac;
         }
+        wrap.traverse((o) => {
+          if (!o.isMesh || !o.material) return;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m) => {
+            if (!m || !m.emissive) return;
+            if (!m.userData.lampLit) {
+              m.userData.lampLit = true;
+              m.emissive.setHex(cfg.color);
+            }
+            m.emissiveIntensity = 0.65;
+          });
+        });
       }
-      const pl = new THREE.PointLight(cfg.color, cfg.intensity, cfg.distance, 2);
+      const pl = new THREE.PointLight(cfg.color, cfg.intensity * 1.15, cfg.distance, 2);
       pl.castShadow = false;
       pl.position.set(x, y, z);
       interiorLightRoot.add(pl);
+    }
+
+    // Stand fans / AC niches: soft cyan wash so airflow gear reads “active”.
+    for (const it of list) {
+      const kind = (it.kind || '').toLowerCase();
+      if (kind !== 'fan' && kind !== 'ac' && kind !== 'wallac' && kind !== 'portableac') continue;
+      const wrap = furnitureRoot.children.find((c) => c.userData.itemId === it.id);
+      let x = +it.x || roomW * 0.5;
+      let y = (+it.y || 0) + 0.6;
+      let z = +it.z || roomD * 0.5;
+      if (wrap) {
+        wrap.updateWorldMatrix(true, true);
+        const box = new THREE.Box3().setFromObject(wrap);
+        if (!box.isEmpty()) {
+          x = (box.min.x + box.max.x) * 0.5;
+          y = (box.min.y + box.max.y) * 0.55;
+          z = (box.min.z + box.max.z) * 0.5;
+        }
+      }
+      const base = kind === 'fan' ? 0.55 : 0.35;
+      const breeze = new THREE.PointLight(0x66e8ff, base, 2.8, 2);
+      breeze.castShadow = false;
+      breeze.position.set(x, y, z);
+      breeze.userData.airPulse = true;
+      breeze.userData.basePulse = base;
+      interiorLightRoot.add(breeze);
     }
 
     sun.intensity = shadowSources ? 0.2 : 0.35;
@@ -270,10 +308,49 @@
     // No patio slab — it used to overlap ~5 cm past the south wall into the floor.
   }
 
+  /** Tag shell meshes so camera-facing walls can fade (House Control cutaway). */
+  function markCutaway(mesh, outNx, outNz) {
+    mesh.userData.cutaway = true;
+    mesh.userData.outNx = outNx;
+    mesh.userData.outNz = outNz;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    mats.forEach((mat) => {
+      if (!mat) return;
+      mat.transparent = true;
+      if (mat.userData.baseOpacity == null) {
+        mat.userData.baseOpacity = mat.opacity != null ? mat.opacity : 1;
+      }
+    });
+  }
+
+  /** Fade exterior walls whose outward normal faces the camera. */
+  function updateWallCutaway() {
+    const cx = roomW * 0.5;
+    const cz = roomD * 0.5;
+    let dx = camera.position.x - cx;
+    let dz = camera.position.z - cz;
+    const len = Math.hypot(dx, dz) || 1;
+    dx /= len;
+    dz /= len;
+    roomRoot.traverse((obj) => {
+      if (!obj.isMesh || !obj.userData.cutaway) return;
+      const facing = obj.userData.outNx * dx + obj.userData.outNz * dz > 0.22;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach((mat) => {
+        if (!mat) return;
+        const base = mat.userData.baseOpacity != null ? mat.userData.baseOpacity : 1;
+        mat.opacity = facing ? Math.min(0.07, base * 0.12) : base;
+        mat.depthWrite = !facing;
+      });
+      obj.castShadow = !facing;
+    });
+  }
+
   /** Build a wall along +X or +Z with rectangular openings cut as gaps. */
   function buildWallWithOpenings({
     alongX, // true => wall runs on X at fixed Z
     length, fixed, height, thick, openings, inwardSign, wallMat, glassMat,
+    outNx, outNz,
   }) {
     // openings: [{ along0, along1, y0, y1, glass, through }]
     // through=true (door/window): cut shell + glass/daylight.
@@ -308,6 +385,7 @@
       }
       m.castShadow = true;
       m.receiveShadow = true;
+      markCutaway(m, outNx, outNz);
       roomRoot.add(m);
     });
 
@@ -329,6 +407,7 @@
         else sill.position.set(fixed, op.y0 / 2, (op.along0 + op.along1) / 2);
         sill.castShadow = true;
         sill.receiveShadow = true;
+        markCutaway(sill, outNx, outNz);
         roomRoot.add(sill);
       }
       if (op.y1 < height - 0.04) {
@@ -341,6 +420,7 @@
         else head.position.set(fixed, op.y1 + hh / 2, (op.along0 + op.along1) / 2);
         head.castShadow = true;
         head.receiveShadow = true;
+        markCutaway(head, outNx, outNz);
         roomRoot.add(head);
       }
       const oh = Math.max(0.08, op.y1 - op.y0);
@@ -480,21 +560,26 @@
     // and made flush shelves / beds clip into the plaster.
     // north z=0 inward +Z; south z=d inward -Z; west x=0 inward +X; east x=w inward -X
     const halfT = thick * 0.5;
+    // Outward normals: north −Z, south +Z, west −X, east +X.
     buildWallWithOpenings({
       alongX: true, length: w, fixed: -halfT, height: h, thick,
       openings: byWall.north, inwardSign: 1, wallMat, glassMat,
+      outNx: 0, outNz: -1,
     });
     buildWallWithOpenings({
       alongX: true, length: w, fixed: d + halfT, height: h, thick,
       openings: byWall.south, inwardSign: -1, wallMat, glassMat,
+      outNx: 0, outNz: 1,
     });
     buildWallWithOpenings({
       alongX: false, length: d, fixed: -halfT, height: h, thick,
       openings: byWall.west, inwardSign: 1, wallMat, glassMat,
+      outNx: -1, outNz: 0,
     });
     buildWallWithOpenings({
       alongX: false, length: d, fixed: w + halfT, height: h, thick,
       openings: byWall.east, inwardSign: -1, wallMat, glassMat,
+      outNx: 1, outNz: 0,
     });
 
     const ceil = new THREE.Mesh(
@@ -1328,9 +1413,17 @@
     } catch (_) {}
   }).catch(() => rebuildRoom(roomW, roomD, roomH, []));
 
-  function frame() {
+  function frame(now) {
     resize();
     updateCamera();
+    updateWallCutaway();
+    const t = (now || 0) * 0.001;
+    for (const c of interiorLightRoot.children) {
+      if (c.isLight && c.userData.airPulse) {
+        const base = c.userData.basePulse != null ? c.userData.basePulse : 0.4;
+        c.intensity = base * (0.82 + 0.18 * Math.sin(t * 3.2));
+      }
+    }
     drawMiniMap();
     renderer.render(scene, camera);
     if (dragId) updateLoupe(loupeClientX, loupeClientY);
