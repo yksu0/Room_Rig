@@ -27,7 +27,7 @@ if (Test-Path $localCfg) {
   }
   Write-Host "Loaded Supabase defines from supabase.local.json"
 } else {
-  Write-Host "No supabase.local.json — guest-only mode (see supabase.local.json.example)"
+  Write-Host "No supabase.local.json - guest-only mode (see supabase.local.json.example)"
 }
 
 $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
