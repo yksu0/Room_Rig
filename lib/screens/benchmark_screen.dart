@@ -17,10 +17,10 @@ import '../widgets/bench_room_views.dart';
 import '../widgets/bench_panel_scaffold.dart';
 import '../widgets/chrome/bench_results_chrome.dart';
 import '../widgets/ergonomics_bench_panel.dart';
-import '../widgets/glass_card.dart';
 import '../widgets/lighting_bench_panel.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/spatial_bench_panel.dart';
+import '../widgets/chrome/adaptive_panel.dart';
 
 enum _AirflowStep { layout, simulate, results }
 enum _RoomViewMode { twoD, threeD, compare }
@@ -213,32 +213,30 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
-        child: ValueListenableBuilder<bool>(
-          valueListenable: _scrollLocked,
-          builder: (context, scrollLocked, _) {
-            return SingleChildScrollView(
-              physics: scrollLocked
-                  ? const NeverScrollableScrollPhysics()
-                  : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
               padding: const EdgeInsets.fromLTRB(
                 AppSpace.screen,
-                AppSpace.lg,
+                AppSpace.sm,
                 AppSpace.screen,
-                AppSpace.xxl,
+                AppSpace.xs,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildMobileHeader(),
-                  const SizedBox(height: AppSpace.lg),
-                  _buildModeSelector(state),
-                  const SizedBox(height: AppSpace.lg),
-                  _buildModeBody(state, desktop: false),
-                  const SizedBox(height: AppSpace.xxl),
-                ],
+              child: _buildMobileHeader(state),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.screen,
+                  AppSpace.sm,
+                  AppSpace.screen,
+                  AppSpace.md,
+                ),
+                child: _buildModeBody(state, desktop: false),
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );
@@ -253,11 +251,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       case 'ergonomics':
         return ErgonomicsBenchPanel(onOrbitDraggingChanged: _setOrbitDragging);
       default:
-        if (desktop) return _buildAirflowDesktop(state);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: _buildAirflowPrototype(state),
-        );
+        return _buildAirflowDesktop(state);
     }
   }
 
@@ -336,8 +330,54 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     );
   }
 
-  Widget _buildMobileHeader() {
-    final state = context.watch<AppState>();
+  Widget _buildMobileHeader(AppState state) {
+    final toolsController = AdaptivePanelController([
+      AdaptivePanelSpec(
+        region: ChromeRegion.tools,
+        preferTall: true,
+        builder: (ctx) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildModeScoreHero(state, expand: true),
+            const SizedBox(height: 16),
+            Text(
+              'DOMAIN',
+              style: TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.6,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildModeSelector(state),
+          ],
+        ),
+      ),
+      AdaptivePanelSpec(
+        region: ChromeRegion.inspect,
+        builder: (ctx) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            RoomStatusStrip(
+              onTapScores: () {},
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Scores stay ROUGH EST. until you Apply a Bench run. '
+              'Open View / Tools on the domain panel for layout and simulate controls.',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ]);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -350,24 +390,21 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             letterSpacing: 2.8,
           ),
         ),
-        const SizedBox(height: AppSpace.xxs),
-        const Text(
-          'Room Stress Tests',
-          style: TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: AppSpace.sm),
+        const SizedBox(height: 4),
         const Align(
           alignment: Alignment.centerLeft,
           child: ActiveRoomChip(),
         ),
-        const SizedBox(height: AppSpace.sm),
+        const SizedBox(height: 8),
         RoomStatusStrip(compact: true),
-        const SizedBox(height: AppSpace.sm),
-        _buildModeScoreHero(state),
+        const SizedBox(height: 8),
+        // Mode chips stay compact (Rig Edit|Orbit|Check pattern).
+        _buildModeSelector(state, compact: true),
+        const SizedBox(height: 8),
+        AdaptivePanelTriggers(
+          controller: toolsController,
+          visible: const [ChromeRegion.tools, ChromeRegion.inspect],
+        ),
       ],
     );
   }
@@ -405,6 +442,46 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         child: CircularProgressIndicator(color: AppColors.cyan),
       );
     }
+    final desktop = AppLayout.isDesktop(context);
+    if (!desktop) {
+      // Same Rig-style View/Tools/Inspect sheets as other Bench domains.
+      return BenchPanelScaffold(
+        accentColor: AppColors.airflowColor,
+        step: _airflowStepIndex,
+        stepLabels: const ['1. Layout', '2. Voxel Sim', '3. Results'],
+        resultsEnabled: _showResults,
+        running: false,
+        onStepChanged: (i) => setState(() {
+          final next = _airflowStepFromIndex(i);
+          if (next == _AirflowStep.results && !_showResults) return;
+          _airflowStep = next;
+        }),
+        layoutRunAction: BenchRunAction(
+          buttonLabel: 'RUN VOXEL AIRFLOW BENCH',
+          icon: RoomSvg.scan,
+          onRun: _runBenchmark,
+          hint: _layouts?.fellBackToSample ?? false
+              ? 'Rig is empty — My Room / Improved use the reference sample.'
+              : 'Coarse voxel airflow on your Rig furniture, then Improved under your weight mix.',
+        ),
+        middleRunAction: BenchRunAction(
+          buttonLabel: 'SEE RESULTS',
+          icon: RoomSvg.trendingUp,
+          onRun: () {
+            setState(() {
+              _simVariant = BenchLayoutKind.improved;
+              _airflowStep = _AirflowStep.results;
+              _showResults = true;
+            });
+          },
+        ),
+        desktopControls: _airflowDesktopControls(state),
+        desktopViewport: _airflowDesktopViewport(state),
+        desktopInspect: _airflowDesktopInspect(state),
+        onApply: null,
+        onRefresh: () => _rebuildFromRoom(state),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -423,6 +500,18 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       ],
     );
   }
+
+  int get _airflowStepIndex => switch (_airflowStep) {
+        _AirflowStep.layout => 0,
+        _AirflowStep.simulate => 1,
+        _AirflowStep.results => 2,
+      };
+
+  _AirflowStep _airflowStepFromIndex(int i) => switch (i) {
+        1 => _AirflowStep.simulate,
+        2 => _AirflowStep.results,
+        _ => _AirflowStep.layout,
+      };
 
   Widget _airflowDesktopControls(AppState state) {
     switch (_airflowStep) {
@@ -817,154 +906,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     );
   }
 
-  List<Widget> _buildAirflowPrototype(AppState state) {
-    _syncFromState(state);
-
-    if (!_prototypeReady) {
-      return [
-        const Center(
-          child: Padding(
-            padding: EdgeInsets.all(40),
-            child: CircularProgressIndicator(color: AppColors.cyan),
-          ),
-        ),
-      ];
-    }
-
-    return [
-      _buildAirflowStepTabs(),
-      const SizedBox(height: 16),
-      if (_airflowStep == _AirflowStep.layout) ...[
-        _buildLayoutSection(state),
-        const SizedBox(height: 16),
-        _buildPrimaryButton(
-          label: 'RUN VOXEL AIRFLOW BENCH',
-          icon: RoomSvg.scan,
-          onTap: _runBenchmark,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _layouts?.fellBackToSample ?? false
-              ? 'Rig is empty — My Room / Improved use the reference sample. Add furniture on Rig to bench your space. Improved uses your Auto-Rig weight mix.'
-              : 'Coarse voxel airflow (not CFD) on your Rig furniture, then Auto-Rig Improved under your Rig weight mix.',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
-        ),
-      ],
-      if (_airflowStep == _AirflowStep.simulate) ...[
-        _buildSimulationSection(state),
-        const SizedBox(height: 16),
-        _buildPrimaryButton(
-          label: 'SEE RESULTS',
-          icon: RoomSvg.trendingUp,
-          onTap: () {
-            setState(() {
-              _simVariant = BenchLayoutKind.improved;
-              _airflowStep = _AirflowStep.results;
-              _showResults = true;
-            });
-          },
-        ),
-      ],
-      if (_airflowStep == _AirflowStep.results) ...[
-        _buildSimulationSection(state),
-        const SizedBox(height: 20),
-        _buildAirflowResults(state),
-        const SizedBox(height: 16),
-        Builder(
-          builder: (context) {
-            final validation = _validationForSimVariant(state);
-            final noOp = improvedLayoutIsNoOp(_layouts);
-            final blocked = noOp || validation.hasHardLayoutConflicts;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (noOp) ...[
-                  benchImprovedNoOpBanner(
-                    message:
-                        'Improved layout matches your room — airflow is already as good as the optimizer found.',
-                  ),
-                  const SizedBox(height: 12),
-                ] else ...[
-                  benchWhyWinsCard(
-                    reasons: _layouts?.improvedReasons ?? const [],
-                    accentColor: AppColors.airflowColor,
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildPrimaryButton(
-                        label: 'APPLY IMPROVED LAYOUT',
-                        icon: RoomSvg.star,
-                        onTap: blocked
-                            ? null
-                            : () async {
-                                if (!await confirmBenchApply(
-                                  context,
-                                  validation: validation,
-                                  fellBackToSample: _layouts?.fellBackToSample ?? false,
-                                )) {
-                                  return;
-                                }
-                                if (!context.mounted) return;
-                                final before = List<FurnitureItem>.from(state.committedFurniture);
-                                state.applyFurnitureLayout(
-                                  _furnitureFor(BenchLayoutKind.improved),
-                                  markOptimized: true,
-                                  lockMode: 'airflow',
-                                );
-                                final diff = summarizeLayoutDiff(before, state.furniture);
-                                final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
-                                final room = state.currentRoomData;
-                                final after = List<FurnitureItem>.from(state.furniture);
-                                showBenchApplySnackBar(
-                                  context,
-                                  message: why.isEmpty
-                                      ? 'Airflow applied · $diff'
-                                      : 'Airflow applied · $diff · $why',
-                                  accentColor: AppColors.cyan,
-                                  onOpenRig: () => state.setTab(2),
-                                  onShareImage: () => LayoutShareImage.shareBeforeAfter(
-                                    gridCols: room.gridCols,
-                                    gridRows: room.gridRows,
-                                    before: before,
-                                    after: after,
-                                    footer: why.isEmpty ? diff : '$diff · $why',
-                                  ),
-                                );
-                              },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildIconButton(
-                      icon: Icons.refresh_rounded,
-                      onTap: () {
-                        _rebuildFromRoom(state);
-                      },
-                    ),
-                  ],
-                ),
-                if (blocked) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    validation.hasHardLayoutConflicts
-                        ? 'Fix overlaps or blocked doorways before applying.'
-                        : 'Improved layout matches your room — nothing to apply.',
-                    style: TextStyle(
-                      color: AppColors.amber.withValues(alpha: 0.95),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ],
-            );
-          },
-        ),
-      ],
-    ];
-  }
 
   Widget _buildAirflowStepTabs() {
     final steps = [
@@ -1005,196 +946,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     );
   }
 
-  Widget _buildLayoutSection(AppState state) {
-    final furniture = _layoutFurnitureFor(state);
-    final room = state.currentRoomData;
-    final notes = _notesFor(_layoutVariant);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'ROOM LAYOUT',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
-        ),
-        const SizedBox(height: 10),
-        BenchVariantChips(
-          selected: _layoutVariant,
-          onChanged: _setLayoutVariant,
-          ),
-        BenchViewChips(
-          children: [
-            BenchChip(
-              label: '2D',
-              selected: _roomViewMode == _RoomViewMode.twoD,
-              color: AppColors.cyan,
-              onTap: () => setState(() => _roomViewMode = _RoomViewMode.twoD),
-            ),
-            BenchChip(
-              label: '3D',
-              selected: _roomViewMode == _RoomViewMode.threeD,
-              color: AppColors.cyan,
-              onTap: () => setState(() => _roomViewMode = _RoomViewMode.threeD),
-            ),
-            BenchChip(
-              label: 'Compare',
-              selected: _roomViewMode == _RoomViewMode.compare,
-              color: AppColors.cyan,
-              onTap: () => setState(() => _roomViewMode = _RoomViewMode.compare),
-            ),
-          ],
-        ),
-        BenchAutoRigMixBar(
-          layouts: _layouts,
-          onTryAlternate: () {
-            context.read<AppState>().cycleBenchAlternate();
-            setState(() {
-              _layoutVariant = BenchLayoutKind.improved;
-              _roomViewMode = _RoomViewMode.compare;
-            });
-          },
-        ),
-        const SizedBox(height: 12),
-        GlassCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  SvgIcon(RoomSvg.house, size: 18, color: AppColors.cyan),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _roomViewMode == _RoomViewMode.compare
-                          ? 'My Room vs Improved — same Auto-Rig mix as Rig'
-                          : switch (_layoutVariant) {
-                              BenchLayoutKind.myRoom =>
-                                (_layouts?.fellBackToSample ?? false)
-                                    ? 'Reference sample — Rig is empty (not your room)'
-                                    : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                              BenchLayoutKind.improved =>
-                                _layouts?.improvedCaption ?? 'Improved · Auto-Rig',
-                              BenchLayoutKind.sample =>
-                                'Sample room — AC in a corner, weak coverage',
-                            },
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (_roomViewMode == _RoomViewMode.compare)
-                BenchSideBySidePlans(
-                  gridCols: room.gridCols,
-                  gridRows: room.gridRows,
-                  myRoom: _furnitureFor(BenchLayoutKind.myRoom),
-                  improved: _furnitureFor(BenchLayoutKind.improved),
-                )
-              else
-                SizedBox(
-                  height: 300,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: ColoredBox(
-                      color: AppColors.surface,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 220),
-                        child: KeyedSubtree(
-                          key: ValueKey(
-                            '${_layoutVariant.name}_${_roomViewMode.name}_${_layouts?.fingerprint ?? ''}_${_layouts?.requestedAlternateIndex ?? 0}',
-                          ),
-                          child: _roomViewMode == _RoomViewMode.twoD
-                              ? _buildInteractive2DRoom(
-                                  gridCols: room.gridCols,
-                                  gridRows: room.gridRows,
-                                  furniture: furniture,
-                                )
-                              : BenchOrbitShell(
-                                  key: const ValueKey('bench_airflow_layout_orbit'),
-                                  initialYaw: _defaultYaw,
-                                  initialPitch: _defaultPitch,
-                                  initialDistance: _defaultDistance,
-                                  initialLookAtX: room.gridCols * 0.5,
-                                  initialLookAtZ: room.gridRows * 0.5,
-                                  roomWidth: room.gridCols.toDouble(),
-                                  roomDepth: room.gridRows.toDouble(),
-                                  resetNonce: _layoutOrbitResetNonce,
-                                  onDoubleTap: () {
-                                    HapticFeedback.lightImpact();
-                                    setState(() => _layoutOrbitResetNonce++);
-                                  },
-                                  onDragChanged: _setOrbitDragging,
-                                  builder: (cam) => CustomPaint(
-                                    painter: BenchRoom3DPainter(
-                                      roomWidth: room.gridCols.toDouble(),
-                                      roomDepth: room.gridRows.toDouble(),
-                                      roomHeight: 2.8,
-                                      gridCols: room.gridCols,
-                                      gridRows: room.gridRows,
-                                      yaw: cam.yaw,
-                                      pitch: cam.pitch,
-                                      distance: cam.distance,
-                                      lookAtX: cam.lookAtX,
-                                      lookAtZ: cam.lookAtZ,
-                                      furniture: furniture,
-                                    ),
-                                    child: const SizedBox.expand(),
-                                  ),
-                                ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              if (_selectedFurnitureId != null) ...[
-                const SizedBox(height: 10),
-                _buildInspectChip(
-                  furniture: furniture,
-                  mode: 'airflow',
-                ),
-              ],
-              const SizedBox(height: 12),
-              ...notes.map(
-                (n) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        _layoutVariant == BenchLayoutKind.sample
-                            ? Icons.warning_amber_rounded
-                            : Icons.check_circle_outline,
-                        size: 14,
-                        color: switch (_layoutVariant) {
-                          BenchLayoutKind.sample => AppColors.amber,
-                          BenchLayoutKind.myRoom => AppColors.cyan,
-                          BenchLayoutKind.improved => AppColors.green,
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          n,
-                          style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Switching layouts only changes what is displayed — it never writes to the
-  /// Rig. Pushing a layout back is the explicit Apply action under the results.
   void _setLayoutVariant(BenchLayoutKind next) {
     if (_layoutVariant == next) return;
     HapticFeedback.selectionClick();
@@ -1329,185 +1081,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     );
   }
 
-  Widget _buildSimulationSection(AppState state) {
-    _syncFromState(state);
-    final sim = _activeSim;
-    if (sim == null) return const SizedBox.shrink();
-    final metrics = sim.metrics;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'VOXEL AIRFLOW FIELD',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 2),
-        ),
-        const SizedBox(height: 10),
-        BenchVariantChips(
-          selected: _simVariant,
-          onChanged: (v) => setState(() => _simVariant = v),
-        ),
-        BenchViewChips(
-          children: [
-            BenchChip(
-              label: '2D',
-              selected: _simVizMode == AirflowVizMode.topDown2D,
-              color: AppColors.cyan,
-              onTap: () => setState(() => _simVizMode = AirflowVizMode.topDown2D),
-            ),
-            BenchChip(
-              label: '3D',
-              selected: _simVizMode == AirflowVizMode.orbit3D,
-              color: AppColors.cyan,
-              onTap: () => setState(() => _simVizMode = AirflowVizMode.orbit3D),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        BenchLayerToggles(
-          showParticles: _showParticles,
-          showHeatmap: _showHeatmap,
-          onParticles: (v) => setState(() => _showParticles = v),
-          onHeatmap: (v) => setState(() => _showHeatmap = v),
-        ),
-        const SizedBox(height: 8),
-        const BenchLegend(caption: 'Airflow field'),
-        const SizedBox(height: 12),
-        Container(
-          height: 300,
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: _simVizMode == AirflowVizMode.orbit3D
-                    ? _AirflowSimCanvas(
-                        sim: sim,
-                        furniture: _furnitureFor(_simVariant),
-                        vizMode: _simVizMode,
-                        showParticles: _showParticles,
-                        showHeatmap: _showHeatmap,
-                        orbitEnabled: true,
-                        roomWidth: sim.field.roomWidth,
-                        roomDepth: sim.field.roomDepth,
-                        gridCols: sim.field.roomWidth.round(),
-                        gridRows: sim.field.roomDepth.round(),
-                        lookAtX: sim.field.roomWidth * 0.5,
-                        lookAtZ: sim.field.roomDepth * 0.5,
-                        resetNonce: _simOrbitResetNonce,
-                        animating: state.currentTab == benchTabIndex &&
-                            (_airflowStep == _AirflowStep.simulate ||
-                                _airflowStep == _AirflowStep.results),
-                        onDoubleTap: () {
-                          HapticFeedback.lightImpact();
-                          setState(() => _simOrbitResetNonce++);
-                        },
-                        onDragChanged: _setOrbitDragging,
-                      )
-                    : _AirflowSimCanvas(
-                        sim: sim,
-                        furniture: _furnitureFor(_simVariant),
-                        vizMode: _simVizMode,
-                        showParticles: _showParticles,
-                        showHeatmap: _showHeatmap,
-                        orbitEnabled: false,
-                        roomWidth: sim.field.roomWidth,
-                        roomDepth: sim.field.roomDepth,
-                        gridCols: sim.field.roomWidth.round(),
-                        gridRows: sim.field.roomDepth.round(),
-                        lookAtX: sim.field.roomWidth * 0.5,
-                        lookAtZ: sim.field.roomDepth * 0.5,
-                        resetNonce: _simOrbitResetNonce,
-                        animating: state.currentTab == benchTabIndex &&
-                            (_airflowStep == _AirflowStep.simulate ||
-                                _airflowStep == _AirflowStep.results),
-                        onDoubleTap: () {
-                          HapticFeedback.lightImpact();
-                          setState(() => _simOrbitResetNonce++);
-                        },
-                        onDragChanged: (dragging) {
-                          _setOrbitDragging(dragging);
-                        },
-                      ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _metricCard('Circulation', metrics.circulationScore, AppColors.cyan)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _metricCard(
-                'Dead air',
-                metrics.deadZoneRatio * 100,
-                AppColors.red,
-                suffix: '%',
-                invertGood: true,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _metricCard(
-                'Exit flow',
-                metrics.exitChannelScore,
-                AppColors.airflowColor,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _metricCard(
-                'Heat pockets',
-                metrics.heatPocketRatio * 100,
-                AppColors.orange,
-                suffix: '%',
-                invertGood: true,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _metricCard(
-                'Work cool',
-                metrics.workZoneCooling,
-                AppColors.green,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _metricCard(
-                'HVAC clear',
-                metrics.hvacClearance,
-                AppColors.cyan,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _buildPressureReadout(_furnitureFor(_simVariant)),
-        const SizedBox(height: 8),
-        Text(
-          switch (_simVariant) {
-            BenchLayoutKind.improved =>
-              'Same furniture, rearranged — cold jets wrap obstacles and reach the heat sources.',
-            BenchLayoutKind.myRoom =>
-              'Field built from your Rig placements — AC throw, fan push and blockers are all live.',
-            BenchLayoutKind.sample =>
-              'Reference room: cold air stalls, heat pockets linger, smoke hugs blocked corners.',
-          },
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
-        ),
-      ],
-    );
-  }
 
   Widget _buildAirflowResults(AppState state) {
     final base = _myRoomSim!.metrics;
@@ -1634,21 +1207,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildIconButton({required IconData icon, VoidCallback? onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Icon(icon, color: AppColors.textSecondary, size: 20),
       ),
     );
   }

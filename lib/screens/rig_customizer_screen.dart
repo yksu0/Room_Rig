@@ -16,6 +16,7 @@ import '../models/scan_layout_model.dart';
 import '../services/layout_collision.dart';
 import '../services/layout_snap_guides.dart';
 import '../theme/app_layout.dart';
+import '../theme/app_money.dart';
 import '../theme/app_theme.dart';
 import '../widgets/active_room_chip.dart';
 import '../widgets/confirm_dialogs.dart';
@@ -3573,7 +3574,7 @@ class _AddItemSheetBodyState extends State<_AddItemSheetBody> {
             name: entry.name,
             detail: entry.description,
             category: entry.category,
-            trailing: entry.cost > 0 ? '\$${entry.cost.toStringAsFixed(0)}' : null,
+            trailing: entry.cost > 0 ? AppMoney.format(entry.cost) : null,
             onTap: () => widget.onAddCatalog(entry),
           ),
         ),

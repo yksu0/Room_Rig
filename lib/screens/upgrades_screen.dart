@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/upgrade_catalog.dart';
 import '../theme/app_layout.dart';
+import '../theme/app_money.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chrome/adaptive_panel.dart';
 import '../widgets/glass_card.dart';
@@ -165,7 +166,7 @@ class UpgradesScreen extends StatelessWidget {
           ),
           if (addedCount > 0)
             Text(
-              '\$${state.upgradesCost.toStringAsFixed(0)} spent',
+              '${AppMoney.format(state.upgradesCost)} spent',
               style: TextStyle(
                 color: AppColors.textMuted,
                 fontSize: 11,
@@ -587,7 +588,7 @@ class _UpgradeCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '\$${(upgrade['price'] as num?)?.toStringAsFixed(0) ?? '0'}',
+                    AppMoney.format((upgrade['price'] as num?) ?? 0),
                     style: const TextStyle(
                       color: AppColors.cyan,
                       fontSize: 12,
@@ -665,7 +666,7 @@ class _UpgradeCard extends StatelessWidget {
                         Row(
                           children: [
                             Text(
-                              '\$${(upgrade['price'] as num?)?.toStringAsFixed(0) ?? '0'}',
+                              AppMoney.format((upgrade['price'] as num?) ?? 0),
                               style: const TextStyle(
                                 color: AppColors.cyan,
                                 fontSize: 13,

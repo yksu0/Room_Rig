@@ -11,7 +11,7 @@ class UpgradeSpec {
   final double airflowBoost;
   final double lightingBoost;
   final double ergonomicsBoost;
-  /// Ballpark USD list-price placeholder for demos (not live retail).
+  /// Ballpark PHP (₱) list-price placeholder for demos (not live retail).
   final double price;
 
   const UpgradeSpec({

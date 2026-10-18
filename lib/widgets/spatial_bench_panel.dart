@@ -10,7 +10,6 @@ import '../services/benchmark_validator.dart';
 import '../services/layout_share_image.dart';
 import '../services/spatial_analyzer.dart';
 import '../services/furniture_sprites.dart';
-import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
@@ -273,8 +272,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
             accentColor: AppColors.spatialColor,
           );
 
-    final desktop = AppLayout.isDesktop(context);
-
     return BenchPanelScaffold(
       accentColor: AppColors.spatialColor,
       step: _stepIndex,
@@ -312,18 +309,16 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
           : (_improvedIsNoOp ? 'Improved layout matches your room — nothing to apply.' : null),
       onApply: applyImproved,
       onRefresh: _rebuild,
-      desktopControls: desktop ? _desktopControls(state) : null,
-      desktopViewport: desktop ? _desktopViewport(state) : null,
-      desktopInspect: desktop
-          ? _desktopInspect(
-              state,
-              resultsExtra: resultsExtra,
-              onApply: applyBlocked ? null : applyImproved,
-              applyBlockedReason: applyValidation.hasHardLayoutConflicts
-                  ? 'Fix overlaps or blocked doorways before applying.'
-                  : (_improvedIsNoOp ? 'Improved layout matches your room — nothing to apply.' : null),
-            )
-          : null,
+      desktopControls: _desktopControls(state),
+      desktopViewport: _desktopViewport(state),
+      desktopInspect: _desktopInspect(
+        state,
+        resultsExtra: resultsExtra,
+        onApply: applyBlocked ? null : applyImproved,
+        applyBlockedReason: applyValidation.hasHardLayoutConflicts
+            ? 'Fix overlaps or blocked doorways before applying.'
+            : (_improvedIsNoOp ? 'Improved layout matches your room — nothing to apply.' : null),
+      ),
     );
   }
 

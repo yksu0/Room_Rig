@@ -15,6 +15,8 @@ import 'glass_card.dart';
 import 'room_icons.dart';
 import 'score_ring.dart';
 
+export 'chrome/adaptive_panel.dart' show ChromeRegion;
+
 /// Step indices shared by all bench panels.
 const int benchStepLayout = 0;
 const int benchStepMiddle = 1;
@@ -1226,11 +1228,139 @@ class BenchPanelScaffold extends StatelessWidget {
     this.desktopInspect,
   });
 
-  bool _useDesktopShell(BuildContext context) {
-    return AppLayout.isDesktop(context) &&
-        desktopControls != null &&
-        desktopViewport != null &&
-        desktopInspect != null;
+  bool get _hasShellSlots =>
+      desktopControls != null && desktopViewport != null && desktopInspect != null;
+
+  bool _useDesktopShell(BuildContext context) =>
+      AppLayout.isDesktop(context) && _hasShellSlots;
+
+  /// Rig-style View / Tools / Inspect sheets; canvas stays in the page body.
+  Widget _mobileShellChrome(BuildContext context) {
+    final controller = AdaptivePanelController([
+      AdaptivePanelSpec(
+        region: ChromeRegion.view,
+        preferTall: true,
+        builder: (ctx) => SingleChildScrollView(child: desktopControls!),
+      ),
+      AdaptivePanelSpec(
+        region: ChromeRegion.tools,
+        preferTall: true,
+        builder: (ctx) => SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'STEP',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.6,
+                ),
+              ),
+              const SizedBox(height: 8),
+              BenchStepTabs(
+                accentColor: accentColor,
+                step: step,
+                labels: stepLabels,
+                resultsEnabled: resultsEnabled || running,
+                onStepChanged: (i) {
+                  Navigator.of(ctx).maybePop();
+                  onStepChanged(i);
+                },
+              ),
+              if (step == benchStepLayout && layoutRunAction != null) ...[
+                const SizedBox(height: 16),
+                layoutRunAction!,
+              ],
+              if (step == benchStepMiddle && middleRunAction != null) ...[
+                const SizedBox(height: 16),
+                middleRunAction!,
+              ],
+              if (step == benchStepResults && onApply != null && onRefresh != null) ...[
+                const SizedBox(height: 16),
+                BenchApplyRow(
+                  onApply: applyEnabled ? onApply : null,
+                  onRefresh: onRefresh!,
+                  blockedReason: applyEnabled ? null : applyBlockedReason,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      AdaptivePanelSpec(
+        region: ChromeRegion.inspect,
+        preferTall: true,
+        builder: (ctx) => SingleChildScrollView(child: desktopInspect!),
+      ),
+    ]);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        AdaptivePanelTriggers(
+          controller: controller,
+          accent: accentColor,
+          visible: const [
+            ChromeRegion.view,
+            ChromeRegion.tools,
+            ChromeRegion.inspect,
+          ],
+        ),
+        const SizedBox(height: 10),
+        BenchStepTabs(
+          accentColor: accentColor,
+          step: step,
+          labels: stepLabels,
+          resultsEnabled: resultsEnabled || running,
+          onStepChanged: onStepChanged,
+        ),
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          child: ColoredBox(
+            color: AppColors.surface,
+            child: SizedBox(
+              height: 320,
+              child: desktopViewport!,
+            ),
+          ),
+        ),
+        if (running && progress != null && progressLabel != null) ...[
+          const SizedBox(height: 12),
+          BenchProgressBar(
+            progress: progress!,
+            label: progressLabel!,
+            accentColor: accentColor,
+          ),
+        ],
+        if (step == benchStepLayout && layoutRunAction != null) ...[
+          const SizedBox(height: 12),
+          layoutRunAction!,
+        ],
+        if (step == benchStepMiddle && middleRunAction != null) ...[
+          const SizedBox(height: 12),
+          middleRunAction!,
+        ],
+        if (step == benchStepResults && !running) ...[
+          const SizedBox(height: 12),
+          if (resultsExtra != null) ...[
+            resultsExtra!,
+            const SizedBox(height: 12),
+          ],
+          ?resultsBody,
+          if (onApply != null && onRefresh != null) ...[
+            const SizedBox(height: 12),
+            BenchApplyRow(
+              onApply: applyEnabled ? onApply : null,
+              onRefresh: onRefresh!,
+              blockedReason: applyEnabled ? null : applyBlockedReason,
+            ),
+          ],
+        ],
+      ],
+    );
   }
 
   @override
@@ -1261,6 +1391,10 @@ class BenchPanelScaffold extends StatelessWidget {
           ),
         ],
       );
+    }
+
+    if (_hasShellSlots) {
+      return _mobileShellChrome(context);
     }
 
     return Column(
