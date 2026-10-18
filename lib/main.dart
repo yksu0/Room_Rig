@@ -1,11 +1,15 @@
 // lib/main.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'models/app_state.dart';
 import 'models/rig_catalog.dart';
+import 'services/auth_service.dart';
 import 'services/autorug_ranker.dart';
 import 'services/furniture_sprites.dart';
+import 'services/supabase_bootstrap.dart';
 import 'theme/app_layout.dart';
 import 'theme/app_theme.dart';
 import 'widgets/room_icons.dart';
@@ -31,6 +35,7 @@ void main() async {
     systemNavigationBarColor: Color(0xFF0A0B0F),
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+  await SupabaseBootstrap.ensureInitialized();
   await FurnitureSprites.warmCache({
     ...RigCatalog.items.map((e) => e.iconName),
     'fan',
@@ -52,8 +57,11 @@ void main() async {
     // Keep pipeline sort if weights are missing / mismatched.
   }
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => AppState(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthService()),
+        ChangeNotifierProvider(create: (_) => AppState()),
+      ],
       child: const RoomRigApp(),
     ),
   );
@@ -91,6 +99,8 @@ class _MainShellState extends State<_MainShell> {
   ];
 
   int? _handledTab;
+  bool _authHooked = false;
+  bool _importDialogOpen = false;
 
   void _consumeTabNotice(AppState state) {
     final notice = state.takeTabNotice();
@@ -103,9 +113,75 @@ class _MainShellState extends State<_MainShell> {
     );
   }
 
+  void _hookAuth(AuthService auth, AppState app) {
+    if (_authHooked) return;
+    _authHooked = true;
+    var wasSignedIn = auth.isSignedIn;
+    if (wasSignedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(app.handleSignedIn());
+      });
+    }
+    auth.addListener(() {
+      final now = auth.isSignedIn;
+      if (now && !wasSignedIn) {
+        unawaited(app.handleSignedIn());
+      } else if (!now && wasSignedIn) {
+        unawaited(app.handleSignedOut());
+      }
+      wasSignedIn = now;
+    });
+  }
+
+  Future<void> _maybePromptGuestImport(AppState state) async {
+    if (!state.awaitingGuestImportPrompt || _importDialogOpen || !mounted) {
+      return;
+    }
+    _importDialogOpen = true;
+    final n = state.guestRoomsPendingImportCount;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text(
+          'Upload rooms from this device?',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: Text(
+          'Upload $n guest room(s) from this device to your account?',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Not now'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Upload'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (ok == true) {
+      await state.importGuestRoomsToCloud();
+    } else {
+      await state.declineGuestImport();
+    }
+    _importDialogOpen = false;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
     final state = context.watch<AppState>();
+    _hookAuth(auth, state);
+    if (state.awaitingGuestImportPrompt) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_maybePromptGuestImport(state));
+      });
+    }
     final tab = state.currentTab;
     if (_handledTab != tab) {
       final previous = _handledTab;

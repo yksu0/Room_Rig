@@ -84,3 +84,8 @@ AGENTS.local.md
 /tmp_screenshot*
 /scripts/_strip_coauthor_msg.py
 /nu8/
+
+# Supabase secrets (copy from supabase.local.json.example)
+/supabase.local.json
+.env
+.env.*

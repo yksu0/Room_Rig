@@ -11,16 +11,18 @@ import '../models/saved_room.dart';
 import '../models/room_revision.dart';
 import '../models/scan_layout_model.dart';
 import '../models/upgrade_catalog.dart';
+import '../services/auth_service.dart';
 import '../services/layout_share_image.dart';
 import '../services/room_compare.dart';
 import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
 import '../widgets/chrome/adaptive_panel.dart';
+import '../widgets/confirm_dialogs.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/onboarding_sheet.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/score_ring.dart';
-import '../widgets/confirm_dialogs.dart';
+import 'auth_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -86,6 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     state.selectPreset(preset);
     state.acceptPresetAsReady();
+    state.setTab(2);
     if (fromPicker && context.mounted && Navigator.canPop(context)) {
       Navigator.pop(context);
     }
@@ -104,9 +107,11 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (ctx) => AlertDialog(
           backgroundColor: AppColors.surface,
           title: const Text('Switch room?', style: TextStyle(color: AppColors.textPrimary)),
-          content: const Text(
-            'This room will be saved to My Rooms, then you will switch.',
-            style: TextStyle(color: AppColors.textSecondary),
+          content: Text(
+            state.isScanSessionActive
+                ? 'Switching cancels the in-progress scan, saves this lot, then opens the other room.'
+                : 'This room will be saved to My Rooms, then you will switch.',
+            style: const TextStyle(color: AppColors.textSecondary),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -116,7 +121,63 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       if (ok != true) return;
     }
-    state.loadSavedRoom(roomId);
+    final notice = state.loadSavedRoom(roomId);
+    if (notice != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(notice)));
+    }
+  }
+
+  Future<void> _openAccountSheet(BuildContext context) async {
+    final auth = context.read<AuthService>();
+    if (auth.isSignedIn) {
+      final email = auth.email ?? 'Signed in';
+      final action = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: AppColors.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'ACCOUNT',
+                  style: TextStyle(
+                    color: AppColors.cyan,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(email, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                const Text(
+                  'Rooms sync to your account when signed in.',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx, 'signOut'),
+                  child: const Text('Sign out'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (action == 'signOut' && context.mounted) {
+        await auth.signOut();
+      }
+      return;
+    }
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+    );
   }
 
   Future<void> _confirmRestoreOriginal(BuildContext context, AppState state) async {
@@ -448,6 +509,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHeader(BuildContext context, RoomData room, AppState state) {
+    final auth = context.watch<AuthService>();
     return Row(
       children: [
         Column(
@@ -502,6 +564,44 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Icon(Icons.help_outline_rounded, color: AppColors.textMuted, size: 22),
             ),
           ),
+        Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: Material(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(999),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => _openAccountSheet(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      auth.isSignedIn ? Icons.person_rounded : Icons.person_outline_rounded,
+                      size: 16,
+                      color: AppColors.cyan,
+                    ),
+                    const SizedBox(width: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 110),
+                      child: Text(
+                        auth.isSignedIn ? (auth.email ?? 'Account') : 'Guest',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -1474,14 +1574,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     nameCtrl.dispose();
     if (created == true && context.mounted) {
+      state.setTab(2);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Created ${state.currentRoomData.name}'),
-          action: SnackBarAction(
-            label: 'OPEN RIG',
-            onPressed: () => state.setTab(2),
-          ),
-        ),
+        SnackBar(content: Text('Created ${state.currentRoomData.name}')),
       );
     }
   }

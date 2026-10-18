@@ -10,12 +10,14 @@ import '../models/rig_catalog.dart';
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
 import '../models/surface_mount.dart';
+import '../services/autorug_ranker.dart';
 import '../services/bench_layouts.dart';
 import '../models/scan_layout_model.dart';
 import '../services/layout_collision.dart';
 import '../services/layout_snap_guides.dart';
 import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
+import '../widgets/active_room_chip.dart';
 import '../widgets/confirm_dialogs.dart';
 import '../widgets/rig_customizer/rig_scan_action_button.dart';
 import '../widgets/glass_card.dart';
@@ -120,6 +122,24 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     });
   }
 
+  void _maybeOpenToolsAfterLanding(AppState state, {required bool desktop}) {
+    // IndexedStack builds Rig even off-tab — only consume when Rig is showing.
+    if (state.currentTab != 2) return;
+    if (!state.consumeOpenToolsOnRig) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (desktop) {
+        // Tools rail is already visible; nudge empty lots toward catalog starters.
+        final movable = state.furniture
+            .where((f) => f.iconName != 'door' && f.iconName != 'window')
+            .isEmpty;
+        if (movable) _showAddItemSheet();
+        return;
+      }
+      _adaptivePanelControllerFor(state).openPanel(context, ChromeRegion.tools);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -134,6 +154,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     }
 
     final desktop = AppLayout.isDesktop(context);
+    _maybeOpenToolsAfterLanding(state, desktop: desktop);
 
     return Scaffold(
       key: _scaffoldKey,
@@ -349,14 +370,12 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       'RIG CUSTOMIZER',
                       style: TextStyle(color: AppColors.cyan, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2.8),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      state.currentRoomData.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.w800),
+                    const SizedBox(height: 6),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: ActiveRoomChip(),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Text(
                       sizeLabel,
                       style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
@@ -711,8 +730,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         ),
         const SizedBox(height: 18),
         Text(
-          'AUTO-RIG GOAL',
+          'AUTO-RIG — REARRANGE MY INVENTORY',
           style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.4),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Moves items already on this Rig. Does not add catalog stock.',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
         ),
         const SizedBox(height: 10),
         Wrap(
@@ -766,6 +790,22 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             ),
           ],
         ),
+        const SizedBox(height: 10),
+        SwitchListTile.adaptive(
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          title: const Text('AI layout sort', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+          subtitle: Text(
+            AutoRigRanker.isLoaded
+                ? 'Rank Auto-Rig candidates with on-device weights (off by default)'
+                : 'Ranker weights not loaded — toggle has no effect yet',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          value: AutoRigRanker.enabled,
+          activeThumbColor: AppColors.cyan,
+          onChanged: AutoRigRanker.isLoaded
+              ? (v) => setState(() => AutoRigRanker.enabled = v)
+              : null,
+        ),
         const SizedBox(height: 14),
         Row(
           children: [
@@ -781,7 +821,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                   _runAutoRig(context, state);
                 },
                 icon: const Icon(Icons.auto_awesome_rounded, size: 20),
-                label: const Text('Run Auto-Rig'),
+                label: const Text('Rearrange my inventory'),
               ),
             ),
             if (kDebugMode) ...[
@@ -897,7 +937,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text('Run Auto-Rig?', style: TextStyle(color: AppColors.textPrimary)),
+        title: const Text('Rearrange my inventory?', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
           'Auto-Rig rearranges the items already on this Rig — it does not add '
           'catalog pieces. Run best picks the top layout; Try alternate cycles '

@@ -483,7 +483,7 @@ class BenchApplyRow extends StatelessWidget {
           children: [
             Expanded(
               child: BenchPrimaryButton(
-                label: 'APPLY IMPROVED LAYOUT',
+                label: 'APPLY BENCH SUGGESTION TO RIG',
                 icon: RoomSvg.star,
                 onTap: onApply,
               ),
@@ -745,6 +745,7 @@ class BenchResultsCard extends StatelessWidget {
 }
 
 /// Floating snackbar after applying an improved layout.
+/// Always returns to Rig ([onOpenRig]) so Apply is a one-hop finish.
 void showBenchApplySnackBar(
   BuildContext context, {
   required String message,
@@ -752,9 +753,10 @@ void showBenchApplySnackBar(
   required VoidCallback onOpenRig,
   Future<void> Function()? onShareImage,
 }) {
+  onOpenRig();
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      duration: const Duration(seconds: 6),
+      duration: const Duration(seconds: 5),
       content: Row(
         children: [
           Expanded(child: Text(message)),
@@ -776,11 +778,6 @@ void showBenchApplySnackBar(
       ),
       backgroundColor: accentColor.withValues(alpha: 0.9),
       behavior: SnackBarBehavior.floating,
-      action: SnackBarAction(
-        label: 'OPEN RIG',
-        textColor: Colors.black,
-        onPressed: onOpenRig,
-      ),
     ),
   );
 }
@@ -833,15 +830,18 @@ Future<bool> confirmBenchApply(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: AppColors.surface,
-      title: const Text('Apply to Rig?', style: TextStyle(color: AppColors.textPrimary)),
+      title: const Text('Apply Bench suggestion to Rig?', style: TextStyle(color: AppColors.textPrimary)),
       content: const Text(
-        'This replaces your current furniture layout with the improved arrangement from the bench. '
-        'A checkpoint is saved on this room.',
+        'This replaces your current furniture layout with the Bench suggestion, '
+        'saves a checkpoint, and returns you to Rig.',
         style: TextStyle(color: AppColors.textSecondary),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Apply')),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Apply Bench suggestion to Rig'),
+        ),
       ],
     ),
   );

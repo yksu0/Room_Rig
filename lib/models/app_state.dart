@@ -26,14 +26,48 @@ import '../services/layout_snap_guides.dart';
 import '../services/lighting_optimizer.dart';
 import '../services/lighting_simulator.dart';
 import '../services/multi_objective_optimizer.dart';
+import '../services/room_repository.dart';
 import '../services/scan_layout_converter.dart';
 import '../services/scan_pipeline.dart';
 import '../services/spatial_analyzer.dart';
+import '../services/supabase_bootstrap.dart';
 
 class AppState extends ChangeNotifier {
   static const _persistedLayoutKey = 'room_rig.persisted_layout';
   static const _persistedScanSessionKey = 'room_rig.last_successful_scan';
   static const _onboardingSeenKey = 'room_rig.onboarding_seen';
+  static const _guestImportDoneKey = 'room_rig.guest_import_done_users';
+
+  final RoomRepository _roomRepo = RoomRepository();
+
+  /// When true, Rig should open the Tools panel once (post-create/scan/preset).
+  bool _openToolsOnRig = false;
+  bool get consumeOpenToolsOnRig {
+    final v = _openToolsOnRig;
+    _openToolsOnRig = false;
+    return v;
+  }
+
+  void requestOpenToolsOnRig() {
+    _openToolsOnRig = true;
+  }
+
+  /// Signed-in user may be offered to upload guest rooms once.
+  bool _awaitingGuestImportPrompt = false;
+  bool get awaitingGuestImportPrompt => _awaitingGuestImportPrompt;
+  List<SavedRoom> _guestRoomsPendingImport = const [];
+  int get guestRoomsPendingImportCount => _guestRoomsPendingImport.length;
+
+  bool get isSignedIn {
+    final client = SupabaseBootstrap.clientOrNull;
+    return client?.auth.currentUser != null;
+  }
+
+  String? get signedInUserId =>
+      SupabaseBootstrap.clientOrNull?.auth.currentUser?.id;
+
+  String? get signedInEmail =>
+      SupabaseBootstrap.clientOrNull?.auth.currentUser?.email;
 
   // Navigation
   int _currentTab = 0;
@@ -815,6 +849,7 @@ class AppState extends ChangeNotifier {
     _pendingPlacementId = null;
     _pendingUpgradeIndex = null;
     clearLayoutHistory();
+    requestOpenToolsOnRig();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
@@ -905,6 +940,7 @@ class AppState extends ChangeNotifier {
     _pendingUpgradeIndex = null;
     _roomShape = 'Rectangular';
     clearLayoutHistory();
+    requestOpenToolsOnRig();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
@@ -919,9 +955,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void loadSavedRoom(String id) {
+  /// Returns an optional snackbar notice (e.g. scan cancelled).
+  String? loadSavedRoom(String id) {
     _abandonInFlightHydrate();
-    if (id == _activeRoomId) return;
+    if (id == _activeRoomId) return null;
     SavedRoom? found;
     for (final r in _rooms) {
       if (r.id == id) {
@@ -929,12 +966,18 @@ class AppState extends ChangeNotifier {
         break;
       }
     }
-    if (found == null) return;
+    if (found == null) return null;
+    String? notice;
+    if (isScanSessionActive) {
+      endScanSession();
+      notice = 'Scan cancelled — room switched';
+    }
     invalidateScanSession();
     _stashActiveRoom();
     _applySavedRoom(found);
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
+    return notice;
   }
 
   bool duplicateActiveRoom() {
@@ -1064,6 +1107,134 @@ class AppState extends ChangeNotifier {
     } else {
       _rooms.add(snap);
     }
+    // Cloud only when signed in — guests stay local.
+    final uid = signedInUserId;
+    if (uid != null) {
+      unawaited(_roomRepo.upsertRoom(uid, snap));
+    }
+  }
+
+  /// Call after auth session becomes available (sign-in / cold restore).
+  Future<void> handleSignedIn() async {
+    final uid = signedInUserId;
+    if (uid == null) return;
+    // Snapshot guest lots before cloud replace.
+    _stashActiveRoom();
+    final guestSnapshot = List<SavedRoom>.from(_rooms);
+    await _roomRepo.ensureProfile(userId: uid, displayName: signedInEmail);
+    try {
+      final cloud = await _roomRepo.fetchRooms(uid);
+      if (cloud.isNotEmpty) {
+        _rooms
+          ..clear()
+          ..addAll(cloud);
+        _applySavedRoom(_rooms.first);
+      }
+    } catch (e) {
+      debugPrint('handleSignedIn fetch: $e');
+    }
+
+    final alreadyImported = await _hasImportedGuestRooms(uid);
+    if (!alreadyImported && guestSnapshot.isNotEmpty) {
+      _guestRoomsPendingImport = guestSnapshot;
+      _awaitingGuestImportPrompt = true;
+    } else {
+      _awaitingGuestImportPrompt = false;
+      _guestRoomsPendingImport = const [];
+    }
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
+
+  Future<void> importGuestRoomsToCloud() async {
+    final uid = signedInUserId;
+    if (uid == null) return;
+    final pending = _guestRoomsPendingImport;
+    if (pending.isEmpty) {
+      _awaitingGuestImportPrompt = false;
+      notifyListeners();
+      return;
+    }
+    // On id clash, mint a new id so cloud rows are not overwritten.
+    final cloudIds = _rooms.map((r) => r.id).toSet();
+    final toUpload = <SavedRoom>[];
+    var i = 0;
+    for (final g in pending) {
+      if (cloudIds.contains(g.id)) {
+        final copy = SavedRoom(
+          id: 'room_${DateTime.now().millisecondsSinceEpoch}_$i',
+          name: '${g.name} (device)',
+          presetName: g.presetName,
+          scanComplete: g.scanComplete,
+          scanProgress: g.scanProgress,
+          layout: g.layout.copyMeta(roomName: '${g.name} (device)'),
+          furniture: _cloneFurniture(g.furniture),
+          installedUpgrades: g.installedUpgrades,
+          originalFurniture: g.originalFurniture == null
+              ? null
+              : _cloneFurniture(g.originalFurniture!),
+          originalScores: g.originalScores == null
+              ? null
+              : Map<String, double>.from(g.originalScores!),
+          revisions: g.revisions,
+          scoresClean: g.scoresClean,
+          isOptimized: g.isOptimized,
+        );
+        toUpload.add(copy);
+        _rooms.add(copy);
+      } else {
+        toUpload.add(g);
+        _rooms.add(g);
+      }
+      i++;
+    }
+    try {
+      await _roomRepo.upsertMany(uid, toUpload);
+      await _markImportedGuestRooms(uid);
+    } catch (e) {
+      debugPrint('importGuestRoomsToCloud: $e');
+    }
+    _awaitingGuestImportPrompt = false;
+    _guestRoomsPendingImport = const [];
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
+
+  Future<void> declineGuestImport() async {
+    final uid = signedInUserId;
+    if (uid != null) await _markImportedGuestRooms(uid);
+    _awaitingGuestImportPrompt = false;
+    _guestRoomsPendingImport = const [];
+    notifyListeners();
+  }
+
+  Future<void> handleSignedOut() async {
+    _awaitingGuestImportPrompt = false;
+    _guestRoomsPendingImport = const [];
+    // Keep last local draft; cloud data stays on server.
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+  }
+
+  Future<bool> _hasImportedGuestRooms(String uid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getStringList(_guestImportDoneKey) ?? const [];
+      return raw.contains(uid);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _markImportedGuestRooms(String uid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = List<String>.from(prefs.getStringList(_guestImportDoneKey) ?? const []);
+      if (!raw.contains(uid)) {
+        raw.add(uid);
+        await prefs.setStringList(_guestImportDoneKey, raw);
+      }
+    } catch (_) {}
   }
 
   /// Append a named layout checkpoint to the active room's history timeline.
@@ -1532,6 +1703,7 @@ class AppState extends ChangeNotifier {
     clearLayoutHistory();
     // Checkpoint stashes + persists once (includes "After scan" revision).
     checkpointActiveRoom('After scan');
+    requestOpenToolsOnRig();
     unawaited(_persistSuccessfulScanSession());
   }
 
@@ -2097,10 +2269,11 @@ class AppState extends ChangeNotifier {
     final live = committedFurniture;
     final liveKey = _autoRigInventoryKey(live);
     final original = _originalFurniture;
-    final sameInventory =
-        original != null && _autoRigInventoryKey(original) == liveKey;
     // Pose root may be the Restore snapshot; inventory is always live ids only.
-    final searchRoot = sameInventory ? original! : live;
+    final searchRoot = (original != null &&
+            _autoRigInventoryKey(original) == liveKey)
+        ? original
+        : live;
     final allowedIds = {for (final f in live) f.id};
     final weights = optimizeWeights;
     final cacheKey =

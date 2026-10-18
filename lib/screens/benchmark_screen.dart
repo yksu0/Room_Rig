@@ -10,6 +10,7 @@ import '../services/benchmark_validator.dart';
 import '../services/layout_share_image.dart';
 import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
+import '../widgets/active_room_chip.dart';
 import '../widgets/airflow_voxel_painter.dart';
 import '../widgets/bench_room_views.dart';
 import '../widgets/bench_panel_scaffold.dart';
@@ -260,7 +261,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   }
 
   Widget _buildDesktopHeader(AppState state) {
-    final room = state.currentRoomData;
     return Padding(
       padding: const EdgeInsets.fromLTRB(AppSpace.lg, AppSpace.sm, AppSpace.lg, AppSpace.xs),
       child: Column(
@@ -275,16 +275,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               letterSpacing: 2.8,
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            room.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-            ),
+          const SizedBox(height: 6),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: ActiveRoomChip(),
           ),
           const SizedBox(height: 10),
           _buildModeSelector(state, compact: true),
@@ -314,6 +308,11 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             fontSize: 26,
             fontWeight: FontWeight.w800,
           ),
+        ),
+        SizedBox(height: AppSpace.sm),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ActiveRoomChip(),
         ),
       ],
     );
