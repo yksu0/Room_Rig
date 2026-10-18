@@ -86,7 +86,7 @@ AGENTS.local.md
 /tmp_*.txt
 /scripts/_strip_coauthor_msg.py
 /tool/strip_coauthor.ps1
-/tool/_fix_msg.ps1
+/tool/_*.ps1
 /tool/fix_*.dart
 /nu8/
 
