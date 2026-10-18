@@ -1410,9 +1410,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!ok || !context.mounted) return;
     }
     final nameCtrl = TextEditingController(text: 'My Room');
-    var length = 3.6;
-    var width = 4.8;
-    var height = 2.7;
+    // Fixed starter size — dimensions are edited in Rig after create.
+    const length = 3.6;
+    const width = 4.8;
+    const height = 2.7;
     final created = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -1423,72 +1424,50 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
-          child: StatefulBuilder(
-            builder: (ctx, setLocal) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'CREATE ROOM',
-                    style: TextStyle(
-                      color: AppColors.cyan,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Fallback when you skip camera measure. Empty rectangle plus a door and window.',
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: nameCtrl,
-                    style: const TextStyle(color: AppColors.textPrimary),
-                    decoration: const InputDecoration(
-                      labelText: 'Name',
-                      labelStyle: TextStyle(color: AppColors.textMuted),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  _MeterSlider(
-                    label: 'Length',
-                    value: length,
-                    onChanged: (v) => setLocal(() => length = v),
-                  ),
-                  _MeterSlider(
-                    label: 'Width',
-                    value: width,
-                    onChanged: (v) => setLocal(() => width = v),
-                  ),
-                  _MeterSlider(
-                    label: 'Height',
-                    value: height,
-                    min: 2.2,
-                    max: 3.6,
-                    onChanged: (v) => setLocal(() => height = v),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () {
-                        state.createManualRoom(
-                          name: nameCtrl.text,
-                          lengthMeters: length,
-                          widthMeters: width,
-                          heightMeters: height,
-                        );
-                        Navigator.pop(ctx, true);
-                      },
-                      child: const Text('Create empty room'),
-                    ),
-                  ),
-                ],
-              );
-            },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'CREATE ROOM',
+                style: TextStyle(
+                  color: AppColors.cyan,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Fallback when you skip camera measure. Empty rectangle plus a door and window.',
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: nameCtrl,
+                style: const TextStyle(color: AppColors.textPrimary),
+                decoration: const InputDecoration(
+                  labelText: 'Name',
+                  labelStyle: TextStyle(color: AppColors.textMuted),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () {
+                    state.createManualRoom(
+                      name: nameCtrl.text,
+                      lengthMeters: length,
+                      widthMeters: width,
+                      heightMeters: height,
+                    );
+                    Navigator.pop(ctx, true);
+                  },
+                  child: const Text('Create empty room'),
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -1867,50 +1846,6 @@ class _SpecRow extends StatelessWidget {
     );
     if (onTap == null) return row;
     return GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: row);
-  }
-}
-
-class _MeterSlider extends StatelessWidget {
-  final String label;
-  final double value;
-  final double min;
-  final double max;
-  final ValueChanged<double> onChanged;
-
-  const _MeterSlider({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-    this.min = 2.6,
-    this.max = 8.5,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 64,
-          child: Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-        ),
-        Expanded(
-          child: Slider(
-            value: value.clamp(min, max),
-            min: min,
-            max: max,
-            onChanged: onChanged,
-          ),
-        ),
-        SizedBox(
-          width: 48,
-          child: Text(
-            RoomScale.formatMeters(value),
-            textAlign: TextAlign.right,
-            style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 12),
-          ),
-        ),
-      ],
-    );
   }
 }
 
