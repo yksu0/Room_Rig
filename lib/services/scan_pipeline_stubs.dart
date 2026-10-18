@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../models/item_detection.dart';
 import '../models/scan_layout_model.dart';
+import 'remote_object_detector.dart';
 import 'scan_layout_converter.dart';
 import 'scan_pipeline.dart';
 
@@ -503,6 +504,12 @@ class HybridObjectDetector implements ObjectDetector {
   @override
   Future<List<Detection2D>> detect(ScanFrameInput frame) async {
     final primaryResults = await primary.detect(frame);
+    // Remote sidecar: trust an OK response even when boxes are empty so we do
+    // not double-run on-device TFLite every quiet frame.
+    if (primary is RemoteObjectDetector) {
+      final remote = primary as RemoteObjectDetector;
+      if (remote.lastOk) return primaryResults;
+    }
     if (primaryResults.isNotEmpty) {
       return primaryResults;
     }

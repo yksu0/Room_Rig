@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
-    <!-- Localhost Model asset server + Flutter tooling / WebView. -->
+    <!-- Model localhost assets + optional PC remote YOLO (release builds). -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <!-- Optional: visual Scan works without ARCore; pose mode opts in at runtime. -->

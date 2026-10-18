@@ -8,10 +8,14 @@ import 'room_icons.dart';
 class ScanPreCoachResult {
   final RoomDimensions? manualDimensions;
   final bool preferArCore;
+  final bool useRemoteDetect;
+  final String remoteHostPort;
 
   const ScanPreCoachResult({
     this.manualDimensions,
     this.preferArCore = false,
+    this.useRemoteDetect = false,
+    this.remoteHostPort = '',
   });
 }
 
@@ -27,6 +31,8 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
   required String detectorLabel,
   RoomDimensions? initialDimensions,
   bool initialPreferArCore = true,
+  String initialRemoteHost = '127.0.0.1:8787',
+  bool initialUseRemoteDetect = false,
 }) async {
   final lengthCtrl = TextEditingController(
     text: (initialDimensions?.lengthMeters ?? 4.2).toStringAsFixed(1),
@@ -37,8 +43,10 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
   final heightCtrl = TextEditingController(
     text: (initialDimensions?.heightMeters ?? 2.7).toStringAsFixed(1),
   );
+  final remoteHostCtrl = TextEditingController(text: initialRemoteHost);
   var sizeMode =
       initialPreferArCore ? _SizeMode.arMeasure : _SizeMode.enterManual;
+  var useRemoteDetect = initialUseRemoteDetect;
   String? sizeError;
 
   final result = await showModalBottomSheet<ScanPreCoachResult>(
@@ -176,7 +184,45 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                         ),
                       ),
                     ],
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
+                    SwitchListTile.adaptive(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Use PC remote detect',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Offload YOLO to ml/remote_infer_server.py on your PC (same Wi‑Fi). Falls back to on-device TFLite.',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                      ),
+                      value: useRemoteDetect,
+                      activeTrackColor: AppColors.cyan,
+                      onChanged: (v) => setModal(() => useRemoteDetect = v),
+                    ),
+                    if (useRemoteDetect) ...[
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: remoteHostCtrl,
+                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                        decoration: InputDecoration(
+                          labelText: 'PC host:port',
+                          hintText: '192.168.x.x:8787',
+                          labelStyle: TextStyle(color: AppColors.textSecondary),
+                          enabledBorder: OutlineInputBorder(
+                            borderSide: BorderSide(color: AppColors.border),
+                          ),
+                          focusedBorder: const OutlineInputBorder(
+                            borderSide: BorderSide(color: AppColors.cyan),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    const SizedBox(height: 8),
                     ...ScanModelAvailability.honestyBullets.map(
                       (b) => Padding(
                         padding: const EdgeInsets.only(bottom: 8),
@@ -254,15 +300,19 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                                       heightMeters: H.clamp(2.2, 3.5),
                                     ),
                                     preferArCore: false,
+                                    useRemoteDetect: useRemoteDetect,
+                                    remoteHostPort: remoteHostCtrl.text.trim(),
                                   ),
                                 );
                                 return;
                               }
                               Navigator.pop(
                                 context,
-                                const ScanPreCoachResult(
+                                ScanPreCoachResult(
                                   manualDimensions: null,
                                   preferArCore: true,
+                                  useRemoteDetect: useRemoteDetect,
+                                  remoteHostPort: remoteHostCtrl.text.trim(),
                                 ),
                               );
                             },
@@ -305,6 +355,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
   lengthCtrl.dispose();
   widthCtrl.dispose();
   heightCtrl.dispose();
+  remoteHostCtrl.dispose();
   return result;
 }
 
