@@ -145,6 +145,7 @@ class AdaptivePanelController {
       await showModalBottomSheet<void>(
         context: context,
         backgroundColor: AppColors.surface,
+        barrierColor: Colors.black.withValues(alpha: 0.55),
         isScrollControlled: true,
         useSafeArea: true,
         shape: const RoundedRectangleBorder(

@@ -78,6 +78,35 @@ class AppColors {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
       );
+
+  /// House Control–style active feedback (phone-safe blur ≤ 18).
+  static List<BoxShadow> activeGlow(
+    Color color, {
+    double blur = 16,
+    double alpha = 0.22,
+  }) =>
+      [
+        BoxShadow(
+          color: color.withValues(alpha: alpha.clamp(0.0, 1.0)),
+          blurRadius: blur.clamp(0.0, 18.0),
+          spreadRadius: 0,
+        ),
+      ];
+
+  static BoxDecoration activeGlowDecoration({
+    required Color color,
+    Color? fill,
+    double radius = AppRadius.lg,
+    double borderAlpha = 0.45,
+    double blur = 16,
+    double glowAlpha = 0.22,
+  }) =>
+      BoxDecoration(
+        color: fill ?? card,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: color.withValues(alpha: borderAlpha), width: 1.5),
+        boxShadow: activeGlow(color, blur: blur, alpha: glowAlpha),
+      );
 }
 
 class AppType {

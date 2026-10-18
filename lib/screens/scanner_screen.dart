@@ -1960,8 +1960,22 @@ class _ScannerScreenState extends State<ScannerScreen>
                     ),
                     child: Row(
                       children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: AppColors.green,
+                            shape: BoxShape.circle,
+                            boxShadow: AppColors.activeGlow(
+                              AppColors.green,
+                              blur: 10,
+                              alpha: 0.5,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Text(
-                          'Coverage ${(coverageRatio * 100).round()}%',
+                          'Live · ${(coverageRatio * 100).round()}%',
                           style: const TextStyle(
                             color: AppColors.cyan,
                             fontSize: 12,

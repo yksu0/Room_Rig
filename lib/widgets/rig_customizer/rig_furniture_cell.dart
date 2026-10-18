@@ -11,11 +11,13 @@ class RigFurnitureCell extends StatefulWidget {
   final FurnitureItem item;
   final bool isSelected;
   final bool hasConflict;
+  final bool isPending;
   const RigFurnitureCell({
     super.key,
     required this.item,
     required this.isSelected,
     this.hasConflict = false,
+    this.isPending = false,
   });
 
   @override
@@ -54,6 +56,7 @@ class _RigFurnitureCellState extends State<RigFurnitureCell> {
     final item = widget.item;
     final isSelected = widget.isSelected;
     final hasConflict = widget.hasConflict;
+    final isPending = widget.isPending;
     final color = hasConflict
         ? AppColors.red
         : switch (item.category) {
@@ -62,30 +65,41 @@ class _RigFurnitureCellState extends State<RigFurnitureCell> {
             'ergonomics' => AppColors.ergonomicsColor,
             _ => AppColors.textMuted,
           };
+    final glowColor = hasConflict
+        ? AppColors.red
+        : (isPending ? AppColors.amber : (isSelected ? AppColors.cyan : color));
 
     final usePng = FurnitureSprites.cachedHasPng(item.iconName);
     final useSvg = !usePng && FurnitureSprites.cachedHasSvg(item.iconName);
+    Widget cell;
     if (usePng || useSvg) {
-      return _SpritePlanCell(
+      cell = _SpritePlanCell(
         iconName: item.iconName,
         color: color,
-        selected: isSelected,
+        selected: isSelected || isPending,
         hasConflict: hasConflict,
         yawDegrees: item.yawDegrees,
         usePng: usePng,
       );
+    } else {
+      final kind = FurnitureShapes.kindOf(item);
+      cell = CustomPaint(
+        painter: _FurniturePlanPainter(
+          kind: kind,
+          color: color,
+          selected: isSelected || isPending,
+          hasConflict: hasConflict,
+          yawDegrees: item.yawDegrees,
+          showFacing: FurnitureShapes.showsFacing(kind),
+        ),
+      );
     }
-
-    final kind = FurnitureShapes.kindOf(item);
-    return CustomPaint(
-      painter: _FurniturePlanPainter(
-        kind: kind,
-        color: color,
-        selected: isSelected,
-        hasConflict: hasConflict,
-        yawDegrees: item.yawDegrees,
-        showFacing: FurnitureShapes.showsFacing(kind),
+    if (!isSelected && !isPending && !hasConflict) return cell;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        boxShadow: AppColors.activeGlow(glowColor, blur: 14, alpha: 0.35),
       ),
+      child: cell,
     );
   }
 }

@@ -64,6 +64,7 @@
   let exploreMode = 'orbit';
   let showMiniMap = false;
   let lastItems = [];
+  let lastLampGlow = 0.7;
   let hasUserFramed = false;
   // Default works for staged temp dirs (Android) and web. Flutter may override.
   let assetBase = '../gltf/';
@@ -141,9 +142,10 @@
    * Shadows always originate near the ceiling. Desk/floor lamps only add glow.
    * Placed ceiling fixtures move the shadow origin to their XY at ceiling Y.
    */
-  function syncInteriorLights(items) {
+  function syncInteriorLights(items, lampGlow) {
     clearInteriorLights();
     const list = items || [];
+    const glowLevel = (lampGlow == null || !isFinite(lampGlow)) ? 0.7 : lampGlow;
     const ceilY = ceilingLightY();
     const ceilingFixtures = [];
     const localLamps = [];
@@ -218,11 +220,13 @@
               m.userData.lampLit = true;
               m.emissive.setHex(cfg.color);
             }
-            m.emissiveIntensity = 0.65;
+            const glow = Math.min(1.25, 0.4 + glowLevel * 0.85);
+            m.emissiveIntensity = 0.65 * glow;
           });
         });
       }
-      const pl = new THREE.PointLight(cfg.color, cfg.intensity * 1.15, cfg.distance, 2);
+      const glowMul = Math.min(1.35, 0.55 + glowLevel * 0.9);
+      const pl = new THREE.PointLight(cfg.color, cfg.intensity * 1.15 * glowMul, cfg.distance, 2);
       pl.castShadow = false;
       pl.position.set(x, y, z);
       interiorLightRoot.add(pl);
@@ -853,7 +857,7 @@
       if (bestY != null) item.position.y = bestY + 0.005;
     }
 
-    syncInteriorLights(items);
+    syncInteriorLights(items, lastLampGlow);
 
     const n = (items || []).length;
     const withModel = (items || []).filter((i) => i.model).length;
@@ -1338,6 +1342,7 @@
       }
       if (data.assetBase) assetBase = data.assetBase;
       lastItems = data.items || [];
+      if (data.lampGlow != null && isFinite(+data.lampGlow)) lastLampGlow = +data.lampGlow;
       if (data.exploreMode) setExploreMode(data.exploreMode);
       if (data.preset) {
         applyPreset(data.preset);

@@ -861,9 +861,74 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     AppState state, {
     required bool embedded,
   }) {
+    final selected = state.selectedFurniture;
+    final scanObj = state.selectedScanObject;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (selected != null) ...[
+          Text(
+            selected.name,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _InspectImpactChip(
+                label: 'Air',
+                value: selected.airflowImpact,
+                color: AppColors.airflowColor,
+              ),
+              const SizedBox(width: 8),
+              _InspectImpactChip(
+                label: 'Light',
+                value: selected.lightingImpact,
+                color: AppColors.lightingColor,
+              ),
+              const SizedBox(width: 8),
+              _InspectImpactChip(
+                label: 'Ergo',
+                value: selected.ergonomicsImpact,
+                color: AppColors.ergonomicsColor,
+              ),
+            ],
+          ),
+          if (selected.description.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              selected.description,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                height: 1.35,
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+        ] else if (scanObj != null) ...[
+          Text(
+            scanObj.label,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              height: 1.15,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Scan object · ${scanObj.category}',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+        ],
         Material(
           color: AppColors.card,
           borderRadius: BorderRadius.circular(12),
@@ -1603,6 +1668,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                                 child: RigFurnitureCell(
                                   item: item,
                                   isSelected: isSelected,
+                                  isPending: state.isPendingPlacement(item.id),
                                   hasConflict: conflictIds.contains(item.id) ||
                                       (isSelected && state.dragPoseBlocked),
                                 ),
@@ -1962,6 +2028,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 Positioned(
                   top: 8,
                   left: 10,
+                  right: 10,
                   child: IgnorePointer(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1975,7 +2042,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                             ? 'Drag the ghost to place · tap Place when ready'
                             : _rigMoveMode
                                 ? 'MOVE on · drag item · tap empty floor to exit'
-                                : '1 finger orbit · double-tap reset · tap MOVE to drag · 2 fingers pan + pinch',
+                                : MediaQuery.sizeOf(context).width >= 600
+                                    ? 'Orbit · walls facing camera fade (cutaway) · MOVE to drag'
+                                    : '1 finger orbit · double-tap reset · tap MOVE to drag · 2 fingers pan + pinch',
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 11,
@@ -4129,6 +4198,57 @@ class _GoalChip extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InspectImpactChip extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+
+  const _InspectImpactChip({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = (value * 100).clamp(0, 999).round();
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.6,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '$pct',
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                height: 1.1,
+              ),
+            ),
+          ],
         ),
       ),
     );

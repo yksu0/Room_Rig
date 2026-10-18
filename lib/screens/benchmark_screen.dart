@@ -288,6 +288,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               // Stay on Bench — scores already drive the active mode body.
             },
           ),
+          const SizedBox(height: 8),
+          _buildModeScoreHero(state, expand: true),
           const SizedBox(height: 10),
           _buildModeSelector(state, compact: true),
         ],
@@ -295,7 +297,47 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     );
   }
 
+  Widget _buildModeScoreHero(AppState state, {bool expand = false}) {
+    final mode = state.benchmarkMode;
+    final (label, score, prev, color) = switch (mode) {
+      'lighting' => (
+          'Lighting',
+          state.lightingScore,
+          state.baselineLightingScore,
+          AppColors.lightingColor,
+        ),
+      'ergonomics' => (
+          'Ergonomics',
+          state.ergonomicsScore,
+          state.baselineErgonomicsScore,
+          AppColors.ergonomicsColor,
+        ),
+      'spatial' => (
+          'Space',
+          state.spatialScore,
+          null,
+          AppColors.spatialColor,
+        ),
+      _ => (
+          'Airflow',
+          state.airflowScore,
+          state.baselineAirflowScore,
+          AppColors.airflowColor,
+        ),
+    };
+    // Only show delta when baseline differs (post-simulate).
+    final showDelta = prev != null && (score - prev).abs() >= 0.5;
+    return BenchScoreHero(
+      label: label,
+      score: score,
+      previousScore: showDelta ? prev : null,
+      color: color,
+      expand: expand,
+    );
+  }
+
   Widget _buildMobileHeader() {
+    final state = context.watch<AppState>();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -324,6 +366,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         ),
         const SizedBox(height: AppSpace.sm),
         RoomStatusStrip(compact: true),
+        const SizedBox(height: AppSpace.sm),
+        _buildModeScoreHero(state),
       ],
     );
   }

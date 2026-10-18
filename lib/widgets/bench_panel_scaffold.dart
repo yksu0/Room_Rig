@@ -132,9 +132,15 @@ class BenchChip extends StatelessWidget {
           vertical: compact ? 9 : 10,
         ),
         decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.15) : AppColors.card,
+          color: selected ? color.withValues(alpha: 0.18) : AppColors.card,
           borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(color: selected ? color : AppColors.border),
+          border: Border.all(
+            color: selected ? color : AppColors.border,
+            width: selected ? 1.5 : 1,
+          ),
+          boxShadow: selected
+              ? AppColors.activeGlow(color, blur: 14, alpha: 0.28)
+              : null,
         ),
         child: Text(
           label,
@@ -144,7 +150,7 @@ class BenchChip extends StatelessWidget {
           style: TextStyle(
             color: selected ? color : AppColors.textMuted,
             fontSize: compact ? 11 : 12,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
@@ -180,6 +186,106 @@ class BenchVariantChips extends StatelessWidget {
           onTap: () => onChanged(BenchLayoutKind.improved),
         ),
       ],
+    );
+  }
+}
+
+/// Compact House Control–style score hero (phone ~56–72px; larger OK in rails).
+class BenchScoreHero extends StatelessWidget {
+  final String label;
+  final double score;
+  final double? previousScore;
+  final Color color;
+  final bool expand;
+
+  const BenchScoreHero({
+    super.key,
+    required this.label,
+    required this.score,
+    this.previousScore,
+    required this.color,
+    this.expand = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final prev = previousScore;
+    final delta = prev == null ? null : score - prev;
+    final height = expand ? 88.0 : 64.0;
+    final valueSize = expand ? 36.0 : 28.0;
+    return Container(
+      height: height,
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        horizontal: AppSpace.md,
+        vertical: expand ? 12 : 8,
+      ),
+      decoration: AppColors.activeGlowDecoration(
+        color: color,
+        fill: AppColors.card,
+        radius: AppRadius.md,
+        borderAlpha: 0.4,
+        blur: 14,
+        glowAlpha: 0.18,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label.toUpperCase(),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  score.round().toString(),
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: valueSize,
+                    fontWeight: FontWeight.w800,
+                    height: 1.05,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (delta != null)
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    delta >= 0 ? '+${delta.round()}' : '${delta.round()}',
+                    style: TextStyle(
+                      color: delta >= 0 ? AppColors.green : AppColors.amber,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: (score / 100).clamp(0.0, 1.0),
+                      minHeight: 6,
+                      backgroundColor: AppColors.borderSubtle,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -782,6 +888,7 @@ Future<bool> confirmBenchApply(
   if (fellBackToSample) {
     await showDialog<void>(
       context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text('Cannot apply demo layout', style: TextStyle(color: AppColors.textPrimary)),
@@ -801,6 +908,7 @@ Future<bool> confirmBenchApply(
   if (validation.hasHardLayoutConflicts) {
     await showDialog<void>(
       context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text('Cannot apply layout', style: TextStyle(color: AppColors.textPrimary)),
@@ -819,6 +927,7 @@ Future<bool> confirmBenchApply(
 
   final ok = await showDialog<bool>(
     context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.55),
     builder: (ctx) => AlertDialog(
       backgroundColor: AppColors.surface,
       title: const Text('Apply Bench suggestion to Rig?', style: TextStyle(color: AppColors.textPrimary)),

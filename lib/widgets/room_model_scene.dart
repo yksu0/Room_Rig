@@ -435,6 +435,14 @@ class RoomModelSceneState extends State<RoomModelScene> {
       }
     }
 
+    final lightItems =
+        widget.furniture.where((f) => f.category == 'lighting').toList();
+    final lampGlow = lightItems.isEmpty
+        ? 0.55
+        : (lightItems.map((f) => f.lightingImpact).fold<double>(0, (a, b) => a + b) /
+                lightItems.length)
+            .clamp(0.35, 1.0);
+
     final payload = <String, dynamic>{
       'roomW': roomW,
       'roomD': roomD,
@@ -447,6 +455,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
       'exploreMode': 'orbit',
       'miniMap': widget.showMiniMap,
       'moveMode': widget.moveMode || widget.pendingPlacementId != null,
+      'lampGlow': lampGlow,
       // Only when Flutter intentionally changed camera props — select/MOVE must
       // not clobber the WebView orbit the user already framed.
       if (applyCamera) ...{

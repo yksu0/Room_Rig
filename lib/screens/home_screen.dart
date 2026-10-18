@@ -21,6 +21,7 @@ import '../widgets/confirm_dialogs.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/onboarding_sheet.dart';
 import '../widgets/room_icons.dart';
+import '../widgets/room_status_strip.dart';
 import '../widgets/score_ring.dart';
 import 'auth_screen.dart';
 
@@ -221,6 +222,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              if (state.roomIsReady) ...[
+                                RoomStatusStrip(
+                                  compact: true,
+                                  onTapScores: () => state.setTab(3),
+                                ),
+                                const SizedBox(height: AppSpace.md),
+                              ],
                               ..._hubStatusBlocks(context, state),
                               _buildScoreSection(context, state),
                               if (state.roomIsReady &&
@@ -303,6 +311,13 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(context, room, state),
+              if (state.roomIsReady) ...[
+                const SizedBox(height: AppSpace.sm),
+                RoomStatusStrip(
+                  compact: true,
+                  onTapScores: () => state.setTab(3),
+                ),
+              ],
               const SizedBox(height: AppSpace.xl),
               ..._hubStatusBlocks(context, state),
               _buildScoreSection(context, state),
@@ -465,7 +480,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildScoreSection(BuildContext context, AppState state) {
     final simulated = state.scoresAreSimulated;
-    return GlassCard(
+    final accent = simulated ? AppColors.amber : AppColors.green;
+    return Container(
+      decoration: AppColors.activeGlowDecoration(
+        color: accent,
+        fill: Colors.transparent,
+        radius: AppRadius.lg,
+        borderAlpha: state.roomIsReady ? 0.35 : 0.15,
+        blur: 16,
+        glowAlpha: state.roomIsReady ? (simulated ? 0.12 : 0.2) : 0.06,
+      ),
+      child: GlassCard(
       gradient: const LinearGradient(
         colors: [Color(0xFF1A1E32), Color(0xFF0E1020)],
         begin: Alignment.topLeft,
@@ -656,6 +681,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -733,6 +759,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _RoomSlotTile(
             title: state.currentRoomData.name,
             subtitle: 'Current lot',
+            badgeLabel: '${state.furniture.length}',
             selected: true,
             onTap: () => _showRenameRoomSheet(context, state),
             onDuplicate: () {
@@ -751,6 +778,7 @@ class _HomeScreenState extends State<HomeScreen> {
             subtitle: r.scanComplete
                 ? 'Scanned'
                 : (r.layout.scanSource == 'manual' ? 'Created' : 'Preset'),
+            badgeLabel: '${r.furniture.length}',
             selected: r.id == state.activeRoomId,
             onTap: () => _confirmLoadSavedRoom(context, state, r.id),
             onDuplicate: () async {
@@ -1392,7 +1420,8 @@ class _StartChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.16),
           borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(color: color.withValues(alpha: 0.35)),
+          border: Border.all(color: color.withValues(alpha: 0.45)),
+          boxShadow: AppColors.activeGlow(color, blur: 12, alpha: 0.2),
         ),
         child: Text(
           label,
@@ -1705,6 +1734,7 @@ class _UpgradeSuggestionBanner extends StatelessWidget {
 class _RoomSlotTile extends StatelessWidget {
   final String title;
   final String subtitle;
+  final String? badgeLabel;
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onDuplicate;
@@ -1713,6 +1743,7 @@ class _RoomSlotTile extends StatelessWidget {
   const _RoomSlotTile({
     required this.title,
     required this.subtitle,
+    this.badgeLabel,
     required this.selected,
     required this.onTap,
     required this.onDuplicate,
@@ -1733,7 +1764,38 @@ class _RoomSlotTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(color: selected ? AppColors.cyan : AppColors.border),
           ),
-          title: Text(title, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              if (badgeLabel != null)
+                Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.orange.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: AppColors.orange.withValues(alpha: 0.55)),
+                  ),
+                  child: Text(
+                    badgeLabel!,
+                    style: const TextStyle(
+                      color: AppColors.orange,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,

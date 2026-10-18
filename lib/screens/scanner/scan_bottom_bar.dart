@@ -318,14 +318,14 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
               border: Border.all(
                 color: canFinishScan ? Colors.transparent : AppColors.border,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: canFinishScan
-                      ? AppColors.cyan.withValues(alpha: 0.35)
-                      : Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 20,
-                )
-              ],
+              boxShadow: canFinishScan
+                  ? AppColors.activeGlow(AppColors.cyan, blur: 18, alpha: 0.35)
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 12,
+                      ),
+                    ],
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
