@@ -152,17 +152,15 @@ class BenchChip extends StatelessWidget {
   }
 }
 
-/// My Room / Improved variant selector (Sample is demoted — not a primary peer).
+/// My Room / Improved variant selector.
 class BenchVariantChips extends StatelessWidget {
   final BenchLayoutKind selected;
   final ValueChanged<BenchLayoutKind> onChanged;
-  final bool includeSample;
 
   const BenchVariantChips({
     super.key,
     required this.selected,
     required this.onChanged,
-    this.includeSample = false,
   });
 
   @override
@@ -181,13 +179,6 @@ class BenchVariantChips extends StatelessWidget {
           color: AppColors.green,
           onTap: () => onChanged(BenchLayoutKind.improved),
         ),
-        if (includeSample)
-          BenchChip(
-            label: 'Sample',
-            selected: selected == BenchLayoutKind.sample,
-            color: AppColors.amber,
-            onTap: () => onChanged(BenchLayoutKind.sample),
-          ),
       ],
     );
   }

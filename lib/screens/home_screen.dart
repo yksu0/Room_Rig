@@ -47,54 +47,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  /// Returns true when a preset was loaded (so pickers can dismiss).
-  Future<bool> _confirmSelectPreset(
-    BuildContext context,
-    AppState state,
-    RoomPreset preset, {
-    bool fromPicker = false,
-  }) async {
-    final samePreset = preset == state.selectedPreset;
-    final hasWork = state.hasLayoutWork;
-    if (samePreset && !hasWork && state.roomIsReady) {
-      // Already on this preset with no edits — nothing to do.
-      return false;
-    }
-    if (hasWork || (samePreset && state.roomIsReady)) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: Text(
-            samePreset ? 'Reload this preset?' : 'Replace current layout?',
-            style: const TextStyle(color: AppColors.textPrimary),
-          ),
-          content: Text(
-            samePreset
-                ? 'This reloads the preset layout and saves your current room first.'
-                : 'This saves your current room and starts a new lot from the preset.',
-            style: const TextStyle(color: AppColors.textSecondary),
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(samePreset ? 'Reload' : 'Load preset'),
-            ),
-          ],
-        ),
-      );
-      if (ok != true) return false;
-    }
-    state.selectPreset(preset);
-    state.acceptPresetAsReady();
-    state.setTab(2);
-    if (fromPicker && context.mounted && Navigator.canPop(context)) {
-      Navigator.pop(context);
-    }
-    return true;
-  }
-
   Future<void> _confirmLoadSavedRoom(
     BuildContext context,
     AppState state,
@@ -226,96 +178,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) state.completeOnboarding();
   }
 
-  /// Golden path for demos that must not depend on camera Scan.
-  Future<void> _startProfessorDemo(AppState state) async {
-    final go = await showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'PROFESSOR DEMO',
-                  style: TextStyle(
-                    color: AppColors.cyan,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'No camera required',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '1. Load Gaming Setup preset\n'
-                  '2. Open Rig — drag one item\n'
-                  '3. Open Bench — Simulate (My Room → Improved)\n'
-                  '4. Apply → Hub shows ${HubScoreLabels.benchOk}\n'
-                  '5. Optional: Upgrades → Place on Rig',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    height: 1.45,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.cyan,
-                      foregroundColor: Colors.black,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: const Text(
-                      'LOAD PRESET & OPEN RIG',
-                      style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.8),
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(color: AppColors.textMuted),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    if (go != true || !mounted) return;
-    state.selectPreset(RoomPreset.gamingSetup);
-    state.acceptPresetAsReady();
-    state.setTab(2);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Demo: drag something, then open Bench → Simulate → Apply'),
-        duration: Duration(seconds: 4),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -391,8 +253,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               _buildMyRooms(context, state),
                               const SizedBox(height: AppSpace.section),
-                              _buildPresetSelector(context, state),
-                              const SizedBox(height: AppSpace.section),
                               _buildQuickActions(context, state),
                             ],
                           ),
@@ -453,8 +313,6 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: AppSpace.section),
               _buildMyRooms(context, state),
               const SizedBox(height: AppSpace.section),
-              _buildPresetSelector(context, state),
-              const SizedBox(height: AppSpace.section),
               _buildQuickActions(context, state),
               const SizedBox(height: AppSpace.section),
               _buildMetricsRow(context, state),
@@ -472,7 +330,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _GettingStartedBanner(
           onScan: () => state.setTab(1),
           onCreate: () => _showCreateRoomSheet(context, state),
-          onDemo: () => _startProfessorDemo(state),
         ),
         const SizedBox(height: AppSpace.xl),
       ];
@@ -489,21 +346,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _ManualRoomBanner(state: state),
       const SizedBox(height: AppSpace.md),
       _JourneySteps(state: state),
-      const SizedBox(height: AppSpace.xs),
-      Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          onPressed: () => _startProfessorDemo(state),
-          icon: Icon(Icons.school_outlined, size: 18, color: AppColors.green),
-          label: Text(
-            'Replay professor demo path',
-            style: TextStyle(
-              color: AppColors.green,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ),
       const SizedBox(height: AppSpace.xl),
     ];
   }
@@ -1100,136 +942,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildPresetSelector(BuildContext context, AppState state) {
-    if (state.hasLayoutWork) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'ROOM PRESETS',
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 2,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => _showPresetPicker(context, state),
-            child: const Text('Start new from preset…'),
-          ),
-        ],
-      );
-    }
-    return _buildPresetGrid(context, state);
-  }
-
-  Future<void> _showPresetPicker(BuildContext context, AppState state) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Load preset',
-              style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 16),
-            ),
-            const SizedBox(height: 12),
-            _buildPresetGrid(ctx, state, fromPicker: true),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPresetGrid(
-    BuildContext context,
-    AppState state, {
-    bool fromPicker = false,
-  }) {
-    final presets = [
-      (RoomPreset.gamingSetup, RoomSvg.gaming, 'Gaming'),
-      (RoomPreset.homeOffice, RoomSvg.briefcase, 'Office'),
-      (RoomPreset.studioApartment, RoomSvg.house, 'Studio'),
-      (RoomPreset.minimalistBedroom, RoomSvg.moon, 'Zen'),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'ROOM PRESETS',
-          style: TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 2,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            for (var i = 0; i < presets.length; i++)
-              Expanded(
-                child: Builder(
-                  builder: (context) {
-                    final p = presets[i];
-                    final isSelected = state.selectedPreset == p.$1;
-                    return GestureDetector(
-                      onTap: () => _confirmSelectPreset(
-                        context,
-                        state,
-                        p.$1,
-                        fromPicker: fromPicker,
-                      ),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        margin: EdgeInsets.only(right: i == presets.length - 1 ? 0 : 8),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: isSelected ? AppColors.cyan.withValues(alpha: 0.15) : AppColors.card,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isSelected ? AppColors.cyan : AppColors.border,
-                            width: isSelected ? 1.5 : 1,
-                          ),
-                          boxShadow: isSelected
-                              ? [BoxShadow(color: AppColors.cyan.withValues(alpha: 0.2), blurRadius: 12)]
-                              : [],
-                        ),
-                        child: Column(
-                          children: [
-                            SvgIcon(p.$2, size: 24, color: isSelected ? AppColors.cyan : AppColors.textSecondary),
-                            const SizedBox(height: 6),
-                            Text(
-                              p.$3,
-                              style: TextStyle(
-                                color: isSelected ? AppColors.cyan : AppColors.textSecondary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
-  }
-
   Widget _buildQuickActions(BuildContext context, AppState state) {
     if (!state.roomIsReady) {
       return const SizedBox.shrink();
@@ -1585,11 +1297,9 @@ class _HomeScreenState extends State<HomeScreen> {
 class _GettingStartedBanner extends StatelessWidget {
   final VoidCallback onScan;
   final VoidCallback onCreate;
-  final VoidCallback onDemo;
   const _GettingStartedBanner({
     required this.onScan,
     required this.onCreate,
-    required this.onDemo,
   });
 
   @override
@@ -1614,7 +1324,7 @@ class _GettingStartedBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Start from a template',
+                      'Set up your room',
                       style: TextStyle(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w800,
@@ -1623,7 +1333,7 @@ class _GettingStartedBanner extends StatelessWidget {
                     ),
                     const SizedBox(height: AppSpace.xxs),
                     Text(
-                      'Create or Demo → Rig → Bench. Scores stay ROUGH EST. until you run Bench. Scan is optional.',
+                      'Create an empty room or Scan to measure. Then arrange in Rig and run Bench.',
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 13,
@@ -1649,16 +1359,8 @@ class _GettingStartedBanner extends StatelessWidget {
               const SizedBox(width: AppSpace.xs),
               Expanded(
                 child: _StartChip(
-                  label: 'Demo',
-                  color: AppColors.green,
-                  onTap: onDemo,
-                ),
-              ),
-              const SizedBox(width: AppSpace.xs),
-              Expanded(
-                child: _StartChip(
-                  label: 'Scan (opt.)',
-                  color: AppColors.textMuted,
+                  label: 'Scan',
+                  color: AppColors.cyan,
                   onTap: onScan,
                 ),
               ),

@@ -347,8 +347,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
             BenchVariantChips(
               selected: _layoutVariant,
               onChanged: _setLayoutVariant,
-              includeSample: _layoutVariant == BenchLayoutKind.sample,
-            ),
+              ),
             BenchViewChips(
               children: [
                 BenchChip(
@@ -809,8 +808,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
-          includeSample: _layoutVariant == BenchLayoutKind.sample,
-        ),
+          ),
         BenchViewChips(
           children: [
             BenchChip(

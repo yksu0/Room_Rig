@@ -399,8 +399,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             BenchVariantChips(
               selected: _layoutVariant,
               onChanged: _setLayoutVariant,
-              includeSample: _layoutVariant == BenchLayoutKind.sample,
-            ),
+              ),
             BenchViewChips(
               children: [
                 BenchChip(
@@ -978,8 +977,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
-          includeSample: _layoutVariant == BenchLayoutKind.sample,
-        ),
+          ),
         BenchViewChips(
           children: [
             BenchChip(

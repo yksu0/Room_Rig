@@ -19,8 +19,8 @@ class OnboardingSheet extends StatelessWidget {
     final steps = [
       (
         RoomSvg.home,
-        'Start from a template',
-        'Create a room or run Demo — no camera required. This is the golden path.',
+        'Create or Scan',
+        'Start with an empty room, or Scan to measure your space. Then open Rig to arrange.',
         AppColors.green,
         0,
       ),
@@ -40,8 +40,8 @@ class OnboardingSheet extends StatelessWidget {
       ),
       (
         RoomSvg.scan,
-        'Scan stays optional',
-        'Scan can seed size later. Skip it anytime and stay on Create → Rig → Bench.',
+        'Scan when you can',
+        'Camera measure seeds real size. You can also Create first and Scan later.',
         AppColors.textMuted,
         1,
       ),

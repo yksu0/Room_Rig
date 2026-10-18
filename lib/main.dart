@@ -14,7 +14,7 @@ import 'theme/app_layout.dart';
 import 'theme/app_theme.dart';
 import 'widgets/room_icons.dart';
 import 'screens/home_screen.dart';
-import 'screens/scan_focus_placeholder_screen.dart';
+import 'screens/scanner_screen_selector.dart';
 import 'screens/rig_customizer_screen.dart';
 import 'screens/benchmark_screen.dart';
 import 'screens/upgrades_screen.dart';
@@ -92,7 +92,7 @@ class _MainShell extends StatefulWidget {
 class _MainShellState extends State<_MainShell> {
   static const _screens = [
     HomeScreen(),
-    ScanFocusPlaceholderScreen(),
+    ScannerScreen(),
     RigCustomizerScreen(),
     BenchmarkScreen(),
     UpgradesScreen(),

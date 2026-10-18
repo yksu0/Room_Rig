@@ -841,21 +841,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 label: const Text('Rearrange my inventory'),
               ),
             ),
-            if (kDebugMode) ...[
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: 'Sample on Bench',
-                style: IconButton.styleFrom(
-                  minimumSize: const Size(48, 48),
-                  fixedSize: const Size(48, 48),
-                ),
-                onPressed: () {
-                  Navigator.of(ctx).maybePop();
-                  _openSampleRoom(state);
-                },
-                icon: const Icon(Icons.science_rounded, color: AppColors.amber, size: 22),
-              ),
-            ],
           ],
         ),
         if (state.lastOptimizeReasons.isNotEmpty) ...[
@@ -1013,20 +998,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
           ],
         ),
         backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  void _openSampleRoom(AppState state) {
-    state.focusBenchLayout(BenchLayoutKind.sample);
-    state.setTab(benchTabIndex);
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      SnackBar(
-        content: const Text('Showing the reference room on the Bench. Your Rig is untouched — switch to My Room to bench it.'),
-        backgroundColor: AppColors.card,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),

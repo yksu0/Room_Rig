@@ -335,8 +335,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
             BenchVariantChips(
               selected: _layoutVariant,
               onChanged: _setLayoutVariant,
-              includeSample: _layoutVariant == BenchLayoutKind.sample,
-            ),
+              ),
             BenchViewChips(
               children: [
                 BenchChip(
@@ -744,8 +743,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
-          includeSample: _layoutVariant == BenchLayoutKind.sample,
-        ),
+          ),
         BenchViewChips(
           children: [
             BenchChip(

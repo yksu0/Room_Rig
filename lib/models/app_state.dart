@@ -188,18 +188,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Mark the active preset room as demo-ready (Hub leaves Getting Started).
-  void acceptPresetAsReady() {
-    _abandonInFlightHydrate();
-    final layout = _activeRoomLayout;
-    if (layout == null) return;
-    _activeRoomLayout = layout.copyMeta(scanSource: 'demo');
-    _scanComplete = true;
-    _scanProgress = 1.0;
-    unawaited(_persistActiveRoomLayout());
-    notifyListeners();
-  }
-
   /// Layout edits that should show Hub ROUGH EST and drop Applied.
   void _markScoresDirty({bool clearOptimized = true}) {
     _airflowMetricsDirty = true;
@@ -208,7 +196,7 @@ class AppState extends ChangeNotifier {
     if (clearOptimized) _isOptimized = false;
   }
 
-  /// True when the user has a usable room (scanned, manual, or professor demo).
+  /// True when the user has a usable room (scanned or manually created).
   bool get roomIsReady {
     final source = _activeRoomLayout?.scanSource;
     return _scanComplete || source == 'manual' || source == 'demo';
@@ -275,13 +263,98 @@ class AppState extends ChangeNotifier {
   int _hydrateEpoch = 0;
 
   AppState() {
-    _loadPreset(RoomPreset.gamingSetup);
+    _bootstrapEmptyLot();
     final epoch = _hydrateEpoch;
     unawaited(_restorePersistedLayout(expectedEpoch: epoch));
     unawaited(_restoreOnboardingFlag());
   }
 
   void _abandonInFlightHydrate() => _hydrateEpoch++;
+
+  /// Empty door+window shell — not [roomIsReady] until Create or Scan finishes.
+  void _bootstrapEmptyLot({
+    String name = 'My Room',
+    double lengthMeters = 3.6,
+    double widthMeters = 4.8,
+    double heightMeters = 2.7,
+  }) {
+    final cols = RoomScale.cellsFromMeters(lengthMeters);
+    final rows = RoomScale.cellsFromMeters(widthMeters);
+    final height = heightMeters.clamp(2.2, 4.0);
+    final label = name.trim().isEmpty ? 'My Room' : name.trim();
+    _selectedPreset = RoomPreset.gamingSetup;
+    _furniture = [
+      FurnitureItem(
+        id: 'door',
+        name: 'Entry Door',
+        iconName: 'door',
+        category: 'neutral',
+        gridX: 0,
+        gridY: (rows - 2).clamp(1, rows - 1).toDouble(),
+        height: 1,
+        airflowImpact: 0.3,
+        ergonomicsImpact: 0.2,
+        cost: 180,
+        description: 'Primary room entrance; keep approach path clear.',
+      ),
+      FurnitureItem(
+        id: 'window',
+        name: 'Window',
+        iconName: 'window',
+        category: 'lighting',
+        gridX: (cols / 2 - 1).clamp(0, cols - 2.0),
+        gridY: 0,
+        width: 2,
+        lightingImpact: 0.85,
+        airflowImpact: 0.5,
+        cost: 280,
+        description: 'Provides natural light and ambient ventilation.',
+      ),
+    ];
+    _furniture = _furniture
+        .map(
+          (f) => SurfaceMounts.snapToWall(
+            f,
+            gridCols: cols,
+            gridRows: rows,
+          ),
+        )
+        .toList();
+    _activeRoomLayout = RoomLayoutModel(
+      roomName: label,
+      dimensions: RoomDimensions(
+        lengthMeters: lengthMeters.clamp(RoomScale.minMeters, RoomScale.maxMeters),
+        widthMeters: widthMeters.clamp(RoomScale.minMeters, RoomScale.maxMeters),
+        heightMeters: height,
+      ),
+      coverageGrid: CoverageGrid.empty(cols: cols, rows: rows),
+      objects: const [],
+      detections: const [],
+      updatedAt: DateTime.now().toUtc(),
+      scanSource: 'preset',
+    ).withFurniture(_furniture);
+    _activeRoomId = 'room_${DateTime.now().millisecondsSinceEpoch}';
+    _scanComplete = false;
+    _scanProgress = 0;
+    _isOptimized = false;
+    _airflowMetrics = null;
+    _preOptimizeAirflowMetrics = null;
+    _lightingMetrics = null;
+    _preOptimizeLightingMetrics = null;
+    _ergonomicsMetrics = null;
+    _preOptimizeErgonomicsMetrics = null;
+    _airflowMetricsDirty = true;
+    _lightingMetricsDirty = true;
+    _ergonomicsMetricsDirty = true;
+    _lastOptimizeReasons = const [];
+    _originalFurniture = null;
+    _originalScores = null;
+    _selectedItemId = null;
+    _selectedIsScanObject = false;
+    _pendingPlacementId = null;
+    _pendingUpgradeIndex = null;
+    _roomShape = 'Rectangular';
+  }
 
   void _loadPreset(RoomPreset preset) {
     final data = RoomPresets.getPreset(preset);
@@ -316,7 +389,7 @@ class AppState extends ChangeNotifier {
         : preset.name;
     final subtitle = switch (layout?.scanSource) {
       'manual' => 'Created without a scan',
-      'demo' => 'Professor demo room',
+      'demo' => 'Saved room',
       _ => preset.subtitle,
     };
     return RoomData(
@@ -1034,7 +1107,7 @@ class AppState extends ChangeNotifier {
     _rooms.removeWhere((r) => r.id == id);
     if (id == _activeRoomId) {
       if (_rooms.isEmpty) {
-        _loadPreset(RoomPreset.gamingSetup);
+        _bootstrapEmptyLot();
       } else {
         _applySavedRoom(_rooms.last);
       }

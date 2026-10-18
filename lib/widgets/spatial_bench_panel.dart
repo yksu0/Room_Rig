@@ -351,8 +351,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
             BenchVariantChips(
               selected: _layoutVariant,
               onChanged: _setLayoutVariant,
-              includeSample: _layoutVariant == BenchLayoutKind.sample,
-            ),
+              ),
             BenchViewChips(
               children: [
                 BenchChip(
@@ -704,8 +703,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
         BenchVariantChips(
           selected: _layoutVariant,
           onChanged: _setLayoutVariant,
-          includeSample: _layoutVariant == BenchLayoutKind.sample,
-        ),
+          ),
         BenchViewChips(
           children: [
             BenchChip(
