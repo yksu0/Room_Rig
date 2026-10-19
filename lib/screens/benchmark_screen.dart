@@ -20,7 +20,6 @@ import '../widgets/ergonomics_bench_panel.dart';
 import '../widgets/lighting_bench_panel.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/spatial_bench_panel.dart';
-import '../widgets/chrome/adaptive_panel.dart';
 
 enum _AirflowStep { layout, simulate, results }
 enum _RoomViewMode { twoD, threeD, compare }
@@ -331,53 +330,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   }
 
   Widget _buildMobileHeader(AppState state) {
-    final toolsController = AdaptivePanelController([
-      AdaptivePanelSpec(
-        region: ChromeRegion.tools,
-        preferTall: true,
-        builder: (ctx) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildModeScoreHero(state, expand: true),
-            const SizedBox(height: 16),
-            Text(
-              'DOMAIN',
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.6,
-              ),
-            ),
-            const SizedBox(height: 8),
-            _buildModeSelector(state),
-          ],
-        ),
-      ),
-      AdaptivePanelSpec(
-        region: ChromeRegion.inspect,
-        builder: (ctx) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            RoomStatusStrip(
-              onTapScores: () {},
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Scores stay ROUGH EST. until you Apply a Bench run. '
-              'Open View / Tools on the domain panel for layout and simulate controls.',
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 13,
-                height: 1.4,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    ]);
-
+    // Domain View/Tools/Inspect live on BenchPanelScaffold only — do not
+    // duplicate Tools/Inspect triggers here.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -398,13 +352,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         const SizedBox(height: 8),
         RoomStatusStrip(compact: true),
         const SizedBox(height: 8),
-        // Mode chips stay compact (Rig Edit|Orbit|Check pattern).
         _buildModeSelector(state, compact: true),
         const SizedBox(height: 8),
-        AdaptivePanelTriggers(
-          controller: toolsController,
-          visible: const [ChromeRegion.tools, ChromeRegion.inspect],
-        ),
+        _buildModeScoreHero(state, expand: true),
       ],
     );
   }
