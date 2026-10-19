@@ -90,6 +90,9 @@ AGENTS.local.md
 /tool/fix_*.dart
 /nu8/
 
+# Local design refs (screenshots, third-party clones live outside or here)
+/refs/
+
 # Supabase secrets (copy from supabase.local.json.example)
 /supabase.local.json
 .env
