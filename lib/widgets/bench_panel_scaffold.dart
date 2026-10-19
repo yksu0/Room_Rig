@@ -1296,6 +1296,12 @@ class BenchPanelScaffold extends StatelessWidget {
       ),
     ]);
 
+    final hasResultsBlock = step == benchStepResults &&
+        !running &&
+        (resultsExtra != null ||
+            resultsBody != null ||
+            (onApply != null && onRefresh != null));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1317,12 +1323,12 @@ class BenchPanelScaffold extends StatelessWidget {
           onStepChanged: onStepChanged,
         ),
         const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          child: ColoredBox(
-            color: AppColors.surface,
-            child: SizedBox(
-              height: 320,
+        Expanded(
+          flex: hasResultsBlock ? 3 : 1,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            child: ColoredBox(
+              color: AppColors.surface,
               child: desktopViewport!,
             ),
           ),
@@ -1343,21 +1349,31 @@ class BenchPanelScaffold extends StatelessWidget {
           const SizedBox(height: 12),
           middleRunAction!,
         ],
-        if (step == benchStepResults && !running) ...[
+        if (hasResultsBlock) ...[
           const SizedBox(height: 12),
-          if (resultsExtra != null) ...[
-            resultsExtra!,
-            const SizedBox(height: 12),
-          ],
-          ?resultsBody,
-          if (onApply != null && onRefresh != null) ...[
-            const SizedBox(height: 12),
-            BenchApplyRow(
-              onApply: applyEnabled ? onApply : null,
-              onRefresh: onRefresh!,
-              blockedReason: applyEnabled ? null : applyBlockedReason,
+          Expanded(
+            flex: 2,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (resultsExtra != null) ...[
+                    resultsExtra!,
+                    const SizedBox(height: 12),
+                  ],
+                  ?resultsBody,
+                  if (onApply != null && onRefresh != null) ...[
+                    const SizedBox(height: 12),
+                    BenchApplyRow(
+                      onApply: applyEnabled ? onApply : null,
+                      onRefresh: onRefresh!,
+                      blockedReason: applyEnabled ? null : applyBlockedReason,
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ],
+          ),
         ],
       ],
     );
@@ -1397,53 +1413,63 @@ class BenchPanelScaffold extends StatelessWidget {
       return _mobileShellChrome(context);
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        steps,
-        const SizedBox(height: 16),
-        if (step == benchStepLayout && layoutBody != null) ...[
-          layoutBody!,
-          if (layoutRunAction != null) ...[
-            const SizedBox(height: 16),
-            layoutRunAction!,
-          ],
-        ],
-        if (step == benchStepMiddle && middleBody != null) ...[
-          middleBody!,
-          if (middleRunAction != null) ...[
-            const SizedBox(height: 16),
-            middleRunAction!,
-          ],
-          if (running && progress != null && progressLabel != null) ...[
-            const SizedBox(height: 16),
-            BenchProgressBar(progress: progress!, label: progressLabel!, accentColor: accentColor),
-          ],
-        ],
-        if (step == benchStepResults) ...[
-          ?middleBody,
-          if (running && progress != null && progressLabel != null) ...[
-            const SizedBox(height: 16),
-            BenchProgressBar(progress: progress!, label: progressLabel!, accentColor: accentColor),
-          ],
-          if (!running) ...[
-            if (middleBody != null) const SizedBox(height: 20),
-            if (resultsExtra != null) ...[
-              resultsExtra!,
-              const SizedBox(height: 12),
-            ],
-            ?resultsBody,
-            if (onApply != null && onRefresh != null) ...[
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          steps,
+          const SizedBox(height: 16),
+          if (step == benchStepLayout && layoutBody != null) ...[
+            layoutBody!,
+            if (layoutRunAction != null) ...[
               const SizedBox(height: 16),
-              BenchApplyRow(
-                onApply: applyEnabled ? onApply : null,
-                onRefresh: onRefresh!,
-                blockedReason: applyEnabled ? null : applyBlockedReason,
+              layoutRunAction!,
+            ],
+          ],
+          if (step == benchStepMiddle && middleBody != null) ...[
+            middleBody!,
+            if (middleRunAction != null) ...[
+              const SizedBox(height: 16),
+              middleRunAction!,
+            ],
+            if (running && progress != null && progressLabel != null) ...[
+              const SizedBox(height: 16),
+              BenchProgressBar(
+                progress: progress!,
+                label: progressLabel!,
+                accentColor: accentColor,
               ),
             ],
           ],
+          if (step == benchStepResults) ...[
+            ?middleBody,
+            if (running && progress != null && progressLabel != null) ...[
+              const SizedBox(height: 16),
+              BenchProgressBar(
+                progress: progress!,
+                label: progressLabel!,
+                accentColor: accentColor,
+              ),
+            ],
+            if (!running) ...[
+              if (middleBody != null) const SizedBox(height: 20),
+              if (resultsExtra != null) ...[
+                resultsExtra!,
+                const SizedBox(height: 12),
+              ],
+              ?resultsBody,
+              if (onApply != null && onRefresh != null) ...[
+                const SizedBox(height: 16),
+                BenchApplyRow(
+                  onApply: applyEnabled ? onApply : null,
+                  onRefresh: onRefresh!,
+                  blockedReason: applyEnabled ? null : applyBlockedReason,
+                ),
+              ],
+            ],
+          ],
         ],
-      ],
+      ),
     );
   }
 }
