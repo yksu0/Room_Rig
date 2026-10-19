@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../models/rig_catalog.dart';
 import '../models/room_model.dart';
 import '../models/scan_layout_model.dart';
 import 'scan_pipeline.dart';
@@ -155,7 +156,7 @@ class ScanLayoutConverter {
           height: 1,
           airflowImpact: 0.3,
           ergonomicsImpact: 0.2,
-          cost: 200,
+          cost: 4500,
           description: 'Entry opening inferred from scan finalize.',
         ),
       );
@@ -173,7 +174,7 @@ class ScanLayoutConverter {
           height: 1,
           lightingImpact: 0.7,
           airflowImpact: 0.25,
-          cost: 150,
+          cost: 8000,
           description: 'Daylight opening inferred from scan finalize.',
         ),
       );
@@ -245,9 +246,17 @@ class ScanLayoutConverter {
       airflowImpact: _airflowImpact(icon),
       lightingImpact: _lightingImpact(icon),
       ergonomicsImpact: _ergonomicsImpact(icon),
-      cost: 120 + (obj.confidence * 180),
+      cost: _costFor(icon),
       description: 'Detected from scan (${(obj.confidence * 100).round()}% confidence).',
     );
+  }
+
+  /// Mid-market ₱ from [RigCatalog] when the icon matches; else a modest default.
+  static double _costFor(String icon) {
+    for (final e in RigCatalog.items) {
+      if (e.iconName == icon || e.baseId == icon) return e.cost;
+    }
+    return 2500;
   }
 
   static List<ScanObject> _ensureOpenings(

@@ -1,5 +1,5 @@
-// Demo upgrade shop — prices are ballpark retail placeholders; boosts are
-// authored score tags (not measured CFD / lux / ergonomics lab points).
+// Upgrade shop — mid-market PH (₱) retail ballparks (researched 2025).
+// Boosts are authored score tags (not measured CFD / lux / ergonomics lab points).
 import 'rig_catalog.dart';
 
 class UpgradeSpec {
@@ -11,7 +11,7 @@ class UpgradeSpec {
   final double airflowBoost;
   final double lightingBoost;
   final double ergonomicsBoost;
-  /// Ballpark PHP (₱) list-price placeholder for demos (not live retail).
+  /// Mid-market PHP (₱) list-price estimate for demos (not a live quote).
   final double price;
 
   const UpgradeSpec({
@@ -53,7 +53,7 @@ class UpgradeCatalog {
   UpgradeCatalog._();
 
   static const honestyNote =
-      'Prices are demo ballparks; boost tags are authored placeholders — not measured performance.';
+      'Prices are mid-market PH retail estimates (₱); boost tags are authored placeholders — not measured performance.';
 
   /// Impact on furniture when Place'd: boost / [boostToImpactDivisor].
   static const boostToImpactDivisor = 20.0;
@@ -68,7 +68,7 @@ class UpgradeCatalog {
       airflowBoost: 14,
       lightingBoost: 0,
       ergonomicsBoost: 0,
-      price: 69,
+      price: 1500,
     ),
     UpgradeSpec(
       name: 'Smart Air Purifier',
@@ -79,7 +79,7 @@ class UpgradeCatalog {
       airflowBoost: 10,
       lightingBoost: 0,
       ergonomicsBoost: 4,
-      price: 199,
+      price: 8000,
     ),
     UpgradeSpec(
       name: 'Diffused Floor Lamp',
@@ -90,7 +90,7 @@ class UpgradeCatalog {
       airflowBoost: 0,
       lightingBoost: 11,
       ergonomicsBoost: 2,
-      price: 75,
+      price: 2500,
     ),
     UpgradeSpec(
       name: 'Smart Blinds',
@@ -101,7 +101,7 @@ class UpgradeCatalog {
       airflowBoost: 2,
       lightingBoost: 13,
       ergonomicsBoost: 0,
-      price: 229,
+      price: 8000,
     ),
   ];
 

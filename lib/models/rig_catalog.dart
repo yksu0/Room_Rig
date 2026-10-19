@@ -1,6 +1,10 @@
 // lib/models/rig_catalog.dart
 // v1 set — a few of each filter, enough for a bedroom or desk room.
 // Footprints come from GltfCatalog metre targets so Orbit matches Model.
+//
+// Costs are mid-market Philippine peso (₱) retail ballparks (Lazada / Shopee /
+// Abenson / SOGO / Xiaomi PH / appliance dealers, researched 2025). Not live
+// quotes — expect ±30% by brand and sale.
 import '../services/gltf_catalog.dart';
 import 'room_model.dart';
 
@@ -103,7 +107,7 @@ class RigCatalog {
       fallbackWidth: 2,
       fallbackDepth: 1,
       ergonomicsImpact: 0.6,
-      cost: 220,
+      cost: 4500,
       description: 'Work surface — drop a monitor, PC or lamp on it',
     ),
     RigCatalogEntry.fromCatalog(
@@ -112,7 +116,7 @@ class RigCatalog {
       iconName: 'chair',
       category: 'ergonomics',
       ergonomicsImpact: 0.7,
-      cost: 180,
+      cost: 3500,
       description: 'Seat at the desk — leave pull-back room',
     ),
     RigCatalogEntry.fromCatalog(
@@ -124,7 +128,7 @@ class RigCatalog {
       fallbackDepth: 0.35,
       ergonomicsImpact: 0.4,
       lightingImpact: -0.1,
-      cost: 260,
+      cost: 5500,
       description: 'Sits on a desk — thin screen, not a floor block',
     ),
     RigCatalogEntry.fromCatalog(
@@ -135,7 +139,7 @@ class RigCatalog {
       fallbackWidth: 0.35,
       fallbackDepth: 0.75,
       airflowImpact: -0.5,
-      cost: 900,
+      cost: 45000,
       description: 'Heat source — Auto-Rig parks it on the desk when one is present',
     ),
     RigCatalogEntry.fromCatalog(
@@ -146,7 +150,7 @@ class RigCatalog {
       fallbackWidth: 2,
       fallbackDepth: 2,
       airflowImpact: -0.3,
-      cost: 400,
+      cost: 12000,
       description: 'Low wide footprint — keep walk paths around it',
     ),
     RigCatalogEntry.fromCatalog(
@@ -157,7 +161,7 @@ class RigCatalog {
       fallbackWidth: 2,
       fallbackDepth: 1,
       airflowImpact: -0.2,
-      cost: 520,
+      cost: 15000,
       description: 'Low seat along a wall',
     ),
     RigCatalogEntry.fromCatalog(
@@ -167,7 +171,7 @@ class RigCatalog {
       category: 'neutral',
       fallbackWidth: 2,
       fallbackDepth: 1,
-      cost: 180,
+      cost: 3500,
       description: 'Lounge table — holds TV, plant, or a small lamp',
     ),
     RigCatalogEntry.fromCatalog(
@@ -179,7 +183,7 @@ class RigCatalog {
       fallbackDepth: 0.9,
       airflowImpact: -0.5,
       lightingImpact: -0.4,
-      cost: 480,
+      cost: 9000,
       description: 'Full-height storage',
     ),
     RigCatalogEntry.fromCatalog(
@@ -191,7 +195,7 @@ class RigCatalog {
       fallbackDepth: 0.65,
       airflowImpact: -0.4,
       lightingImpact: -0.3,
-      cost: 150,
+      cost: 2500,
       description: 'Tall open storage',
     ),
     RigCatalogEntry.fromCatalog(
@@ -199,7 +203,7 @@ class RigCatalog {
       name: 'Plant',
       iconName: 'plant',
       category: 'neutral',
-      cost: 35,
+      cost: 350,
       description: 'Small pot — stacks on the lounge table',
     ),
     RigCatalogEntry.fromCatalog(
@@ -210,7 +214,7 @@ class RigCatalog {
       fallbackWidth: 1.85,
       fallbackDepth: 0.45,
       lightingImpact: 0.15,
-      cost: 400,
+      cost: 15000,
       description: 'Wide thin screen — sits on the lounge table',
     ),
     RigCatalogEntry.fromCatalog(
@@ -222,7 +226,7 @@ class RigCatalog {
       fallbackDepth: 1,
       airflowImpact: 0.3,
       ergonomicsImpact: 0.2,
-      cost: 180,
+      cost: 4500,
       description: 'Entry opening — Invasive mode to move',
     ),
     RigCatalogEntry.fromCatalog(
@@ -234,7 +238,7 @@ class RigCatalog {
       fallbackDepth: 1,
       lightingImpact: 0.85,
       airflowImpact: 0.5,
-      cost: 280,
+      cost: 8000,
       description: 'Daylight opening — seeps a little if the room is over- or under-pressured',
     ),
     RigCatalogEntry.fromCatalog(
@@ -245,7 +249,7 @@ class RigCatalog {
       fallbackWidth: 1.5,
       fallbackDepth: 1,
       airflowImpact: 0.9,
-      cost: 700,
+      cost: 25000,
       description: 'Wall cold supply — Invasive mode to move',
     ),
     RigCatalogEntry.fromCatalog(
@@ -256,7 +260,7 @@ class RigCatalog {
       fallbackWidth: 0.75,
       fallbackDepth: 1,
       airflowImpact: 0.7,
-      cost: 90,
+      cost: 2500,
       description: 'Wall supply — outdoor air in. Pressurizes the room so windows leak out',
     ),
     RigCatalogEntry.fromCatalog(
@@ -267,7 +271,7 @@ class RigCatalog {
       fallbackWidth: 0.75,
       fallbackDepth: 1,
       airflowImpact: 0.65,
-      cost: 85,
+      cost: 1500,
       description: 'Wall extract — room air out. Windows then leak in to replace it',
     ),
     RigCatalogEntry.fromCatalog(
@@ -276,7 +280,7 @@ class RigCatalog {
       iconName: 'portableAc',
       category: 'airflow',
       airflowImpact: 0.75,
-      cost: 380,
+      cost: 18000,
       description: 'Floor cold jet — aim with yaw',
     ),
     RigCatalogEntry.fromCatalog(
@@ -285,7 +289,7 @@ class RigCatalog {
       iconName: 'fan',
       category: 'airflow',
       airflowImpact: 0.6,
-      cost: 70,
+      cost: 1500,
       description: 'Pole + disc — aim with yaw',
     ),
     RigCatalogEntry.fromCatalog(
@@ -294,7 +298,7 @@ class RigCatalog {
       iconName: 'heater',
       category: 'airflow',
       airflowImpact: -0.7,
-      cost: 80,
+      cost: 2000,
       description: 'Short floor heater — aim with yaw',
     ),
     RigCatalogEntry.fromCatalog(
@@ -303,7 +307,7 @@ class RigCatalog {
       iconName: 'lamp',
       category: 'lighting',
       lightingImpact: 0.7,
-      cost: 60,
+      cost: 800,
       description: 'Desk lamp — snaps onto a desk',
     ),
     RigCatalogEntry.fromCatalog(
@@ -312,7 +316,7 @@ class RigCatalog {
       iconName: 'floorLamp',
       category: 'lighting',
       lightingImpact: 0.55,
-      cost: 80,
+      cost: 2500,
       description: 'Tall pole lamp on the floor',
     ),
     RigCatalogEntry.fromCatalog(
@@ -321,7 +325,7 @@ class RigCatalog {
       iconName: 'ceilingLight',
       category: 'lighting',
       lightingImpact: 0.8,
-      cost: 90,
+      cost: 1800,
       description: 'Disc on the ceiling — Invasive mode to move',
     ),
     RigCatalogEntry.fromCatalog(
@@ -330,7 +334,7 @@ class RigCatalog {
       iconName: 'purifier',
       category: 'airflow',
       airflowImpact: 0.4,
-      cost: 220,
+      cost: 8000,
       description: 'Floor scrubber — keep clear of walls',
     ),
   ];
