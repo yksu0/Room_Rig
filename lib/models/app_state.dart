@@ -294,7 +294,7 @@ class AppState extends ChangeNotifier {
         height: 1,
         airflowImpact: 0.3,
         ergonomicsImpact: 0.2,
-        cost: 180,
+        cost: 4500,
         description: 'Primary room entrance; keep approach path clear.',
       ),
       FurnitureItem(
@@ -307,7 +307,7 @@ class AppState extends ChangeNotifier {
         width: 2,
         lightingImpact: 0.85,
         airflowImpact: 0.5,
-        cost: 280,
+        cost: 8000,
         description: 'Provides natural light and ambient ventilation.',
       ),
     ];
@@ -952,7 +952,7 @@ class AppState extends ChangeNotifier {
         height: 1,
         airflowImpact: 0.3,
         ergonomicsImpact: 0.2,
-        cost: 180,
+        cost: 4500,
         description: 'Primary room entrance; keep approach path clear.',
       ),
       FurnitureItem(
@@ -965,7 +965,7 @@ class AppState extends ChangeNotifier {
         width: 2,
         lightingImpact: 0.85,
         airflowImpact: 0.5,
-        cost: 280,
+        cost: 8000,
         description: 'Provides natural light and ambient ventilation.',
       ),
     ];
