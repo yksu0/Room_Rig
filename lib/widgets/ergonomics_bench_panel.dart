@@ -82,9 +82,11 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
   /// Safe to call during build: it only touches fields.
   void _recompute(AppState state, {bool resetStep = true}) {
     final room = state.currentRoomData;
+    state.ensureBenchBaseline(notify: false);
     final layouts = BenchLayoutBuilder.build(
       mode: BenchMode.ergonomics,
       roomFurniture: state.committedFurniture,
+      baselineFurniture: state.benchBaselineFurniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
       weights: state.optimizeWeights,
@@ -122,9 +124,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       _simVariant = kind;
       _selectedFurnitureId = null;
     }
-    final fp = BenchLayoutBuilder.fingerprintOf(
-      state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
-    );
+    final fp = BenchLayoutBuilder.fingerprintOf(benchSyncFurniture(state));
     if (benchLayoutsInSync(
       _layouts,
       furnitureFingerprint: fp,
@@ -163,8 +163,8 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       };
 
   String get _layoutHint => _layouts?.fellBackToSample ?? false
-      ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-      : 'Clearance + walk-path on your Rig, then Improved preview via the same Auto-Rig as Rig (Apply to keep it).';
+      ? 'No baseline — this runs on the reference room. Add furniture in Rig, then Set baseline.'
+      : 'Scores Baseline vs Auto-Rig (same engine as Rig Tools → Auto-Rig). Apply writes Auto-Rig onto your Rig.';
 
   ErgonomicsSimSnapshot? get _activeSim {
     switch (_simVariant) {
@@ -181,18 +181,18 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       case BenchLayoutKind.myRoom:
         if (_layouts?.fellBackToSample ?? false) {
           return const [
-            'Nothing in the Rig yet — showing the reference room',
-            'Add furniture on the Rig tab and this bench follows it',
+            'No baseline — showing the reference room',
+            'Add furniture on Rig, then Set baseline (Compare)',
           ];
         }
         return const [
-          'Desk, chair and walking routes all come from your Rig',
-          'Move something on the Rig tab and the reach zones rebuild here',
+          'Pinned Baseline inventory for this lot',
+          'Rig edits do not move Baseline until you Set baseline again',
         ];
       case BenchLayoutKind.improved:
         final reasons = _layouts?.improvedReasons ?? const <String>[];
         return reasons.isEmpty
-            ? const ['No rearrange found that sits better than your current room']
+            ? const ['No rearrange found that sits better than Baseline']
             : reasons;
       case BenchLayoutKind.sample:
         return const [
@@ -264,6 +264,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
         message: why.isEmpty ? 'Ergonomics applied · $diff' : 'Ergonomics applied · $diff · $why',
         accentColor: AppColors.ergonomicsColor,
         onOpenRig: () => state.setTab(2),
+        onKeepAsBaseline: () => state.keepAppliedAsBenchBaseline(),
         onShareImage: () => LayoutShareImage.shareBeforeAfter(
           gridCols: room.gridCols,
           gridRows: room.gridRows,
@@ -277,7 +278,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     final resultsExtra = noOp
         ? benchImprovedNoOpBanner(
             message:
-                'Improved layout matches your room — paths are already as good as the optimizer found.',
+                'Auto-Rig matches Baseline — paths are already as good as the optimizer found.',
           )
         : benchWhyWinsCard(
             reasons: _layouts?.improvedReasons ?? const [],
@@ -304,9 +305,11 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       applyEnabled: !applyBlocked,
       applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
-          : (noOp ? 'Improved layout matches your room — nothing to apply.' : null),
+          : (noOp ? 'Auto-Rig matches Baseline — nothing to apply.' : null),
       onApply: applyImproved,
       onRefresh: _rebuild,
+      compareLayouts: _layouts,
+      onTryAlternate: () => state.cycleBenchAlternate(),
       desktopControls: _desktopControls(state),
       desktopViewport: _desktopViewport(state),
       desktopInspect: _desktopInspect(
@@ -315,7 +318,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
         onApply: applyBlocked ? null : applyImproved,
         applyBlockedReason: applyValidation.hasHardLayoutConflicts
             ? 'Fix overlaps or blocked doorways before applying.'
-            : (noOp ? 'Improved layout matches your room — nothing to apply.' : null),
+            : (noOp ? 'Auto-Rig matches Baseline — nothing to apply.' : null),
       ),
     );
   }
@@ -432,7 +435,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
             ),
             const SizedBox(height: 10),
             Text(
-              'My Room vs Improved under your Rig Auto-Rig mix.',
+              'Baseline vs Auto-Rig under your Rig Auto-Rig mix.',
               style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 12,
@@ -488,14 +491,14 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
             BenchInspectLockBlock(furniture: _furnitureFor(BenchLayoutKind.myRoom)),
             Text(
               _roomView == _View.compare
-                  ? 'My Room vs Improved'
+                  ? 'Baseline vs Auto-Rig'
                   : switch (_layoutVariant) {
                       BenchLayoutKind.myRoom =>
                         (_layouts?.fellBackToSample ?? false)
-                            ? 'Reference sample — Rig is empty (not your room)'
-                            : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
-                      BenchLayoutKind.improved =>
-                        _layouts?.improvedCaption ?? 'Improved · Auto-Rig',
+                            ? 'Reference sample — no baseline inventory'
+                            : 'Baseline — ${_furnitureFor(BenchLayoutKind.myRoom).length} pinned items',
+                    BenchLayoutKind.improved =>
+                        _layouts?.improvedCaption ?? 'Auto-Rig',
                       BenchLayoutKind.sample =>
                         'Sample room — chair blocked, gear out of reach',
                     },
@@ -840,15 +843,15 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
             children: [
               Text(
                 _roomView == _View.compare
-                    ? 'My Room vs Improved — same Auto-Rig mix as Rig'
+                    ? 'Baseline vs Auto-Rig — same Auto-Rig mix as Rig'
                     : switch (_layoutVariant) {
                         BenchLayoutKind.myRoom =>
                           (_layouts?.fellBackToSample ?? false)
-                              ? 'Reference room — your Rig is empty'
-                              : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
+                              ? 'Reference room — no baseline inventory'
+                              : 'Baseline — ${_furnitureFor(BenchLayoutKind.myRoom).length} pinned items',
                         BenchLayoutKind.improved =>
                           _layouts?.improvedCaption ??
-                              'Improved — your room, Auto-Rig layout',
+                              'Auto-Rig · from Baseline',
                         BenchLayoutKind.sample =>
                           'Sample room — chair blocked, gear out of reach',
                       },
@@ -1179,8 +1182,8 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       validation: validation,
       whyReasons: _layouts?.improvedReasons ?? const [],
       rings: [
-        BenchScoreRingSpec(score: base.comfortScore, color: AppColors.cyan, label: 'My Room'),
-        BenchScoreRingSpec(score: opt.comfortScore, color: AppColors.ergonomicsColor, label: 'Improved'),
+        BenchScoreRingSpec(score: base.comfortScore, color: AppColors.cyan, label: 'Baseline'),
+        BenchScoreRingSpec(score: opt.comfortScore, color: AppColors.ergonomicsColor, label: 'Auto-Rig'),
       ],
       summaryText:
           'Walk paths $pathLabel · '

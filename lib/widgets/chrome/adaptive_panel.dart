@@ -9,7 +9,7 @@ import '../room_model_scene_stub.dart'
     if (dart.library.html) '../room_model_scene_web.dart' as platform;
 
 /// Named chrome regions shared by Rig and Bench (supporting-pane roles).
-enum ChromeRegion { view, tools, inspect, results }
+enum ChromeRegion { view, tools, inspect, results, compare }
 
 extension ChromeRegionLabel on ChromeRegion {
   String get label => switch (this) {
@@ -17,6 +17,7 @@ extension ChromeRegionLabel on ChromeRegion {
         ChromeRegion.tools => 'Tools',
         ChromeRegion.inspect => 'Inspect',
         ChromeRegion.results => 'Results',
+        ChromeRegion.compare => 'Compare',
       };
 
   IconData get icon => switch (this) {
@@ -24,6 +25,7 @@ extension ChromeRegionLabel on ChromeRegion {
         ChromeRegion.tools => Icons.build_outlined,
         ChromeRegion.inspect => Icons.list_alt_rounded,
         ChromeRegion.results => Icons.insights_outlined,
+        ChromeRegion.compare => Icons.compare_arrows_rounded,
       };
 }
 

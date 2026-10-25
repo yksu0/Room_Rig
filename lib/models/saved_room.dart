@@ -29,6 +29,11 @@ class SavedRoom {
   /// Auth user id when this lot was saved while signed in; null = guest/device-only.
   final String? ownerUserId;
 
+  /// Pinned Bench compare baseline (left side). Null until first Bench open / Set baseline.
+  final List<FurnitureItem>? benchBaselineFurniture;
+  final String? benchBaselineLabel;
+  final DateTime? benchBaselineAt;
+
   const SavedRoom({
     required this.id,
     required this.name,
@@ -44,6 +49,9 @@ class SavedRoom {
     this.scoresClean = false,
     this.isOptimized = false,
     this.ownerUserId,
+    this.benchBaselineFurniture,
+    this.benchBaselineLabel,
+    this.benchBaselineAt,
   });
 
   /// True guest / device-only lots — safe to offer for upload after sign-in.
@@ -63,8 +71,12 @@ class SavedRoom {
     bool? scoresClean,
     bool? isOptimized,
     String? ownerUserId,
+    List<FurnitureItem>? benchBaselineFurniture,
+    String? benchBaselineLabel,
+    DateTime? benchBaselineAt,
     bool clearOriginal = false,
     bool clearOwner = false,
+    bool clearBenchBaseline = false,
   }) {
     return SavedRoom(
       id: id,
@@ -83,6 +95,15 @@ class SavedRoom {
       scoresClean: scoresClean ?? this.scoresClean,
       isOptimized: isOptimized ?? this.isOptimized,
       ownerUserId: clearOwner ? null : (ownerUserId ?? this.ownerUserId),
+      benchBaselineFurniture: clearBenchBaseline
+          ? null
+          : (benchBaselineFurniture ?? this.benchBaselineFurniture),
+      benchBaselineLabel: clearBenchBaseline
+          ? null
+          : (benchBaselineLabel ?? this.benchBaselineLabel),
+      benchBaselineAt: clearBenchBaseline
+          ? null
+          : (benchBaselineAt ?? this.benchBaselineAt),
     );
   }
 
@@ -104,6 +125,13 @@ class SavedRoom {
         if (originalScores != null) 'originalScores': originalScores,
         if (revisions.isNotEmpty)
           'revisions': revisions.map((r) => r.toJson()).toList(growable: false),
+        if (benchBaselineFurniture != null)
+          'benchBaselineFurniture': benchBaselineFurniture!
+              .map((f) => f.toJson())
+              .toList(growable: false),
+        if (benchBaselineLabel != null) 'benchBaselineLabel': benchBaselineLabel,
+        if (benchBaselineAt != null)
+          'benchBaselineAt': benchBaselineAt!.toUtc().toIso8601String(),
       };
 
   factory SavedRoom.fromJson(Map<String, dynamic> json) {
@@ -111,6 +139,7 @@ class SavedRoom {
     final originalRaw = json['originalFurniture'];
     final scoresRaw = json['originalScores'];
     final revisionsRaw = json['revisions'];
+    final baselineRaw = json['benchBaselineFurniture'];
     final originalFurniture = originalRaw is List
         ? RigCatalog.retainV1(
             originalRaw
@@ -156,6 +185,17 @@ class SavedRoom {
       isOptimized: json['isOptimized'] as bool? ??
           (scoresClean && originalFurniture != null),
       ownerUserId: json['ownerUserId'] as String?,
+      benchBaselineFurniture: baselineRaw is List
+          ? RigCatalog.retainV1(
+              baselineRaw
+                  .whereType<Map>()
+                  .map((e) => FurnitureItem.fromJson(e.cast<String, dynamic>()))
+                  .toList(),
+            )
+          : null,
+      benchBaselineLabel: json['benchBaselineLabel'] as String?,
+      benchBaselineAt:
+          DateTime.tryParse(json['benchBaselineAt'] as String? ?? '')?.toLocal(),
     );
   }
 }

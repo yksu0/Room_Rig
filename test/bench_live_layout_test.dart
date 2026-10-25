@@ -10,13 +10,23 @@ import 'package:room_rig/services/ergonomics_optimizer.dart';
 import 'package:room_rig/services/lighting_optimizer.dart';
 import 'package:room_rig/services/spatial_analyzer.dart';
 
-BenchLayouts _build(BenchMode mode, List<FurnitureItem> furniture) {
+BenchLayouts _build(
+  BenchMode mode,
+  List<FurnitureItem> furniture, {
+  List<FurnitureItem>? baselineFurniture,
+}) {
   return BenchLayoutBuilder.build(
     mode: mode,
     roomFurniture: furniture,
+    baselineFurniture: baselineFurniture,
     gridCols: 6,
     gridRows: 8,
   );
+}
+
+AppState _rigWithPreset() {
+  final state = AppState()..selectPreset(RoomPreset.gamingSetup);
+  return state;
 }
 
 void main() {
@@ -26,39 +36,102 @@ void main() {
     SharedPreferences.setMockInitialValues({'room_rig.onboarding_seen': true});
   });
 
-  test('my room is the live Rig furniture, not the demo layout', () {
-    final state = AppState();
-    state.moveFurniture('desk', 4.0, 6.0);
-    final desk = state.furniture.firstWhere((f) => f.id == 'desk');
+  test('baseline is the pinned snapshot, not a drifting live Rig pose', () {
+    final state = _rigWithPreset();
+    state.ensureBenchBaseline(label: 'opened Bench');
+    final deskBefore = state.benchBaselineFurniture.firstWhere((f) => f.id == 'desk');
 
-    final layouts = _build(BenchMode.airflow, state.furniture);
+    state.moveFurniture('desk', 4.0, 6.0, respectCollision: false);
+    final deskLive = state.furniture.firstWhere((f) => f.id == 'desk');
+    expect(deskLive.gridX, isNot(deskBefore.gridX));
+
+    final layouts = _build(
+      BenchMode.airflow,
+      state.furniture,
+      baselineFurniture: state.benchBaselineFurniture,
+    );
     final benched = layouts.myRoom.firstWhere((f) => f.id == 'desk');
 
-    expect(benched.gridX, desk.gridX);
-    expect(benched.gridY, desk.gridY);
+    expect(benched.gridX, deskBefore.gridX);
+    expect(benched.gridY, deskBefore.gridY);
     expect(layouts.fellBackToSample, isFalse);
-
-    // The sample is still available, and it is a different room.
-    expect(layouts.sample.firstWhere((f) => f.id == 'desk').gridX, isNot(desk.gridX));
   });
 
-  test('adding furniture in the Rig shows up in what the Bench simulates', () {
-    final state = AppState();
-    final before = _build(BenchMode.airflow, state.furniture);
+  test('ensureBenchBaseline pins once; Set from Rig retargets', () {
+    final state = _rigWithPreset();
+    expect(state.hasBenchBaseline, isFalse);
+    state.ensureBenchBaseline(label: 'opened Bench');
+    expect(state.hasBenchBaseline, isTrue);
+    expect(state.benchBaselineLabel, 'opened Bench');
+    final firstFp = BenchLayoutBuilder.fingerprintOf(state.benchBaselineFurniture);
+
+    state.ensureBenchBaseline(label: 'opened Bench again');
+    expect(
+      BenchLayoutBuilder.fingerprintOf(state.benchBaselineFurniture),
+      firstFp,
+      reason: 'ensure must not overwrite an existing pin',
+    );
+
+    state.moveFurniture('desk', 4.0, 6.0, respectCollision: false);
+    state.setBenchBaselineFromRig(label: 'from Rig');
+    expect(state.benchBaselineLabel, 'from Rig');
+    expect(
+      BenchLayoutBuilder.fingerprintOf(state.benchBaselineFurniture),
+      isNot(firstFp),
+    );
+  });
+
+  test('Auto-Rig inventory matches baseline item ids', () {
+    final state = _rigWithPreset();
+    state.ensureBenchBaseline();
+    state.moveFurniture('ac', 5.0, 7.0, respectCollision: false);
+
+    final layouts = _build(
+      BenchMode.airflow,
+      state.furniture,
+      baselineFurniture: state.benchBaselineFurniture,
+    );
+    final baseIds = layouts.myRoom.map((f) => f.id).toSet();
+    final improvedIds = layouts.improved.map((f) => f.id).toSet();
+
+    expect(improvedIds, baseIds, reason: 'Auto-Rig keeps baseline inventory');
+    expect(layouts.improvedReasons, isNotEmpty);
+  });
+
+  test('adding furniture after pin does not change Baseline until retarget', () {
+    final state = _rigWithPreset();
+    state.ensureBenchBaseline();
+    final before = _build(
+      BenchMode.airflow,
+      state.furniture,
+      baselineFurniture: state.benchBaselineFurniture,
+    );
 
     final id = state.addCatalogFurniture(
       RigCatalog.items.firstWhere((e) => e.baseId == 'fan'),
     );
     expect(id, isNotNull);
 
-    final after = _build(BenchMode.airflow, state.furniture);
-    expect(after.myRoom.length, before.myRoom.length + 1);
-    expect(after.myRoom.any((f) => f.id == id), isTrue);
-    expect(after.fingerprint, isNot(before.fingerprint));
+    final after = _build(
+      BenchMode.airflow,
+      state.furniture,
+      baselineFurniture: state.benchBaselineFurniture,
+    );
+    expect(after.myRoom.length, before.myRoom.length);
+    expect(after.myRoom.any((f) => f.id == id), isFalse);
+    expect(after.fingerprint, before.fingerprint);
+
+    state.setBenchBaselineFromRig(label: 'from Rig');
+    final retargeted = _build(
+      BenchMode.airflow,
+      state.furniture,
+      baselineFurniture: state.benchBaselineFurniture,
+    );
+    expect(retargeted.myRoom.any((f) => f.id == id), isTrue);
   });
 
   test('hidden items are left out of the simulated layout', () {
-    final state = AppState();
+    final state = _rigWithPreset();
     final visible = _build(BenchMode.airflow, state.furniture).myRoom.length;
 
     state.toggleFurnitureHidden('shelf');
@@ -69,7 +142,7 @@ void main() {
   });
 
   test('the field genuinely changes when furniture moves', () {
-    final state = AppState();
+    final state = _rigWithPreset();
 
     AirflowSimSnapshot sim() => AirflowSimulator.build(
           furniture: _build(BenchMode.airflow, state.furniture).myRoom,
@@ -79,8 +152,8 @@ void main() {
         );
 
     final before = sim();
-    state.moveFurniture('ac', 5.0, 4.0);
-    state.moveFurniture('shelf', 1.0, 1.0);
+    state.moveFurniture('ac', 5.0, 4.0, respectCollision: false);
+    state.moveFurniture('shelf', 1.0, 1.0, respectCollision: false);
     final after = sim();
 
     var differing = 0;
@@ -94,29 +167,22 @@ void main() {
     );
   });
 
-  test('improved is derived from your room, not from the demo layout', () {
-    final state = AppState();
-    state.moveFurniture('ac', 5.0, 7.0);
-
-    final layouts = _build(BenchMode.airflow, state.furniture);
-    final myIds = layouts.myRoom.map((f) => f.id).toSet();
-    final improvedIds = layouts.improved.map((f) => f.id).toSet();
-
-    expect(improvedIds, myIds, reason: 'the improved run keeps your inventory');
-    expect(layouts.improvedReasons, isNotEmpty);
-  });
-
   test('improved arrangement is identical across every Bench mode', () {
-    final state = AppState();
-    state.moveFurniture('ac', 5.0, 7.5);
-    state.moveFurniture('shelf', 2.0, 0.5);
+    final state = _rigWithPreset();
+    state.moveFurniture('ac', 5.0, 7.5, respectCollision: false);
+    state.moveFurniture('shelf', 2.0, 0.5, respectCollision: false);
+    state.ensureBenchBaseline();
 
     String? shared;
     for (final mode in BenchMode.values) {
-      final layouts = _build(mode, state.furniture);
+      final layouts = _build(
+        mode,
+        state.furniture,
+        baselineFurniture: state.benchBaselineFurniture,
+      );
       final fp = BenchLayoutBuilder.fingerprintOf(layouts.improved);
       shared ??= fp;
-      expect(fp, shared, reason: '${mode.name} Improved must match other modes');
+      expect(fp, shared, reason: '${mode.name} Auto-Rig must match other modes');
       expect(
         BenchLayoutBuilder.fingerprintOf(layouts.sample),
         BenchLayoutBuilder.fingerprintOf(
@@ -128,18 +194,20 @@ void main() {
   });
 
   test('improved scores at least as well as the room it came from', () {
-    final state = AppState();
-    // A deliberately poor starting point.
-    state.moveFurniture('ac', 5.0, 7.5);
-    state.moveFurniture('shelf', 2.0, 0.5);
-    state.moveFurniture('desk', 3.0, 6.0);
+    final state = _rigWithPreset();
+    state.moveFurniture('ac', 5.0, 7.5, respectCollision: false);
+    state.moveFurniture('shelf', 2.0, 0.5, respectCollision: false);
+    state.moveFurniture('desk', 3.0, 6.0, respectCollision: false);
+    state.ensureBenchBaseline();
 
-    // Shared Auto-Rig can trade one metric for another. Require the average of
-    // the four mode scores not to drop, instead of each mode in isolation.
     final beforeScores = <double>[];
     final afterScores = <double>[];
     for (final mode in BenchMode.values) {
-      final layouts = _build(mode, state.furniture);
+      final layouts = _build(
+        mode,
+        state.furniture,
+        baselineFurniture: state.benchBaselineFurniture,
+      );
       beforeScores.add(_score(mode, layouts.myRoom));
       afterScores.add(_score(mode, layouts.improved));
     }
@@ -149,7 +217,7 @@ void main() {
       afterMean,
       greaterThanOrEqualTo(beforeMean - 1.0),
       reason:
-          'shared Improved mean $afterMean must not tank vs My Room mean $beforeMean '
+          'shared Auto-Rig mean $afterMean must not tank vs Baseline mean $beforeMean '
           '(per-mode before=$beforeScores after=$afterScores)',
     );
   });
@@ -161,26 +229,20 @@ void main() {
     expect(layouts.improved, isNotEmpty);
   });
 
-  test('every mode reads the same live room', () {
-    final state = AppState();
-    state.moveFurniture('bed', 0.0, 0.5);
-    final bed = state.furniture.firstWhere((f) => f.id == 'bed');
-
-    for (final mode in BenchMode.values) {
-      final layouts = _build(mode, state.furniture);
-      final benched = layouts.myRoom.firstWhere((f) => f.id == 'bed');
-      expect(benched.gridX, bed.gridX, reason: mode.name);
-      expect(benched.gridY, bed.gridY, reason: mode.name);
-    }
+  test('new room clears bench baseline', () {
+    final state = _rigWithPreset();
+    state.ensureBenchBaseline();
+    expect(state.hasBenchBaseline, isTrue);
+    state.createManualRoom(name: 'Fresh', lengthMeters: 3.6, widthMeters: 4.8);
+    expect(state.hasBenchBaseline, isFalse);
   });
 
   test('building layouts never mutates the room it was handed', () {
-    final state = AppState();
+    final state = _rigWithPreset();
     final before = BenchLayoutBuilder.fingerprintOf(state.furniture);
 
     for (final mode in BenchMode.values) {
       final layouts = _build(mode, state.furniture);
-      // Mutating the returned copies must not reach back into app state.
       layouts.myRoom.first.copyWith(gridX: 99);
       expect(
         BenchLayoutBuilder.fingerprintOf(state.furniture),

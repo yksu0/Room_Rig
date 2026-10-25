@@ -115,10 +115,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   /// Rebuilds every field from the furniture that is actually in the Rig.
   /// Safe to call during build: it only touches fields.
   void _recomputeLayouts(AppState state, {bool resetStep = true}) {
+    state.ensureBenchBaseline(notify: false);
     final room = state.currentRoomData;
     final layouts = BenchLayoutBuilder.build(
       mode: BenchMode.airflow,
       roomFurniture: state.committedFurniture,
+      baselineFurniture: state.benchBaselineFurniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
       weights: state.optimizeWeights,
@@ -173,9 +175,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         _roomViewMode = _RoomViewMode.twoD;
       }
     }
-    final fp = BenchLayoutBuilder.fingerprintOf(
-      state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
-    );
+    final fp = BenchLayoutBuilder.fingerprintOf(benchSyncFurniture(state));
     if (benchLayoutsInSync(
       _layouts,
       furnitureFingerprint: fp,
@@ -431,8 +431,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           icon: RoomSvg.scan,
           onRun: _runBenchmark,
           hint: _layouts?.fellBackToSample ?? false
-              ? 'Rig is empty — My Room / Improved use the reference sample.'
-              : 'Sims your Rig (My Room), then previews Improved via the same Auto-Rig as Rig — Apply to write it back.',
+              ? 'No baseline — Baseline / Auto-Rig use the reference sample.'
+              : 'Scores Baseline vs Auto-Rig (same engine as Rig Tools → Auto-Rig). Apply writes Auto-Rig onto your Rig.',
         ),
         middleRunAction: BenchRunAction(
           buttonLabel: 'SEE RESULTS',
@@ -448,6 +448,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         desktopControls: _airflowDesktopControls(state),
         desktopViewport: _airflowDesktopViewport(state),
         desktopInspect: _airflowDesktopInspect(state),
+        compareLayouts: _layouts,
+        onTryAlternate: () => state.cycleBenchAlternate(),
         onApply: null,
         onRefresh: () => _rebuildFromRoom(state),
       );
@@ -547,8 +549,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             const SizedBox(height: 8),
             Text(
               _layouts?.fellBackToSample ?? false
-                  ? 'Rig is empty — My Room / Improved use the reference sample.'
-                  : 'Sims My Room, then previews Improved with the same Auto-Rig as Rig (Apply to keep it).',
+                  ? 'No baseline — Baseline / Auto-Rig use the reference sample.'
+                  : 'Scores Baseline vs Auto-Rig (same engine as Rig Tools → Auto-Rig). Apply writes Auto-Rig onto your Rig.',
               style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 12,
@@ -721,14 +723,14 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           BenchInspectLockBlock(furniture: _furnitureFor(BenchLayoutKind.myRoom)),
           Text(
             _roomViewMode == _RoomViewMode.compare
-                ? 'My Room vs Improved'
+                ? 'Baseline vs Auto-Rig'
                 : switch (_layoutVariant) {
                     BenchLayoutKind.myRoom =>
                       (_layouts?.fellBackToSample ?? false)
-                          ? 'Reference sample — Rig is empty (not your room)'
-                          : 'Your room — ${_furnitureFor(BenchLayoutKind.myRoom).length} items from the Rig',
+                          ? 'Reference sample — no baseline inventory'
+                          : 'Baseline — ${_furnitureFor(BenchLayoutKind.myRoom).length} pinned items',
                     BenchLayoutKind.improved =>
-                      _layouts?.improvedCaption ?? 'Improved · Auto-Rig',
+                      _layouts?.improvedCaption ?? 'Auto-Rig',
                     BenchLayoutKind.sample =>
                       'Sample room — AC in a corner, weak coverage',
                   },
@@ -825,7 +827,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         if (noOp)
           benchImprovedNoOpBanner(
             message:
-                'Improved layout matches your room — airflow is already as good as the optimizer found.',
+                'Auto-Rig matches Baseline — airflow is already as good as the optimizer found.',
           )
         else
           benchWhyWinsCard(
@@ -864,6 +866,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                         : 'Airflow applied · $diff · $why',
                     accentColor: AppColors.cyan,
                     onOpenRig: () => state.setTab(2),
+                    onKeepAsBaseline: () => state.keepAppliedAsBenchBaseline(),
                     onShareImage: () => LayoutShareImage.shareBeforeAfter(
                       gridCols: room.gridCols,
                       gridRows: room.gridRows,
@@ -876,7 +879,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           onRefresh: () => _rebuildFromRoom(state),
           blockedReason: validation.hasHardLayoutConflicts
               ? 'Fix overlaps or blocked doorways before applying.'
-              : (noOp ? 'Improved layout matches your room — nothing to apply.' : null),
+              : (noOp ? 'Auto-Rig matches Baseline — nothing to apply.' : null),
         ),
       ],
     );
@@ -937,13 +940,13 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       case BenchLayoutKind.myRoom:
         if (_layouts?.fellBackToSample ?? false) {
           return const [
-            'Rig empty — showing the reference sample room (not yours)',
-            'Add furniture on Rig; Bench Improved will use your Auto-Rig sliders',
+            'No baseline — showing the reference sample room',
+            'Add furniture on Rig, then Set baseline (Compare) before scoring',
           ];
         }
         return const [
-          'Every AC, fan, blocker and heat source comes from your Rig',
-          'Move something on the Rig tab and the field rebuilds here',
+          'Pinned Baseline inventory for this lot',
+          'Rig edits do not move Baseline until you Set baseline again',
         ];
       case BenchLayoutKind.improved:
         final reasons = _layouts?.improvedReasons ?? const <String>[];
@@ -1091,8 +1094,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           validation: validation,
           whyReasons: _layouts?.improvedReasons ?? const [],
           rings: [
-            BenchScoreRingSpec(score: base.circulationScore, color: AppColors.cyan, label: 'My Room'),
-            BenchScoreRingSpec(score: opt.circulationScore, color: AppColors.airflowColor, label: 'Improved'),
+            BenchScoreRingSpec(score: base.circulationScore, color: AppColors.cyan, label: 'Baseline'),
+            BenchScoreRingSpec(score: opt.circulationScore, color: AppColors.airflowColor, label: 'Auto-Rig'),
           ],
           summaryText:
               'Circulation $deltaLabel · '

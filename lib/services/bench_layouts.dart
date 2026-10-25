@@ -1,9 +1,8 @@
 // lib/services/bench_layouts.dart
 // What each Bench mode actually simulates.
 //
-// Improved arrangement is the SAME across airflow / lighting / ergonomics /
-// spatial — one Auto-Rig under the live Rig weight mix. Only the scored field
-// (sim) changes per mode. Try alternate cycles the same candidate pool Rig uses.
+// Default pair: pinned Baseline (left) vs Auto-Rig proposal (right) under the
+// live Rig weight mix. Apply writes the proposal onto the Rig; Run never does.
 import '../models/room_model.dart';
 import 'multi_objective_optimizer.dart';
 
@@ -17,7 +16,7 @@ const int benchTabIndex = 3;
 
 /// Which layout a Bench view is showing.
 enum BenchLayoutKind {
-  /// The furniture currently in the Rig.
+  /// Pinned baseline snapshot (legacy name kept for call sites / focus flags).
   myRoom,
 
   /// [myRoom] after Auto-Rig rearranges it (same pose for every mode).
@@ -36,14 +35,14 @@ class BenchLayouts {
   /// Why the optimizer moved what it moved, straight from the optimizer.
   final List<String> improvedReasons;
 
-  /// True when the Rig had nothing to simulate and [myRoom] fell back to the
+  /// True when there was no baseline inventory and [myRoom] fell back to the
   /// reference room, so the UI can say so instead of implying it is yours.
   final bool fellBackToSample;
 
-  /// Changes whenever the Rig furniture changes, used to trigger a re-sim.
+  /// Changes whenever the baseline furniture changes, used to trigger a re-sim.
   final String fingerprint;
 
-  /// Weight mix used for Improved (matches Rig Auto-Rig sliders).
+  /// Weight mix used for Auto-Rig (matches Rig Auto-Rig sliders).
   final MultiObjectiveWeights weights;
 
   /// e.g. `Best of 4 · 84` — empty when a fallback pack was used.
@@ -77,14 +76,14 @@ class BenchLayouts {
 
   String get weightsSummary => weights.summaryLabel;
 
-  /// Chip / banner line for the Improved variant.
+  /// Chip / banner line for the Auto-Rig variant.
   String get improvedCaption {
     final mix = weightsSummary;
     if (fellBackToSample) {
-      return 'Improved — reference room (Rig empty) · $mix';
+      return 'Auto-Rig — reference room (no baseline) · $mix';
     }
     if (rankLabel.isNotEmpty) return '$rankLabel · $mix';
-    return 'Improved · $mix';
+    return 'Auto-Rig · $mix';
   }
 
   bool get canTryAlternate => candidateCount > 1 && !fellBackToSample;
@@ -137,7 +136,7 @@ class BenchLayoutBuilder {
         .toList(growable: false);
   }
 
-  /// Reference-room Improved under [weights] (empty-Rig fallback only).
+  /// Reference-room Auto-Rig under [weights] (empty-baseline fallback only).
   static List<FurnitureItem> sampleImprovedFor(
     BenchMode mode, {
     MultiObjectiveWeights weights = defaultWeights,
@@ -151,15 +150,24 @@ class BenchLayoutBuilder {
     ).furniture;
   }
 
+  /// Build Baseline vs Auto-Rig layouts.
+  ///
+  /// Prefer [baselineFurniture] (pinned snapshot). If empty, fall back to
+  /// [roomFurniture] (live Rig) so callers that have not pinned yet still work;
+  /// AppState.ensureBenchBaseline should pin before Bench Run in the app.
   static BenchLayouts build({
     required BenchMode mode,
     required List<FurnitureItem> roomFurniture,
     required int gridCols,
     required int gridRows,
+    List<FurnitureItem>? baselineFurniture,
     MultiObjectiveWeights weights = defaultWeights,
     int alternateIndex = 0,
   }) {
-    final live = roomFurniture
+    final baselineSrc = (baselineFurniture != null && baselineFurniture.isNotEmpty)
+        ? baselineFurniture
+        : roomFurniture;
+    final live = baselineSrc
         .where((f) => !f.hidden)
         .map((f) => f.copyWith())
         .toList(growable: false);
@@ -187,7 +195,7 @@ class BenchLayoutBuilder {
             sampleImprovedFor(mode, weights: w),
         sample: sample,
         improvedReasons: pick?.reasons ??
-            const <String>['Auto-Rig on the reference room (Rig was empty)'],
+            const <String>['Auto-Rig on the reference room (no baseline)'],
         fellBackToSample: true,
         fingerprint: fp,
         weights: w,

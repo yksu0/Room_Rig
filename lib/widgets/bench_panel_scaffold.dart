@@ -149,7 +149,7 @@ class BenchChip extends StatelessWidget {
   }
 }
 
-/// My Room / Improved variant selector.
+/// Baseline / Auto-Rig variant selector.
 class BenchVariantChips extends StatelessWidget {
   final BenchLayoutKind selected;
   final ValueChanged<BenchLayoutKind> onChanged;
@@ -165,13 +165,13 @@ class BenchVariantChips extends StatelessWidget {
     return BenchSegmentBar(
       children: [
         BenchChip(
-          label: 'My Room',
+          label: 'Baseline',
           selected: selected == BenchLayoutKind.myRoom,
           color: AppColors.cyan,
           onTap: () => onChanged(BenchLayoutKind.myRoom),
         ),
         BenchChip(
-          label: 'Improved',
+          label: 'Auto-Rig',
           selected: selected == BenchLayoutKind.improved,
           color: AppColors.green,
           onTap: () => onChanged(BenchLayoutKind.improved),
@@ -496,7 +496,7 @@ bool benchLayoutsInSync(BenchLayouts? layouts, {
       alternateCursor == layouts.requestedAlternateIndex;
 }
 
-/// Side-by-side My Room | Improved floor plans (replaces the old scrub compare).
+/// Side-by-side Baseline | Auto-Rig floor plans (replaces the old scrub compare).
 class BenchSideBySidePlans extends StatelessWidget {
   final int gridCols;
   final int gridRows;
@@ -526,7 +526,7 @@ class BenchSideBySidePlans extends StatelessWidget {
             children: [
               Expanded(
                 child: _pane(
-                  label: 'My Room',
+                  label: 'Baseline',
                   color: AppColors.cyan,
                   furniture: myRoom,
                 ),
@@ -534,7 +534,7 @@ class BenchSideBySidePlans extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _pane(
-                  label: 'Improved',
+                  label: 'Auto-Rig',
                   color: AppColors.green,
                   furniture: improved,
                 ),
@@ -1004,7 +1004,7 @@ class BenchResultsCard extends StatelessWidget {
   }
 }
 
-/// Floating snackbar after applying an improved layout.
+/// Floating snackbar after applying an Auto-Rig proposal.
 /// Always returns to Rig ([onOpenRig]) so Apply is a one-hop finish.
 void showBenchApplySnackBar(
   BuildContext context, {
@@ -1012,14 +1012,27 @@ void showBenchApplySnackBar(
   required Color accentColor,
   required VoidCallback onOpenRig,
   Future<void> Function()? onShareImage,
+  VoidCallback? onKeepAsBaseline,
 }) {
   onOpenRig();
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      duration: const Duration(seconds: 5),
+      duration: const Duration(seconds: 6),
       content: Row(
         children: [
           Expanded(child: Text(message)),
+          if (onKeepAsBaseline != null) ...[
+            TextButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                onKeepAsBaseline();
+              },
+              child: const Text(
+                'Keep baseline',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
           if (onShareImage != null) ...[
             const SizedBox(width: 4),
             IconButton(
@@ -1042,6 +1055,224 @@ void showBenchApplySnackBar(
   );
 }
 
+/// Furniture used to decide whether Bench layouts need a re-sim.
+List<FurnitureItem> benchSyncFurniture(AppState state) {
+  if (state.hasBenchBaseline) return state.benchBaselineFurniture;
+  return state.committedFurniture.where((f) => !f.hidden).toList(growable: false);
+}
+
+/// Compare sheet: what pair is scored + baseline retarget controls.
+class BenchComparePanel extends StatelessWidget {
+  final Color accentColor;
+  final VoidCallback? onTryAlternate;
+  final BenchLayouts? layouts;
+
+  const BenchComparePanel({
+    super.key,
+    required this.accentColor,
+    this.onTryAlternate,
+    this.layouts,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final label = state.benchBaselineLabel?.trim();
+    final baselineName = state.hasBenchBaseline
+        ? ((label != null && label.isNotEmpty) ? label : 'pinned')
+        : 'not set';
+    final revs = state.activeRoomRevisions;
+    final canAlt = onTryAlternate != null && (layouts?.canTryAlternate ?? false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Now comparing',
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.4,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Baseline · $baselineName  vs  Auto-Rig',
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Preview — Rig unchanged until Apply',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.35),
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Baseline',
+          style: TextStyle(
+            color: accentColor,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.tonal(
+              onPressed: () {
+                state.setBenchBaselineFromRig(label: 'from Rig');
+              },
+              child: const Text('Set from Rig'),
+            ),
+            if (revs.isNotEmpty)
+              OutlinedButton(
+                onPressed: () => _pickCheckpoint(context, state),
+                child: const Text('From checkpoint…'),
+              ),
+          ],
+        ),
+        if (state.hasBenchBaseline) ...[
+          const SizedBox(height: 8),
+          Text(
+            '${state.benchBaselineFurniture.length} items'
+            '${state.benchBaselineAt != null ? ' · pinned ${_shortTime(state.benchBaselineAt!)}' : ''}',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+        ],
+        const SizedBox(height: 16),
+        Text(
+          'Proposal',
+          style: TextStyle(
+            color: accentColor,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          layouts?.improvedCaption ??
+              'Same engine as Rig → Auto-Rig under your weight mix.',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.4),
+        ),
+        if (canAlt) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: onTryAlternate,
+              child: const Text('Try alternate'),
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        const Text(
+          'Apply writes Auto-Rig onto your Rig. Optionally Keep as new baseline after Apply.',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 12, height: 1.4),
+        ),
+      ],
+    );
+  }
+
+  static String _shortTime(DateTime at) {
+    final local = at.toLocal();
+    final hh = local.hour.toString().padLeft(2, '0');
+    final mm = local.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  Future<void> _pickCheckpoint(BuildContext context, AppState state) async {
+    final revs = state.activeRoomRevisions;
+    if (revs.isEmpty) return;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      builder: (ctx) {
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  'Set baseline from checkpoint',
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              for (final r in revs.reversed)
+                ListTile(
+                  title: Text(r.label, style: const TextStyle(color: AppColors.textPrimary)),
+                  subtitle: Text(
+                    '${r.furniture.length} items',
+                    style: const TextStyle(color: AppColors.textMuted),
+                  ),
+                  onTap: () => Navigator.pop(ctx, r.id),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked == null) return;
+    state.setBenchBaselineFromRevision(picked);
+  }
+}
+
+/// Always-visible compare status; tap opens the Compare sheet.
+class BenchCompareStatusLine extends StatelessWidget {
+  final Color accentColor;
+  final VoidCallback onOpenCompare;
+
+  const BenchCompareStatusLine({
+    super.key,
+    required this.accentColor,
+    required this.onOpenCompare,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final line = context.select<AppState, String>((s) => s.benchBaselineStatusLine);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onOpenCompare,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              Icon(Icons.compare_arrows_rounded, size: 16, color: accentColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  line,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.textMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Confirm before pushing an improved bench layout to the Rig.
 Future<bool> confirmBenchApply(
   BuildContext context, {
@@ -1056,8 +1287,8 @@ Future<bool> confirmBenchApply(
         backgroundColor: AppColors.surface,
         title: const Text('Cannot apply demo layout', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Your Rig is empty, so Bench is showing a reference room. '
-          'Add furniture on Rig (or load a preset) before applying.',
+          'No baseline inventory, so Bench is showing a reference room. '
+          'Add furniture on Rig (or load a preset), then Set baseline before applying.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -1076,7 +1307,7 @@ Future<bool> confirmBenchApply(
         backgroundColor: AppColors.surface,
         title: const Text('Cannot apply layout', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'The improved layout still has overlapping furniture or blocked doorways. '
+          'The Auto-Rig layout still has overlapping furniture or blocked doorways. '
           'Fix conflicts on the Rig or re-run the bench.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
@@ -1093,9 +1324,9 @@ Future<bool> confirmBenchApply(
     barrierColor: Colors.black.withValues(alpha: 0.55),
     builder: (ctx) => AlertDialog(
       backgroundColor: AppColors.surface,
-      title: const Text('Apply Bench suggestion to Rig?', style: TextStyle(color: AppColors.textPrimary)),
+      title: const Text('Apply Auto-Rig to Rig?', style: TextStyle(color: AppColors.textPrimary)),
       content: const Text(
-        'This replaces your current furniture layout with the Bench suggestion, '
+        'This replaces your current furniture layout with the Auto-Rig proposal, '
         'saves a checkpoint, and returns you to Rig.',
         style: TextStyle(color: AppColors.textSecondary),
       ),
@@ -1220,7 +1451,7 @@ bool improvedLayoutIsNoOp(BenchLayouts? layouts) {
       BenchLayoutBuilder.fingerprintOf(layouts.improved);
 }
 
-Widget benchImprovedNoOpBanner({String message = 'Improved layout matches your room — nothing new to apply.'}) {
+Widget benchImprovedNoOpBanner({String message = 'Auto-Rig matches Baseline — nothing new to apply.'}) {
   return Container(
     width: double.infinity,
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1365,8 +1596,12 @@ class BenchPanelScaffold extends StatelessWidget {
   final Widget? desktopInspect;
 
   /// When true (default), mobile chrome shows a compact domain score opposite
-  /// the View / Inspect chips instead of a full-width hero.
+  /// the View / Compare / Inspect chips instead of a full-width hero.
   final bool showChromeScore;
+
+  /// Optional Auto-Rig layouts for the Compare sheet (Try alternate, captions).
+  final BenchLayouts? compareLayouts;
+  final VoidCallback? onTryAlternate;
 
   const BenchPanelScaffold({
     super.key,
@@ -1392,6 +1627,8 @@ class BenchPanelScaffold extends StatelessWidget {
     this.desktopViewport,
     this.desktopInspect,
     this.showChromeScore = true,
+    this.compareLayouts,
+    this.onTryAlternate,
   });
 
   bool get _hasShellSlots =>
@@ -1417,7 +1654,7 @@ class BenchPanelScaffold extends StatelessWidget {
     );
   }
 
-  /// Rig-style View / Inspect sheets; canvas + step/RUN stay in the page body
+  /// Rig-style View / Compare / Inspect sheets; canvas + step/RUN stay in the page body
   /// (Tools used to re-host the same tabs/RUN and looked like duplicate actions).
   Widget _mobileShellChrome(BuildContext context) {
     final controller = AdaptivePanelController([
@@ -1425,6 +1662,17 @@ class BenchPanelScaffold extends StatelessWidget {
         region: ChromeRegion.view,
         preferTall: true,
         builder: (ctx) => SingleChildScrollView(child: desktopControls!),
+      ),
+      AdaptivePanelSpec(
+        region: ChromeRegion.compare,
+        preferTall: true,
+        builder: (ctx) => SingleChildScrollView(
+          child: BenchComparePanel(
+            accentColor: accentColor,
+            layouts: compareLayouts,
+            onTryAlternate: onTryAlternate,
+          ),
+        ),
       ),
       AdaptivePanelSpec(
         region: ChromeRegion.inspect,
@@ -1449,6 +1697,7 @@ class BenchPanelScaffold extends StatelessWidget {
               accent: accentColor,
               visible: const [
                 ChromeRegion.view,
+                ChromeRegion.compare,
                 ChromeRegion.inspect,
               ],
             ),
@@ -1463,7 +1712,11 @@ class BenchPanelScaffold extends StatelessWidget {
             ],
           ],
         ),
-        const SizedBox(height: 10),
+        BenchCompareStatusLine(
+          accentColor: accentColor,
+          onOpenCompare: () => controller.openPanel(context, ChromeRegion.compare),
+        ),
+        const SizedBox(height: 6),
         BenchStepTabs(
           accentColor: accentColor,
           step: step,
@@ -1543,8 +1796,33 @@ class BenchPanelScaffold extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: steps,
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                steps,
+                BenchCompareStatusLine(
+                  accentColor: accentColor,
+                  onOpenCompare: () {
+                    showModalBottomSheet<void>(
+                      context: context,
+                      backgroundColor: AppColors.surface,
+                      isScrollControlled: true,
+                      builder: (ctx) => SafeArea(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                          child: BenchComparePanel(
+                            accentColor: accentColor,
+                            layouts: compareLayouts,
+                            onTryAlternate: onTryAlternate,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
           Expanded(
             child: BenchDesktopShell(

@@ -264,6 +264,11 @@ class AppState extends ChangeNotifier {
   String _activeRoomId = 'room_default';
   final List<SavedRoom> _rooms = [];
 
+  /// Pinned Bench left-side baseline (frozen until Set baseline / room switch).
+  List<FurnitureItem>? _benchBaselineFurniture;
+  String? _benchBaselineLabel;
+  DateTime? _benchBaselineAt;
+
   /// Bumped when the user mutates session state so a late prefs hydrate cannot
   /// overwrite in-memory Place ghosts / demo work.
   int _hydrateEpoch = 0;
@@ -418,6 +423,7 @@ class AppState extends ChangeNotifier {
     _pendingPlacementId = null;
     _pendingUpgradeIndex = null;
     _roomShape = 'Rectangular';
+    _clearBenchBaseline();
   }
 
   void _loadPreset(RoomPreset preset) {
@@ -437,6 +443,7 @@ class AppState extends ChangeNotifier {
     _originalScores = null;
     _pendingPlacementId = null;
     _pendingUpgradeIndex = null;
+    _clearBenchBaseline();
   }
 
   List<FurnitureItem> get furniture => _furniture;
@@ -1087,6 +1094,7 @@ class AppState extends ChangeNotifier {
     _pendingPlacementId = null;
     _pendingUpgradeIndex = null;
     _roomShape = 'Rectangular';
+    _clearBenchBaseline();
     clearLayoutHistory();
     requestOpenToolsOnRig();
     unawaited(_persistActiveRoomLayout());
@@ -1205,6 +1213,11 @@ class AppState extends ChangeNotifier {
     _originalScores = room.originalScores == null
         ? null
         : Map<String, double>.from(room.originalScores!);
+    _benchBaselineFurniture = room.benchBaselineFurniture == null
+        ? null
+        : _cloneFurniture(room.benchBaselineFurniture!);
+    _benchBaselineLabel = room.benchBaselineLabel;
+    _benchBaselineAt = room.benchBaselineAt;
     final match = RoomPreset.values.where((p) => p.name == room.presetName);
     if (match.isNotEmpty) _selectedPreset = match.first;
     _selectedItemId = null;
@@ -1252,6 +1265,11 @@ class AppState extends ChangeNotifier {
       scoresClean: !scoresAreSimulated,
       isOptimized: _isOptimized,
       ownerUserId: uid,
+      benchBaselineFurniture: _benchBaselineFurniture == null
+          ? null
+          : _cloneFurniture(_benchBaselineFurniture!),
+      benchBaselineLabel: _benchBaselineLabel,
+      benchBaselineAt: _benchBaselineAt,
     );
     if (existingIdx >= 0) {
       _rooms[existingIdx] = snap;
@@ -1477,6 +1495,83 @@ class AppState extends ChangeNotifier {
     final idx = _rooms.indexWhere((r) => r.id == _activeRoomId);
     if (idx < 0) return const [];
     return List.unmodifiable(_rooms[idx].revisions);
+  }
+
+  /// Frozen Bench left layout (empty list if none pinned yet).
+  List<FurnitureItem> get benchBaselineFurniture =>
+      _benchBaselineFurniture == null
+          ? const []
+          : List.unmodifiable(_benchBaselineFurniture!);
+
+  bool get hasBenchBaseline =>
+      _benchBaselineFurniture != null && _benchBaselineFurniture!.isNotEmpty;
+
+  String? get benchBaselineLabel => _benchBaselineLabel;
+  DateTime? get benchBaselineAt => _benchBaselineAt;
+
+  String get benchBaselineStatusLine {
+    if (!hasBenchBaseline) return 'Baseline · not set · vs Auto-Rig · preview';
+    final label = _benchBaselineLabel?.trim();
+    final name = (label != null && label.isNotEmpty) ? label : 'pinned';
+    return 'Baseline · $name · vs Auto-Rig · preview';
+  }
+
+  void _clearBenchBaseline({bool notify = false}) {
+    _benchBaselineFurniture = null;
+    _benchBaselineLabel = null;
+    _benchBaselineAt = null;
+    if (notify) notifyListeners();
+  }
+
+  /// Auto-pin current Rig once when Bench needs a baseline (non-empty lot).
+  /// Pass [notify]: false when called from a Bench rebuild that already setStates.
+  void ensureBenchBaseline({
+    String label = 'opened Bench',
+    bool notify = true,
+  }) {
+    if (hasBenchBaseline) return;
+    final live = committedFurniture.where((f) => !f.hidden).toList(growable: false);
+    if (live.isEmpty) return;
+    setBenchBaselineFromRig(label: label, notify: notify);
+  }
+
+  void setBenchBaselineFromRig({
+    String label = 'from Rig',
+    bool notify = true,
+  }) {
+    final live = committedFurniture.where((f) => !f.hidden).toList(growable: false);
+    if (live.isEmpty) return;
+    _benchBaselineFurniture = _cloneFurniture(live);
+    _benchBaselineLabel = label;
+    _benchBaselineAt = DateTime.now();
+    _stashActiveRoom();
+    unawaited(_persistActiveRoomLayout());
+    if (notify) notifyListeners();
+  }
+
+  /// Pin baseline from a Hub checkpoint. Returns false if revision missing/empty.
+  bool setBenchBaselineFromRevision(String revisionId) {
+    final revs = activeRoomRevisions;
+    RoomRevision? hit;
+    for (final r in revs) {
+      if (r.id == revisionId) {
+        hit = r;
+        break;
+      }
+    }
+    if (hit == null || hit.furniture.isEmpty) return false;
+    _benchBaselineFurniture = _cloneFurniture(hit.furniture);
+    _benchBaselineLabel = hit.label;
+    _benchBaselineAt = DateTime.now();
+    _stashActiveRoom();
+    unawaited(_persistActiveRoomLayout());
+    notifyListeners();
+    return true;
+  }
+
+  /// After Bench Apply: optionally treat the new Rig layout as the next baseline.
+  void keepAppliedAsBenchBaseline() {
+    setBenchBaselineFromRig(label: 'after Apply');
   }
 
   /// Restore a checkpoint into the live editor (pushes undo).
