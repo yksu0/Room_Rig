@@ -496,45 +496,41 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   child: _buildCompactViewChips(),
                 ),
                 const SizedBox(height: AppSpace.xs),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            AdaptivePanelTriggers(
-                              controller: _adaptivePanelControllerFor(state),
-                              visible: const [
-                                ChromeRegion.view,
-                                ChromeRegion.tools,
-                                ChromeRegion.snapshot,
-                                ChromeRegion.inspect,
-                              ],
-                              regionLabels: const {
-                                ChromeRegion.inspect: 'Items',
-                              },
-                              regionActions: {
-                                ChromeRegion.inspect: () {
-                                  _scaffoldKey.currentState?.openEndDrawer();
-                                },
-                              },
-                            ),
-                            const SizedBox(width: 6),
-                            RigLiveDomainBar(
-                              compactMenu: true,
-                              domain: _liveDomain,
-                              score: _liveCache.score,
-                              detail: _liveCache.isStale
-                                  ? '${_liveCache.detail} · updating…'
-                                  : _liveCache.detail,
-                              onChanged: (d) => _setLiveDomain(state, d),
-                            ),
-                          ],
-                        ),
+                _RigChromeScrollRow(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AdaptivePanelTriggers(
+                        controller: _adaptivePanelControllerFor(state),
+                        visible: const [
+                          ChromeRegion.view,
+                          ChromeRegion.tools,
+                          ChromeRegion.snapshot,
+                          ChromeRegion.inspect,
+                        ],
+                        regionLabels: const {
+                          ChromeRegion.inspect: 'Items',
+                        },
+                        regionActions: {
+                          ChromeRegion.inspect: () {
+                            _scaffoldKey.currentState?.openEndDrawer();
+                          },
+                        },
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      RigLiveDomainBar(
+                        compactMenu: true,
+                        domain: _liveDomain,
+                        score: _liveCache.score,
+                        detail: _liveCache.isStale
+                            ? '${_liveCache.detail} · updating…'
+                            : _liveCache.detail,
+                        onChanged: (d) => _setLiveDomain(state, d),
+                      ),
+                      // Room so the last chip isn't flush against the fade edge.
+                      const SizedBox(width: 20),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -4509,6 +4505,102 @@ class _InspectImpactChip extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Horizontal chrome strip: swipe sideways when View/Tools/Snapshot/Items/Live
+/// do not fit. Right-edge fade hints that more chips are off-screen.
+class _RigChromeScrollRow extends StatefulWidget {
+  final Widget child;
+
+  const _RigChromeScrollRow({required this.child});
+
+  @override
+  State<_RigChromeScrollRow> createState() => _RigChromeScrollRowState();
+}
+
+class _RigChromeScrollRowState extends State<_RigChromeScrollRow> {
+  final _controller = ScrollController();
+  bool _canScrollMore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_updateFade);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateFade());
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_updateFade);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _updateFade() {
+    if (!_controller.hasClients) return;
+    final more = _controller.position.maxScrollExtent > 2 &&
+        _controller.offset < _controller.position.maxScrollExtent - 2;
+    if (more != _canScrollMore && mounted) {
+      setState(() => _canScrollMore = more);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: NotificationListener<ScrollMetricsNotification>(
+              onNotification: (_) {
+                _updateFade();
+                return false;
+              },
+              child: SingleChildScrollView(
+                controller: _controller,
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
+                clipBehavior: Clip.hardEdge,
+                child: widget.child,
+              ),
+            ),
+          ),
+          if (_canScrollMore)
+            Positioned(
+              right: 0,
+              top: 0,
+              bottom: 0,
+              width: 28,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        AppColors.bg.withValues(alpha: 0),
+                        AppColors.bg.withValues(alpha: 0.92),
+                      ],
+                    ),
+                  ),
+                  child: const Align(
+                    alignment: Alignment.centerRight,
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      size: 18,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

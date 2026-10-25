@@ -287,7 +287,7 @@ class _PanelTriggerChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppRadius.sm),
         child: Container(
           constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(color: AppColors.border),
@@ -296,12 +296,12 @@ class _PanelTriggerChip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 18, color: accent),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               Text(
                 label,
                 style: TextStyle(
                   color: accent,
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: FontWeight.w800,
                 ),
               ),
