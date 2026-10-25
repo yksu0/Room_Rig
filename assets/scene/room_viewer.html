@@ -881,12 +881,8 @@
 
     syncInteriorLights(items, lastLampGlow);
 
-    const n = (items || []).length;
-    const withModel = (items || []).filter((i) => i.model).length;
-    const ceilLit = ceilingGlow.visible ||
-      interiorLightRoot.children.some((c) => c.isSpotLight || (c.isPointLight && c.castShadow));
-    hud.textContent = n + ' items · ' + withModel + ' GLBs · shadows @ ceiling' +
-      (ceilLit ? '' : ' (pending)');
+    // Keep orbit/move hints in #hud — do not overwrite with debug item/GLB/shadow stats
+    // (those stacked under Flutter chrome and hid useful copy).
     return measuredCuts;
   }
 

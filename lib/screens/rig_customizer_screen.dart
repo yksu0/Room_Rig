@@ -1769,11 +1769,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   ),
                 ),
               ),
-              const Positioned(
-                left: 10,
-                bottom: 10,
-                child: IgnorePointer(child: ModelHonestyBadge()),
-              ),
+              // Honesty chip lives in the header RoomStatusStrip — avoid a
+              // second ROUGH EST. badge stacking on the Model scene HUD.
               if (canMoveSelected || _rigMoveMode || state.hasPendingPlacement)
                 Positioned(
                   top: 8,
