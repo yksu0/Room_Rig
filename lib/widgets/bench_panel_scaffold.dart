@@ -382,38 +382,45 @@ class BenchChromeScore extends StatelessWidget {
         onTap: () => _openScoreHelp(context),
         child: Container(
           constraints: const BoxConstraints(minHeight: 44),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(color: accentColor.withValues(alpha: 0.55)),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
+          // Parent Expanded + scaleDown avoids sub-pixel Row overflows on narrow phones.
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
                   BenchScoreCopy.chromeLine(domain: domain, score: score),
+                  maxLines: 1,
+                  softWrap: false,
                   style: TextStyle(
                     color: accentColor,
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-              ),
-              if (vsRoom.isNotEmpty) ...[
-                const SizedBox(width: 4),
-                Text(
-                  vsRoom,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
+                if (vsRoom.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    vsRoom,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
+                ],
+                const SizedBox(width: 4),
+                Icon(Icons.help_outline_rounded, size: 16, color: accentColor.withValues(alpha: 0.85)),
               ],
-              const SizedBox(width: 4),
-              Icon(Icons.help_outline_rounded, size: 16, color: accentColor.withValues(alpha: 0.85)),
-            ],
+            ),
           ),
         ),
       ),
@@ -1446,8 +1453,13 @@ class BenchPanelScaffold extends StatelessWidget {
               ],
             ),
             if (showChromeScore) ...[
-              const Spacer(),
-              BenchChromeScore(accentColor: accentColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: BenchChromeScore(accentColor: accentColor),
+                ),
+              ),
             ],
           ],
         ),
