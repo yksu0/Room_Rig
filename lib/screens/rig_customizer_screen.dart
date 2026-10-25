@@ -311,9 +311,63 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     );
   }
 
+  bool _showMoveChip(AppState state) {
+    if (_viewMode == _RigViewMode.twoD) return false;
+    final sel = state.selectedFurniture;
+    return (sel != null &&
+            !state.selectedIsScanObject &&
+            state.canMoveFurniture(sel)) ||
+        _rigMoveMode ||
+        state.hasPendingPlacement;
+  }
+
+  /// Arms drag-vs-orbit in 3D: off = camera orbit, on = drag the selected item.
+  Widget _buildMoveModeChip(AppState state) {
+    return Material(
+      color: _rigMoveMode
+          ? AppColors.cyan
+          : AppColors.surface.withValues(alpha: 0.92),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        key: const ValueKey('rig_move_mode'),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          final sel = state.selectedFurniture;
+          if (!_rigMoveMode &&
+              (sel == null ||
+                  state.selectedIsScanObject ||
+                  !state.canMoveFurniture(sel))) {
+            _showStructuralLockedHint(context);
+            return;
+          }
+          setState(() => _rigMoveMode = !_rigMoveMode);
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Text(
+            'MOVE',
+            style: TextStyle(
+              color: _rigMoveMode ? Colors.black : AppColors.cyan,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCanvasWorkspace(AppState state) {
     final selectedFurniture = state.selectedFurniture;
     final selectedScanObject = state.selectedScanObject;
+    final showMove = _showMoveChip(state);
+    // Leave room for MOVE (top-right) so warnings never paint under it.
+    final topChromeRight = _viewMode == _RigViewMode.twoD
+        ? 8.0
+        : (showMove ? 88.0 : 8.0);
+    final topChromeTop = _viewMode == _RigViewMode.model3D ? 40.0 : 8.0;
     return Column(
       children: [
         Expanded(
@@ -328,9 +382,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   _drag2dItemId == null)
                 Positioned(
                   left: 8,
-                  // Orbit/Model keep a gutter so MOVE stays tappable.
-                  right: _viewMode == _RigViewMode.twoD ? 8 : 100,
-                  top: _viewMode == _RigViewMode.model3D ? 40 : 8,
+                  right: topChromeRight,
+                  top: topChromeTop,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
@@ -348,11 +401,17 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
               else if (state.layoutConflicts.isNotEmpty)
                 Positioned(
                   left: 10,
-                  right: 10,
-                  top: _viewMode == _RigViewMode.model3D ? 40 : 8,
+                  right: topChromeRight,
+                  top: topChromeTop,
                   child: IgnorePointer(
                     child: _ConflictBanner(conflicts: state.layoutConflicts),
                   ),
+                ),
+              if (showMove)
+                Positioned(
+                  top: topChromeTop,
+                  right: 10,
+                  child: _buildMoveModeChip(state),
                 ),
               if (_showDimensions && _viewMode == _RigViewMode.twoD) ...[
                 Positioned(
@@ -1715,9 +1774,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
 
   Widget _buildCanvas(AppState state) {
     if (_viewMode == _RigViewMode.model3D) {
-      final canMoveSelected = state.selectedFurniture != null &&
-          !state.selectedIsScanObject &&
-          state.canMoveFurniture(state.selectedFurniture!);
       final desktop = AppLayout.isDesktop(context);
       return Container(
         margin: EdgeInsets.symmetric(horizontal: desktop ? 0 : 12),
@@ -1806,50 +1862,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   });
                 },
               ),
-              // Honesty / scores live on Hub + Bench — no ROUGH EST. badge here.
-              if (canMoveSelected || _rigMoveMode || state.hasPendingPlacement)
-                Positioned(
-                  top: 8,
-                  right: 10,
-                  child: Material(
-                    color: _rigMoveMode
-                        ? AppColors.cyan
-                        : AppColors.surface.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(8),
-                    child: InkWell(
-                      key: const ValueKey('rig_model_move_mode'),
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        final sel = state.selectedFurniture;
-                        if (!_rigMoveMode &&
-                            (sel == null ||
-                                state.selectedIsScanObject ||
-                                !state.canMoveFurniture(sel))) {
-                          _showStructuralLockedHint(context);
-                          return;
-                        }
-                        setState(() => _rigMoveMode = !_rigMoveMode);
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        child: Text(
-                          'MOVE',
-                          style: TextStyle(
-                            color:
-                                _rigMoveMode ? Colors.black : AppColors.cyan,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              // MOVE lives in [_buildCanvasWorkspace] so warnings cannot cover it.
             ],
           ),
         ),
@@ -2089,10 +2102,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                 )
                 .toList();
 
-            final showMove = state.selectedFurniture != null &&
-                !state.selectedIsScanObject &&
-                state.canMoveFurniture(state.selectedFurniture!);
-
             return Stack(
               children: [
                 Positioned.fill(
@@ -2296,45 +2305,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                     ),
                   ),
                 ),
-                if (showMove)
-                  Positioned(
-                    top: 8,
-                    right: 10,
-                    child: Material(
-                      color: _rigMoveMode
-                          ? AppColors.cyan
-                          : AppColors.surface.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(8),
-                      child: InkWell(
-                        key: const ValueKey('rig3d_move_mode'),
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          final sel = state.selectedFurniture;
-                          if (!_rigMoveMode &&
-                              (sel == null ||
-                                  state.selectedIsScanObject ||
-                                  !state.canMoveFurniture(sel))) {
-                            _showStructuralLockedHint(context);
-                            return;
-                          }
-                          setState(() => _rigMoveMode = !_rigMoveMode);
-                        },
-                        borderRadius: BorderRadius.circular(8),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          child: Text(
-                            'MOVE',
-                            style: TextStyle(
-                              color: _rigMoveMode ? Colors.black : AppColors.cyan,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.2,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                // MOVE lives in [_buildCanvasWorkspace] so warnings cannot cover it.
                 Positioned(
                   left: 10,
                   bottom: 10,
