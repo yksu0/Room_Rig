@@ -220,11 +220,19 @@ class AdaptivePanelTriggers extends StatelessWidget {
   final List<ChromeRegion> visible;
   final Color accent;
 
+  /// Optional per-region tap handlers (e.g. open a drawer instead of the sheet).
+  final Map<ChromeRegion, VoidCallback>? regionActions;
+
+  /// Optional label overrides for chips (defaults to [ChromeRegion.label]).
+  final Map<ChromeRegion, String>? regionLabels;
+
   const AdaptivePanelTriggers({
     super.key,
     required this.controller,
     required this.visible,
     this.accent = AppColors.cyan,
+    this.regionActions,
+    this.regionLabels,
   });
 
   @override
@@ -234,10 +242,17 @@ class AdaptivePanelTriggers extends StatelessWidget {
         for (var i = 0; i < visible.length; i++) ...[
           if (i > 0) const SizedBox(width: 6),
           _PanelTriggerChip(
-            label: visible[i].label,
+            label: regionLabels?[visible[i]] ?? visible[i].label,
             icon: visible[i].icon,
             accent: accent,
-            onTap: () => controller.openPanel(context, visible[i]),
+            onTap: () {
+              final action = regionActions?[visible[i]];
+              if (action != null) {
+                action();
+                return;
+              }
+              controller.openPanel(context, visible[i]);
+            },
           ),
         ],
       ],

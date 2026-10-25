@@ -433,21 +433,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                       style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 8),
-                    RoomStatusStrip(
-                      compact: true,
-                      onTapScores: () {
-                        if (!desktop) {
-                          _adaptivePanelControllerFor(state)
-                              .openPanel(context, ChromeRegion.inspect);
-                        }
-                      },
-                      onTapConflicts: () {
-                        if (!desktop) {
-                          _adaptivePanelControllerFor(state)
-                              .openPanel(context, ChromeRegion.inspect);
-                        }
-                      },
-                    ),
+                    const RoomStatusStrip(compact: true),
                   ],
                 ),
               ),
@@ -499,6 +485,15 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                     ChromeRegion.tools,
                     ChromeRegion.inspect,
                   ],
+                  regionLabels: const {
+                    ChromeRegion.inspect: 'Items',
+                  },
+                  regionActions: {
+                    // Skip Inspect sheet → open Room items drawer in one tap.
+                    ChromeRegion.inspect: () {
+                      _scaffoldKey.currentState?.openEndDrawer();
+                    },
+                  },
                 ),
                 const SizedBox(height: AppSpace.xs),
                 RigLiveDomainBar(
