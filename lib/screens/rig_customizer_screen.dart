@@ -1759,33 +1759,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   });
                 },
               ),
-              Positioned(
-                top: 8,
-                left: 10,
-                child: IgnorePointer(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Text(
-                      state.hasPendingPlacement
-                          ? 'Drag the ghost to place · tap Place when ready'
-                          : _rigMoveMode
-                              ? 'MOVE on · drag item · tap empty to exit'
-                              : 'Orbit · tap item · MOVE to drag',
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
               // Honesty / scores live on Hub + Bench — no ROUGH EST. badge here.
               if (canMoveSelected || _rigMoveMode || state.hasPendingPlacement)
                 Positioned(
@@ -2276,35 +2249,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                     ),
                   ),
                 ),
-                Positioned(
-                  top: 8,
-                  left: 10,
-                  right: 10,
-                  child: IgnorePointer(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Text(
-                        state.hasPendingPlacement
-                            ? 'Drag the ghost to place · tap Place when ready'
-                            : _rigMoveMode
-                                ? 'MOVE on · drag item · tap empty floor to exit'
-                                : MediaQuery.sizeOf(context).width >= 600
-                                    ? 'Orbit · walls facing camera fade (cutaway) · MOVE to drag'
-                                    : '1 finger orbit · double-tap reset · tap MOVE to drag · 2 fingers pan + pinch',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
                 if (showMove)
                   Positioned(
                     top: 8,
@@ -2357,34 +2301,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                       ),
                       child: Text(
                         'yaw ${_orbitYawDegrees()}°  pitch ${(_cameraPitchRad * 180 / math.pi).round()}°',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  bottom: 10,
-                  right: 10,
-                  child: IgnorePointer(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Text(
-                        state.hasPendingPlacement
-                            ? 'Drag the ghost · then Place / Cancel below'
-                            : state.selectedFurniture != null
-                                ? (_rigMoveMode
-                                    ? 'Drag the item · Facing aims jets'
-                                    : 'Tap MOVE, then drag · or orbit freely')
-                                : 'Select an item, tap MOVE to drag, or orbit empty floor',
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 10,
