@@ -414,8 +414,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// When false (default), doors / windows / wall ACs / ceiling lights stay put.
-  /// Flip on to rearrange the room's built-in mounts.
+  /// When false (default), structural mounts need intentional delete (invasive).
+  /// Movement is gated by [FurnitureItem.locked] via [canMoveFurniture], not invasive.
   bool _invasiveEdit = false;
   bool get invasiveEdit => _invasiveEdit;
 
@@ -428,10 +428,10 @@ class AppState extends ChangeNotifier {
   void toggleInvasiveEdit() => setInvasiveEdit(!_invasiveEdit);
 
   /// Whether the user may drag / rotate this piece right now.
+  /// Lock is the gate: unlocked doors/windows can slide on walls; locked desks cannot move.
   bool canMoveFurniture(FurnitureItem item) {
     if (item.id == _pendingPlacementId) return true;
     if (item.locked) return false;
-    if (!_invasiveEdit && SurfaceMounts.isStructuralMount(item)) return false;
     return true;
   }
 
@@ -694,7 +694,7 @@ class AppState extends ChangeNotifier {
     final idx = _furniture.indexWhere((f) => f.id == id);
     if (idx < 0) return false;
     final source = _furniture[idx];
-    if (!_invasiveEdit && SurfaceMounts.isStructuralMount(source)) return false;
+    if (source.locked) return false;
     final room = currentRoomData;
     final used = _furniture.map((f) => f.id).toSet();
     final cloneId = _uniqueScanId('${source.id}_copy', used);
@@ -875,6 +875,7 @@ class AppState extends ChangeNotifier {
     // Keep openings — sims depend on door/window.
     if (item.iconName == 'door' || item.iconName == 'window') return false;
     // Wall ACs / ceiling fixtures also need invasive mode to remove.
+    if (item.locked) return false;
     if (!_invasiveEdit && SurfaceMounts.isStructuralMount(item)) return false;
 
     _pushUndoCheckpoint();
@@ -1500,11 +1501,6 @@ class AppState extends ChangeNotifier {
     if (idx < 0) return false;
     final current = _furniture[idx];
     if (!canMoveFurniture(current)) return false;
-    if (id != _pendingPlacementId &&
-        SurfaceMounts.isStructuralMount(current) &&
-        !_invasiveEdit) {
-      return false;
-    }
 
     final room = currentRoomData;
     final nextW = (current.width + dWidth).clamp(0.5, room.gridCols.toDouble());

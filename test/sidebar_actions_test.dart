@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:room_rig/models/app_state.dart';
+import 'package:room_rig/models/room_model.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -10,7 +11,7 @@ void main() {
   });
 
   test('hide / lock / duplicate / delete furniture actions', () {
-    final state = AppState();
+    final state = AppState()..selectPreset(RoomPreset.gamingSetup);
     final beforeCount = state.furniture.length;
 
     state.toggleFurnitureHidden('fan');

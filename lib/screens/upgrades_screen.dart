@@ -21,8 +21,6 @@ class UpgradesScreen extends StatelessWidget {
     final desktop = AppLayout.isDesktop(context);
 
     if (desktop) {
-      final wideDesktop =
-          MediaQuery.sizeOf(context).width >= AppLayout.desktopMinWidth;
       return Scaffold(
         backgroundColor: AppColors.bg,
         body: SafeArea(
@@ -67,14 +65,24 @@ class UpgradesScreen extends StatelessWidget {
                     Expanded(
                       child: ColoredBox(
                         color: AppColors.bg,
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
-                          child: _buildUpgradeList(
-                            context,
-                            state,
-                            // Landscape shell: 3 columns when wide; 2 on compact landscape.
-                            columns: wideDesktop ? 3 : 2,
-                          ),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            // Pick category columns from remaining store width so
+                            // cards never squeeze into vertical letter stacks.
+                            final cols = constraints.maxWidth >= 900
+                                ? 3
+                                : constraints.maxWidth >= 520
+                                    ? 2
+                                    : 1;
+                            return SingleChildScrollView(
+                              padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+                              child: _buildUpgradeList(
+                                context,
+                                state,
+                                columns: cols,
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -349,6 +357,8 @@ class UpgradesScreen extends StatelessWidget {
                   isAdded: u['added'] as bool,
                   categoryColor: cat.$3,
                   categoryLabel: cat.$2,
+                  // Narrow category columns — stacked card, not squeezed Row.
+                  compact: true,
                   onToggle: () => _toggleUpgrade(context, state, i, u, cat.$3),
                 ),
               );
@@ -606,43 +616,48 @@ class _UpgradeCard extends StatelessWidget {
                   ),
                 ],
               )
-            : Row(
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: categoryColor.withValues(alpha: isAdded ? 0.2 : 0.08),
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(color: categoryColor.withValues(alpha: 0.3)),
-                    ),
-                    child: Center(
-                      child: SvgIcon(
-                        upgradeSvgFor(upgrade['iconName'] as String),
-                        size: 22,
-                        color: categoryColor,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: categoryColor.withValues(alpha: isAdded ? 0.2 : 0.08),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                          border: Border.all(color: categoryColor.withValues(alpha: 0.3)),
+                        ),
+                        child: Center(
+                          child: SvgIcon(
+                            upgradeSvgFor(upgrade['iconName'] as String),
+                            size: 20,
+                            color: categoryColor,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpace.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                      const SizedBox(width: AppSpace.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Text(
-                                upgrade['name'] as String,
-                                style: const TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                ),
+                            Text(
+                              upgrade['name'] as String,
+                              maxLines: 2,
+                              softWrap: true,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                height: 1.2,
                               ),
                             ),
+                            const SizedBox(height: 4),
                             Container(
-                              margin: const EdgeInsets.only(left: 6),
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: categoryColor.withValues(alpha: 0.15),
@@ -653,6 +668,8 @@ class _UpgradeCard extends StatelessWidget {
                               ),
                               child: Text(
                                 categoryLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: categoryColor,
                                   fontSize: 9,
@@ -662,88 +679,84 @@ class _UpgradeCard extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: AppSpace.xxs),
-                        Text(
-                          upgrade['desc'] as String,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                            height: 1.35,
+                      ),
+                      const SizedBox(width: 8),
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: isAdded
+                              ? categoryColor.withValues(alpha: 0.2)
+                              : AppColors.surfaceAlt,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isAdded ? categoryColor : AppColors.border,
+                            width: 1.5,
                           ),
                         ),
-                        const SizedBox(height: AppSpace.xs),
-                        Row(
-                          children: [
-                            Text(
-                              AppMoney.format((upgrade['price'] as num?) ?? 0),
-                              style: const TextStyle(
-                                color: AppColors.cyan,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(width: AppSpace.xs),
-                            if (isAdded)
-                              Text(
-                                'Installed',
-                                style: TextStyle(
-                                  color: categoryColor,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                          ],
+                        child: Center(
+                          child: isAdded
+                              ? SvgIcon(RoomSvg.checkCircle, size: 18, color: categoryColor)
+                              : SvgIcon(RoomSvg.add, size: 18, color: AppColors.textMuted),
                         ),
-                        const SizedBox(height: AppSpace.xs),
-                        Row(
-                          children: [
-                            if (airBoost > 0)
-                              _SmallBoost(
-                                label: 'Air',
-                                value: airBoost,
-                                color: AppColors.airflowColor,
-                              ),
-                            if (airBoost > 0 && (lightBoost > 0 || ergoBoost > 0))
-                              const SizedBox(width: 6),
-                            if (lightBoost > 0)
-                              _SmallBoost(
-                                label: 'Light',
-                                value: lightBoost,
-                                color: AppColors.lightingColor,
-                              ),
-                            if (lightBoost > 0 && ergoBoost > 0)
-                              const SizedBox(width: 6),
-                            if (ergoBoost > 0)
-                              _SmallBoost(
-                                label: 'Ergo',
-                                value: ergoBoost,
-                                color: AppColors.ergonomicsColor,
-                              ),
-                          ],
-                        ),
-                      ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpace.xs),
+                  Text(
+                    upgrade['desc'] as String,
+                    maxLines: 3,
+                    softWrap: true,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      height: 1.35,
                     ),
                   ),
-                  const SizedBox(width: AppSpace.sm),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: isAdded
-                          ? categoryColor.withValues(alpha: 0.2)
-                          : AppColors.surfaceAlt,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isAdded ? categoryColor : AppColors.border,
-                        width: 1.5,
+                  const SizedBox(height: AppSpace.xs),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        AppMoney.format((upgrade['price'] as num?) ?? 0),
+                        style: const TextStyle(
+                          color: AppColors.cyan,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                    ),
-                    child: Center(
-                      child: isAdded
-                          ? SvgIcon(RoomSvg.checkCircle, size: 18, color: categoryColor)
-                          : SvgIcon(RoomSvg.add, size: 18, color: AppColors.textMuted),
-                    ),
+                      if (isAdded)
+                        Text(
+                          'Installed',
+                          style: TextStyle(
+                            color: categoryColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      if (airBoost > 0)
+                        _SmallBoost(
+                          label: 'Air',
+                          value: airBoost,
+                          color: AppColors.airflowColor,
+                        ),
+                      if (lightBoost > 0)
+                        _SmallBoost(
+                          label: 'Light',
+                          value: lightBoost,
+                          color: AppColors.lightingColor,
+                        ),
+                      if (ergoBoost > 0)
+                        _SmallBoost(
+                          label: 'Ergo',
+                          value: ergoBoost,
+                          color: AppColors.ergonomicsColor,
+                        ),
+                    ],
                   ),
                 ],
               ),

@@ -150,8 +150,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final selectedFurniture = state.selectedFurniture;
-    final canMoveSelected =
-        selectedFurniture != null && !state.selectedIsScanObject;
+    final canMoveSelected = selectedFurniture != null &&
+        !state.selectedIsScanObject &&
+        state.canMoveFurniture(selectedFurniture);
     if (!canMoveSelected && _rigMoveMode) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -458,12 +459,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 RigLiveDomainBar(
                   domain: _liveDomain,
                   score: _liveCache.score,
-                  onChanged: (d) {
-                    setState(() {
-                      _liveDomain = d;
-                      _refreshLiveField(state);
-                    });
-                  },
+                  onChanged: (d) => _setLiveDomain(state, d),
                 ),
               ],
             ),
@@ -472,17 +468,23 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             RigLiveDomainBar(
               domain: _liveDomain,
               score: _liveCache.score,
-              onChanged: (d) {
-                setState(() {
-                  _liveDomain = d;
-                  _refreshLiveField(state);
-                });
-              },
+              onChanged: (d) => _setLiveDomain(state, d),
             ),
           ],
         ],
       ),
     );
+  }
+
+  void _setLiveDomain(AppState state, RigLiveDomain d) {
+    setState(() {
+      _liveDomain = d;
+      // Overlay paints on Edit 2D — switch there so Air/Light/Ergo is visible.
+      if (d != RigLiveDomain.none && _viewMode != _RigViewMode.twoD) {
+        _viewMode = _RigViewMode.twoD;
+      }
+      _refreshLiveField(state);
+    });
   }
 
   String _liveFurnitureFingerprint(AppState state) {
@@ -788,8 +790,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             Expanded(
               child: Text(
                 state.invasiveEdit
-                    ? 'Invasive — wall mounts can move'
-                    : 'Non-invasive — wall mounts locked',
+                    ? 'Invasive — wall mounts can be deleted/duplicated freely'
+                    : 'Unlock items to move. Wall openings stay on walls when dragged.',
                 style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
             ),
@@ -1222,7 +1224,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     if (!state.canMoveFurniture(selected)) {
       final locked = selected.locked;
       _toast(
-        locked ? 'Unlock to rotate' : 'Turn on Invasive to rotate wall fittings',
+        'Unlock to rotate',
         ok: false,
       );
       return;
@@ -1288,7 +1290,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     _toast('No room to shrink here', ok: false);
                   }
                 }
-              : () => _toast('Unlock or turn on Invasive to resize', ok: false),
+              : () => _toast('Unlock to resize', ok: false),
         ),
         const SizedBox(width: 4),
         _RotationButton(
@@ -1300,7 +1302,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     _toast('No room to grow here', ok: false);
                   }
                 }
-              : () => _toast('Unlock or turn on Invasive to resize', ok: false),
+              : () => _toast('Unlock to resize', ok: false),
         ),
         const SizedBox(width: 8),
         _RotationButton(
@@ -1312,7 +1314,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     _toast('No room to shrink here', ok: false);
                   }
                 }
-              : () => _toast('Unlock or turn on Invasive to resize', ok: false),
+              : () => _toast('Unlock to resize', ok: false),
         ),
         const SizedBox(width: 4),
         _RotationButton(
@@ -1324,7 +1326,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     _toast('No room to grow here', ok: false);
                   }
                 }
-              : () => _toast('Unlock or turn on Invasive to resize', ok: false),
+              : () => _toast('Unlock to resize', ok: false),
         ),
       ],
     );
@@ -1423,7 +1425,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
         // Selecting an item arms drag immediately so the canvas stays usable.
         _rigMoveMode = state.selectedFurniture != null && state.canMoveFurniture(hit);
       });
-      if (!state.canMoveFurniture(hit) && SurfaceMounts.isStructuralMount(hit)) {
+      if (!state.canMoveFurniture(hit)) {
         _showStructuralLockedHint(context);
       }
     } else {
@@ -1573,6 +1575,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       key: const ValueKey('rig_model_move_mode'),
                       onTap: () {
                         HapticFeedback.selectionClick();
+                        final sel = state.selectedFurniture;
+                        if (!_rigMoveMode &&
+                            (sel == null ||
+                                state.selectedIsScanObject ||
+                                !state.canMoveFurniture(sel))) {
+                          _showStructuralLockedHint(context);
+                          return;
+                        }
                         setState(() => _rigMoveMode = !_rigMoveMode);
                       },
                       borderRadius: BorderRadius.circular(8),
@@ -1727,10 +1737,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                               child: Opacity(
                                 opacity: state.isPendingPlacement(item.id)
                                     ? 0.42
-                                    : (item.locked ||
-                                            (!state.invasiveEdit && SurfaceMounts.isStructuralMount(item))
-                                        ? 0.85
-                                        : 1),
+                                    : (item.locked ? 0.85 : 1),
                                 child: RigFurnitureCell(
                                   item: item,
                                   isSelected: isSelected,
@@ -1899,7 +1906,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
             final renderItems = <RoomRenderItem>[...presetItems, ...detectedItems];
 
-            final showMove = state.selectedFurniture != null && !state.selectedIsScanObject;
+            final showMove = state.selectedFurniture != null &&
+                !state.selectedIsScanObject &&
+                state.canMoveFurniture(state.selectedFurniture!);
 
             return Stack(
               children: [
@@ -2133,6 +2142,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                         key: const ValueKey('rig3d_move_mode'),
                         onTap: () {
                           HapticFeedback.selectionClick();
+                          final sel = state.selectedFurniture;
+                          if (!_rigMoveMode &&
+                              (sel == null ||
+                                  state.selectedIsScanObject ||
+                                  !state.canMoveFurniture(sel))) {
+                            _showStructuralLockedHint(context);
+                            return;
+                          }
                           setState(() => _rigMoveMode = !_rigMoveMode);
                         },
                         borderRadius: BorderRadius.circular(8),
@@ -2820,7 +2837,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             style: mount.style,
             isSelected: isSelected,
             hasConflict: hasConflict || (isSelected && state.dragPoseBlocked),
-            fixedMount: !state.invasiveEdit && !state.isPendingPlacement(item.id),
+            fixedMount: item.locked && !state.isPendingPlacement(item.id),
           ),
         ),
       ),
@@ -2832,7 +2849,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: const Text('Wall and ceiling mounts stay fixed — turn on Invasive to move them.'),
+          content: const Text('Unlock the item in Layout Items to move it.'),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -2914,7 +2931,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       Text(
                         '${item.category.toUpperCase()}'
                         '${item.locked ? '  •  LOCKED' : ''}'
-                        '${(!state.invasiveEdit && SurfaceMounts.isStructuralMount(item)) ? '  •  FIXED' : ''}',
+                        '${SurfaceMounts.isStructuralMount(item) ? '  •  WALL' : ''}',
                         style: TextStyle(color: AppColors.cyan, fontSize: 10, letterSpacing: 0.8),
                       ),
                     ],

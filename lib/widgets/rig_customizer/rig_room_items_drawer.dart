@@ -161,11 +161,11 @@ class RigRoomItemsDrawer extends StatelessWidget {
                       final catColor = _categoryColor(item.category);
                       final conf = state.confidenceForFurniture(item.id);
                       final confLabel = conf == null ? '—' : '${(conf * 100).round()}%';
+                      final isStructural = SurfaceMounts.isStructuralMount(item);
                       final canDelete = item.iconName != 'door' &&
                           item.iconName != 'window' &&
-                          (state.invasiveEdit || !SurfaceMounts.isStructuralMount(item));
-                      final structuralFixed =
-                          !state.invasiveEdit && SurfaceMounts.isStructuralMount(item);
+                          !item.locked &&
+                          (state.invasiveEdit || !isStructural);
 
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
@@ -216,13 +216,13 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                           const SizedBox(height: 3),
                                           Text(
                                             '${item.category.toUpperCase()}  •  ${item.statusLabel}  •  $confLabel'
-                                            '${structuralFixed ? '  •  FIXED' : ''}',
+                                            '${isStructural ? '  •  WALL' : ''}',
                                             style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
                                           ),
                                         ],
                                       ),
                                     ),
-                                    if (item.locked || structuralFixed)
+                                    if (item.locked)
                                       const Padding(
                                         padding: EdgeInsets.only(right: 4),
                                         child: Icon(Icons.lock_rounded, size: 14, color: AppColors.amber),
@@ -254,12 +254,9 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                     label: 'Dup',
                                     color: AppColors.cyan,
                                     onTap: () {
-                                      if (SurfaceMounts.isStructuralMount(item) &&
-                                          !state.invasiveEdit) {
+                                      if (item.locked) {
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Turn on Invasive to duplicate wall fittings'),
-                                          ),
+                                          const SnackBar(content: Text('Unlock to duplicate')),
                                         );
                                         return;
                                       }

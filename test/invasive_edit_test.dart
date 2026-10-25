@@ -30,37 +30,39 @@ void main() {
     expect(SurfaceMounts.isStructuralMount(f('fan', 'fan')), isFalse);
   });
 
-  test('non-invasive mode blocks moving structural mounts but not floor items', () {
-    final state = AppState();
+  test('lock blocks move for any item; unlocked doors slide on walls', () {
+    final state = AppState()..selectPreset(RoomPreset.gamingSetup);
     expect(state.invasiveEdit, isFalse);
 
     final door = state.furniture.firstWhere((f) => f.iconName == 'door');
     final desk = state.furniture.firstWhere((f) => f.iconName == 'desk');
-    final doorX = door.gridX;
+    final doorY = door.gridY;
     final deskX = desk.gridX;
 
-    state.moveFurniture(door.id, doorX + 1.5, door.gridY);
-    expect(
-      state.furniture.firstWhere((f) => f.id == door.id).gridX,
-      doorX,
-      reason: 'door should stay put while non-invasive',
-    );
-
+    state.toggleFurnitureLock(desk.id);
     state.moveFurniture(desk.id, deskX + 1.0, desk.gridY);
     expect(
       state.furniture.firstWhere((f) => f.id == desk.id).gridX,
-      isNot(deskX),
-      reason: 'desk should still move',
+      deskX,
+      reason: 'locked desk must not move',
+    );
+
+    expect(door.locked, isFalse);
+    state.moveFurniture(door.id, door.gridX, doorY + 1.0);
+    expect(
+      state.furniture.firstWhere((f) => f.id == door.id).gridY,
+      isNot(doorY),
+      reason: 'unlocked door should slide while non-invasive',
     );
   });
 
-  test('invasive mode unlocks structural mounts for dragging', () {
-    final state = AppState();
-    state.setInvasiveEdit(true);
+  test('unlocked window slides along its wall without invasive', () {
+    final state = AppState()..selectPreset(RoomPreset.gamingSetup);
+    expect(state.invasiveEdit, isFalse);
 
     final window = state.furniture.firstWhere((f) => f.iconName == 'window');
+    expect(window.locked, isFalse);
     final before = window.gridX;
-    // Slide along the north wall.
     state.moveFurniture(window.id, before + 1.0, window.gridY);
     expect(
       state.furniture.firstWhere((f) => f.id == window.id).gridX,
@@ -69,8 +71,7 @@ void main() {
   });
 
   test('wall AC cannot be deleted unless invasive', () {
-    final state = AppState();
-    // Gaming setup includes an AC.
+    final state = AppState()..selectPreset(RoomPreset.gamingSetup);
     final ac = state.furniture.firstWhere((f) => f.iconName == 'ac');
     expect(state.deleteFurniture(ac.id), isFalse);
     expect(state.furniture.any((f) => f.id == ac.id), isTrue);
