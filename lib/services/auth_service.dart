@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../config/supabase_config.dart';
 import 'supabase_bootstrap.dart';
 
 /// Email/password + Google auth. When Supabase is not configured, always guest.
@@ -13,6 +15,7 @@ class AuthService extends ChangeNotifier {
 
   StreamSubscription<AuthState>? _sub;
   bool _passwordRecoveryPending = false;
+  bool _googleNativeReady = false;
 
   User? get user => SupabaseBootstrap.clientOrNull?.auth.currentUser;
   Session? get session => SupabaseBootstrap.clientOrNull?.auth.currentSession;
@@ -102,33 +105,90 @@ class AuthService extends ChangeNotifier {
     final client = SupabaseBootstrap.clientOrNull;
     if (client == null) return;
     _passwordRecoveryPending = false;
+    try {
+      if (!kIsWeb && SupabaseConfig.hasGoogleWebClientId) {
+        await GoogleSignIn.instance.signOut();
+      }
+    } catch (_) {}
     await client.auth.signOut();
     notifyListeners();
   }
 
   /// Deep link that must be allow-listed in Supabase Auth → URL Configuration.
-  /// Android intent-filter: scheme `com.roomrig.room_rig`, host `login-callback`.
+  /// Used for email confirm / password reset on Android (not Google native).
   static const mobileAuthRedirect = 'com.roomrig.room_rig://login-callback/';
 
   String? get _authRedirectTo =>
       kIsWeb ? Uri.base.origin : mobileAuthRedirect;
 
-  /// Google OAuth (Supabase Free tier). Web uses HTTPS origin; Android uses deep link.
+  Future<void> _ensureGoogleNativeInitialized() async {
+    if (_googleNativeReady || kIsWeb) return;
+    final webClientId = SupabaseConfig.googleWebClientId.trim();
+    if (webClientId.isEmpty) return;
+    await GoogleSignIn.instance.initialize(serverClientId: webClientId);
+    _googleNativeReady = true;
+  }
+
+  /// Google: native account picker on Android (no Chrome). Web keeps OAuth redirect.
   Future<String?> signInWithGoogle() async {
     final client = SupabaseBootstrap.clientOrNull;
     if (client == null) return 'Cloud auth is not configured on this build.';
+
+    if (!kIsWeb) {
+      return _signInWithGoogleNative(client);
+    }
+
     try {
       final launched = await client.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: _authRedirectTo,
-        // Custom Tabs / in-app browser returns to the app more reliably than
-        // a full external Chrome tab (avoids “stay in browser” confusion).
-        authScreenLaunchMode: kIsWeb
-            ? LaunchMode.platformDefault
-            : LaunchMode.inAppBrowserView,
+        authScreenLaunchMode: LaunchMode.platformDefault,
       );
       if (!launched) return 'Could not open Google sign-in.';
       return null;
+    } on AuthException catch (e) {
+      return e.message;
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  Future<String?> _signInWithGoogleNative(SupabaseClient client) async {
+    if (!SupabaseConfig.hasGoogleWebClientId) {
+      return 'Missing GOOGLE_WEB_CLIENT_ID. Add the Google Cloud Web client ID '
+          '(same as Supabase → Auth → Google) to supabase.local.json, rebuild the APK.';
+    }
+    try {
+      await _ensureGoogleNativeInitialized();
+      final google = GoogleSignIn.instance;
+      if (!google.supportsAuthenticate()) {
+        return 'This device cannot run native Google Sign-In.';
+      }
+      final account = await google.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        return 'Google did not return an ID token. Check the Web client ID and SHA-1.';
+      }
+      String? accessToken;
+      try {
+        final authz = await account.authorizationClient.authorizationForScopes(
+          const ['email', 'profile'],
+        );
+        accessToken = authz?.accessToken;
+      } catch (_) {}
+
+      await client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: accessToken,
+      );
+      notifyListeners();
+      return null;
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled) {
+        return 'Google sign-in cancelled.';
+      }
+      return e.description ?? e.toString();
     } on AuthException catch (e) {
       return e.message;
     } catch (e) {

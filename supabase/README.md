@@ -11,10 +11,11 @@ Free-tier orgs are limited to **2 active projects**. Creating `room-rig` failed 
      - `http://localhost:7357/**`
      - `https://roomrig.vercel.app/**`
      - `com.roomrig.room_rig://login-callback/**`  
-       Required for Android: Google sign-in, email confirm, and password reset. Without it the phone opens a website instead of Room Rig.
-5. Auth → Providers → **Google** (Free tier): enable, paste Client ID + Client Secret from Google Cloud Console (OAuth 2.0 Web client). Authorized redirect URI = Supabase callback shown in the provider panel (`https://YOUR_PROJECT.supabase.co/auth/v1/callback`).
-6. Auth → SMTP: Brevo credentials (optional for email/password).
-7. Copy Project URL + anon key into gitignored `supabase.local.json` (see example) and run:
+       Required for Android email confirm / password reset deep links.
+5. Auth → Providers → **Google** (Free tier): enable, paste Client ID + Client Secret from Google Cloud Console (OAuth 2.0 **Web** client). Authorized redirect URI = Supabase callback (`https://YOUR_PROJECT.supabase.co/auth/v1/callback`).
+6. **Android Google (native, no Chrome):** create a Google Cloud OAuth client of type **Android** with package `com.roomrig.room_rig` and your debug (or release) SHA-1. Put the **Web** client ID into `supabase.local.json` as `GOOGLE_WEB_CLIENT_ID` (same ID as step 5). Build with `.\scripts\install_android.ps1`.
+7. Auth → SMTP: Brevo credentials (optional for email/password).
+8. Copy Project URL + anon key (+ `GOOGLE_WEB_CLIENT_ID`) into gitignored `supabase.local.json` (see example) and run:
 
 ```powershell
 .\scripts\dev_web.ps1
@@ -25,7 +26,8 @@ Or:
 ```powershell
 flutter run -d web-server --web-port 7357 `
   --dart-define=SUPABASE_URL=https://YOUR.supabase.co `
-  --dart-define=SUPABASE_ANON_KEY=YOUR_ANON_KEY
+  --dart-define=SUPABASE_ANON_KEY=YOUR_ANON_KEY `
+  --dart-define=GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
 ```
 
 Without keys the app runs **guest-only** (local My Rooms).

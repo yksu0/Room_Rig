@@ -4,6 +4,7 @@
 # Usage:
 #   .\scripts\dev_web.ps1
 # Optional: gitignored supabase.local.json with SUPABASE_URL + SUPABASE_ANON_KEY
+# (+ GOOGLE_WEB_CLIENT_ID for native Android Google Sign-In)
 
 param(
   [int]$Port = 7357,
@@ -15,9 +16,13 @@ $url = "http://localhost:$Port"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$defines = @()
-$localCfg = Join-Path $root 'supabase.local.json'
-if (Test-Path $localCfg) {
+function Get-RoomRigDartDefines {
+  $defines = @()
+  $localCfg = Join-Path $root 'supabase.local.json'
+  if (-not (Test-Path $localCfg)) {
+    Write-Host "No supabase.local.json - guest-only mode (see supabase.local.json.example)"
+    return $defines
+  }
   $cfg = Get-Content $localCfg -Raw | ConvertFrom-Json
   if ($cfg.SUPABASE_URL) {
     $defines += "--dart-define=SUPABASE_URL=$($cfg.SUPABASE_URL)"
@@ -25,10 +30,14 @@ if (Test-Path $localCfg) {
   if ($cfg.SUPABASE_ANON_KEY) {
     $defines += "--dart-define=SUPABASE_ANON_KEY=$($cfg.SUPABASE_ANON_KEY)"
   }
+  if ($cfg.GOOGLE_WEB_CLIENT_ID) {
+    $defines += "--dart-define=GOOGLE_WEB_CLIENT_ID=$($cfg.GOOGLE_WEB_CLIENT_ID)"
+  }
   Write-Host "Loaded Supabase defines from supabase.local.json"
-} else {
-  Write-Host "No supabase.local.json - guest-only mode (see supabase.local.json.example)"
+  return $defines
 }
+
+$defines = Get-RoomRigDartDefines
 
 $listeners = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 if ($listeners) {

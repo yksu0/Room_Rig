@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +7,7 @@ import '../services/supabase_bootstrap.dart';
 import '../theme/app_theme.dart';
 import '../utils/password_strength.dart';
 import '../widgets/password_form_fields.dart';
+import '../widgets/password_visibility_field.dart';
 
 /// Email/password sign-in. Guest continues without an account.
 class AuthScreen extends StatefulWidget {
@@ -114,40 +113,13 @@ class _AuthScreenState extends State<AuthScreen> {
                     });
                     final err = await auth.signInWithGoogle();
                     if (!mounted) return;
-                    if (err != null) {
-                      setState(() {
-                        _busy = false;
-                        _error = err;
-                      });
-                      return;
-                    }
-                    // Mobile: browser returns via deep link; wait for session.
-                    if (!kIsWeb && !auth.isSignedIn) {
-                      final done = Completer<bool>();
-                      void listener() {
-                        if (auth.isSignedIn && !done.isCompleted) {
-                          done.complete(true);
-                        }
-                      }
-                      auth.addListener(listener);
-                      try {
-                        await done.future.timeout(const Duration(minutes: 3));
-                      } on TimeoutException {
-                        if (!done.isCompleted) done.complete(false);
-                      } finally {
-                        auth.removeListener(listener);
-                      }
-                    }
+                    setState(() {
+                      _busy = false;
+                      _error = err;
+                    });
                     if (!mounted) return;
-                    setState(() => _busy = false);
-                    if (auth.isSignedIn) {
+                    if (err == null && auth.isSignedIn) {
                       Navigator.of(context).maybePop(true);
-                    } else if (!kIsWeb) {
-                      setState(() {
-                        _error =
-                            'Google sign-in did not finish. If the browser stayed open, add '
-                            '${AuthService.mobileAuthRedirect} to Supabase Auth redirect URLs, then try again.';
-                      });
                     }
                   },
             icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
@@ -188,16 +160,11 @@ class _AuthScreenState extends State<AuthScreen> {
               onChanged: () => setState(() => _error = null),
             )
           else
-            TextField(
+            PasswordVisibilityField(
               controller: _password,
-              obscureText: true,
+              label: 'Password',
               enabled: cloud && !_busy,
               autofillHints: const [AutofillHints.password],
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(
-                labelText: 'Password',
-                labelStyle: TextStyle(color: AppColors.textMuted),
-              ),
             ),
           if (_error != null) ...[
             const SizedBox(height: 12),

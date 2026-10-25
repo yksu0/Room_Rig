@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 import '../utils/password_strength.dart';
+import 'password_visibility_field.dart';
 
 /// Password + confirm fields with strength meter and generate action.
 class PasswordFormFields extends StatelessWidget {
@@ -31,23 +32,19 @@ class PasswordFormFields extends StatelessWidget {
       3 => AppColors.cyanDim,
       _ => AppColors.green,
     };
+    final hints = autofillNewPassword
+        ? const [AutofillHints.newPassword]
+        : const [AutofillHints.password];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
+        PasswordVisibilityField(
           controller: password,
-          obscureText: true,
+          label: 'New password',
           enabled: enabled,
           onChanged: (_) => onChanged(),
-          autofillHints: autofillNewPassword
-              ? const [AutofillHints.newPassword]
-              : const [AutofillHints.password],
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
-            labelText: 'New password',
-            labelStyle: TextStyle(color: AppColors.textMuted),
-          ),
+          autofillHints: hints,
         ),
         const SizedBox(height: 10),
         ClipRRect(
@@ -91,20 +88,13 @@ class PasswordFormFields extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        TextField(
+        PasswordVisibilityField(
           controller: confirm,
-          obscureText: true,
+          label: 'Confirm password',
           enabled: enabled,
           onChanged: (_) => onChanged(),
-          autofillHints: autofillNewPassword
-              ? const [AutofillHints.newPassword]
-              : const [AutofillHints.password],
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: InputDecoration(
-            labelText: 'Confirm password',
-            labelStyle: const TextStyle(color: AppColors.textMuted),
-            errorText: match ? null : 'Passwords do not match',
-          ),
+          autofillHints: hints,
+          errorText: match ? null : 'Passwords do not match',
         ),
       ],
     );
