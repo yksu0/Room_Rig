@@ -52,6 +52,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   bool _ready = false;
 
   BenchLayouts? _layouts;
+  String? _layoutSyncKey;
   int _seenFocusToken = 0;
   LightingSimSnapshot? _myRoomSim;
   LightingSimSnapshot? _improvedSim;
@@ -80,12 +81,22 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   /// Rebuilds the lighting fields from the furniture that is in the Rig.
   /// Safe to call during build: it only touches fields.
   void _recompute(AppState state, {bool resetStep = true}) {
-    state.ensureBenchBaseline(notify: false);
     final room = state.currentRoomData;
+    final left =
+        state.resolveBenchCompareFurniture(state.benchCompareLeft) ?? const [];
+    final rightIsAuto = state.benchCompareRight.isAutoRig;
+    final right = rightIsAuto
+        ? null
+        : state.resolveBenchCompareFurniture(state.benchCompareRight);
     final layouts = BenchLayoutBuilder.build(
       mode: BenchMode.lighting,
       roomFurniture: state.committedFurniture,
-      baselineFurniture: state.benchBaselineFurniture,
+      leftFurniture: left,
+      rightFurniture: right,
+      rightIsAutoRig: rightIsAuto,
+      autoRigSeed: state.benchAutoRigSeedFurniture(forRight: true),
+      leftCaption: state.benchCompareSourceLabel(state.benchCompareLeft),
+      rightCaption: state.benchCompareSourceLabel(state.benchCompareRight),
       gridCols: room.gridCols,
       gridRows: room.gridRows,
       weights: state.optimizeWeights,
@@ -123,15 +134,10 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       _simVariant = kind;
       _selectedFurnitureId = null;
     }
-    final fp = BenchLayoutBuilder.fingerprintOf(benchSyncFurniture(state));
-    if (benchLayoutsInSync(
-      _layouts,
-      furnitureFingerprint: fp,
-      weightsCacheKey: state.optimizeWeights.cacheKey,
-      alternateCursor: state.benchAlternateCursor,
-    )) {
-      return;
-    }
+    final key =
+        '${benchCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchAlternateCursor}';
+    if (_layouts != null && _layoutSyncKey == key) return;
+    _layoutSyncKey = key;
     _recompute(state, resetStep: false);
   }
 
@@ -290,7 +296,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       middleBody: _simSection(state),
       resultsExtra: resultsExtra,
       resultsBody: _results(state),
-      applyEnabled: !applyBlocked,
+      applyEnabled: !applyBlocked && (_layouts?.rightIsAutoRig ?? true),
       applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
           : (noOp ? 'Auto-Rig matches Baseline — nothing to apply.' : null),

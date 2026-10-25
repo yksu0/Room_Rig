@@ -298,6 +298,7 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                             SnackBar(
                                               content: Text('Deleted "$name"'),
                                               behavior: SnackBarBehavior.floating,
+                                              duration: const Duration(seconds: 2),
                                               action: SnackBarAction(
                                                 label: 'Undo',
                                                 onPressed: () {

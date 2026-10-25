@@ -56,6 +56,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   BenchLayoutKind _simVariant = BenchLayoutKind.myRoom;
 
   BenchLayouts? _layouts;
+  String? _layoutSyncKey;
   int _seenFocusToken = 0;
   AirflowSimSnapshot? _myRoomSim;
   AirflowSimSnapshot? _improvedSim;
@@ -115,12 +116,22 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   /// Rebuilds every field from the furniture that is actually in the Rig.
   /// Safe to call during build: it only touches fields.
   void _recomputeLayouts(AppState state, {bool resetStep = true}) {
-    state.ensureBenchBaseline(notify: false);
     final room = state.currentRoomData;
+    final left =
+        state.resolveBenchCompareFurniture(state.benchCompareLeft) ?? const [];
+    final rightIsAuto = state.benchCompareRight.isAutoRig;
+    final right = rightIsAuto
+        ? null
+        : state.resolveBenchCompareFurniture(state.benchCompareRight);
     final layouts = BenchLayoutBuilder.build(
       mode: BenchMode.airflow,
       roomFurniture: state.committedFurniture,
-      baselineFurniture: state.benchBaselineFurniture,
+      leftFurniture: left,
+      rightFurniture: right,
+      rightIsAutoRig: rightIsAuto,
+      autoRigSeed: state.benchAutoRigSeedFurniture(forRight: true),
+      leftCaption: state.benchCompareSourceLabel(state.benchCompareLeft),
+      rightCaption: state.benchCompareSourceLabel(state.benchCompareRight),
       gridCols: room.gridCols,
       gridRows: room.gridRows,
       weights: state.optimizeWeights,
@@ -175,15 +186,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         _roomViewMode = _RoomViewMode.twoD;
       }
     }
-    final fp = BenchLayoutBuilder.fingerprintOf(benchSyncFurniture(state));
-    if (benchLayoutsInSync(
-      _layouts,
-      furnitureFingerprint: fp,
-      weightsCacheKey: state.optimizeWeights.cacheKey,
-      alternateCursor: state.benchAlternateCursor,
-    )) {
-      return;
-    }
+    final key =
+        '${benchCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchAlternateCursor}';
+    if (_layouts != null && _layoutSyncKey == key) return;
+    _layoutSyncKey = key;
     _recomputeLayouts(state, resetStep: false);
   }
 

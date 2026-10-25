@@ -10,6 +10,7 @@ import 'rig_catalog.dart';
 import 'room_model.dart';
 import 'room_scale.dart';
 import 'sim_room_bounds.dart';
+import 'bench_compare_source.dart';
 import 'saved_room.dart';
 import 'surface_mount.dart';
 import 'scan_layout_model.dart';
@@ -264,10 +265,13 @@ class AppState extends ChangeNotifier {
   String _activeRoomId = 'room_default';
   final List<SavedRoom> _rooms = [];
 
-  /// Pinned Bench left-side baseline (frozen until Set baseline / room switch).
+  /// Legacy pinned baseline (still persisted; primary UX is [benchCompareLeft/Right]).
   List<FurnitureItem>? _benchBaselineFurniture;
   String? _benchBaselineLabel;
   DateTime? _benchBaselineAt;
+
+  BenchCompareSource _benchCompareLeft = const BenchCompareSource.currentRig();
+  BenchCompareSource _benchCompareRight = const BenchCompareSource.autoRig();
 
   /// Bumped when the user mutates session state so a late prefs hydrate cannot
   /// overwrite in-memory Place ghosts / demo work.
@@ -1497,7 +1501,7 @@ class AppState extends ChangeNotifier {
     return List.unmodifiable(_rooms[idx].revisions);
   }
 
-  /// Frozen Bench left layout (empty list if none pinned yet).
+  /// Frozen Bench left layout (legacy; prefer [resolveBenchCompareFurniture]).
   List<FurnitureItem> get benchBaselineFurniture =>
       _benchBaselineFurniture == null
           ? const []
@@ -1509,69 +1513,91 @@ class AppState extends ChangeNotifier {
   String? get benchBaselineLabel => _benchBaselineLabel;
   DateTime? get benchBaselineAt => _benchBaselineAt;
 
-  String get benchBaselineStatusLine {
-    if (!hasBenchBaseline) return 'Baseline · not set · vs Auto-Rig · preview';
-    final label = _benchBaselineLabel?.trim();
-    final name = (label != null && label.isNotEmpty) ? label : 'pinned';
-    return 'Baseline · $name · vs Auto-Rig · preview';
+  BenchCompareSource get benchCompareLeft => _benchCompareLeft;
+  BenchCompareSource get benchCompareRight => _benchCompareRight;
+
+  void setBenchCompareLeft(BenchCompareSource source) {
+    if (source == _benchCompareLeft) return;
+    _benchCompareLeft = source;
+    notifyListeners();
+  }
+
+  void setBenchCompareRight(BenchCompareSource source) {
+    if (source == _benchCompareRight) return;
+    _benchCompareRight = source;
+    notifyListeners();
   }
 
   void _clearBenchBaseline({bool notify = false}) {
     _benchBaselineFurniture = null;
     _benchBaselineLabel = null;
     _benchBaselineAt = null;
+    _benchCompareLeft = const BenchCompareSource.currentRig();
+    _benchCompareRight = const BenchCompareSource.autoRig();
     if (notify) notifyListeners();
   }
 
-  /// Auto-pin current Rig once when Bench needs a baseline (non-empty lot).
-  /// Pass [notify]: false when called from a Bench rebuild that already setStates.
-  void ensureBenchBaseline({
-    String label = 'opened Bench',
-    bool notify = true,
-  }) {
-    if (hasBenchBaseline) return;
-    final live = committedFurniture.where((f) => !f.hidden).toList(growable: false);
-    if (live.isEmpty) return;
-    setBenchBaselineFromRig(label: label, notify: notify);
-  }
-
-  void setBenchBaselineFromRig({
-    String label = 'from Rig',
-    bool notify = true,
-  }) {
-    final live = committedFurniture.where((f) => !f.hidden).toList(growable: false);
-    if (live.isEmpty) return;
-    _benchBaselineFurniture = _cloneFurniture(live);
-    _benchBaselineLabel = label;
-    _benchBaselineAt = DateTime.now();
-    _stashActiveRoom();
-    unawaited(_persistActiveRoomLayout());
-    if (notify) notifyListeners();
-  }
-
-  /// Pin baseline from a Hub checkpoint. Returns false if revision missing/empty.
-  bool setBenchBaselineFromRevision(String revisionId) {
-    final revs = activeRoomRevisions;
-    RoomRevision? hit;
-    for (final r in revs) {
-      if (r.id == revisionId) {
-        hit = r;
-        break;
-      }
+  String benchCompareSourceLabel(BenchCompareSource source) {
+    switch (source.kind) {
+      case BenchCompareKind.currentRig:
+        return 'Current Rig';
+      case BenchCompareKind.autoRig:
+        return 'Auto-Rig';
+      case BenchCompareKind.checkpoint:
+        final id = source.checkpointId;
+        for (final r in activeRoomRevisions) {
+          if (r.id == id) return r.label;
+        }
+        return 'Snapshot';
     }
-    if (hit == null || hit.furniture.isEmpty) return false;
-    _benchBaselineFurniture = _cloneFurniture(hit.furniture);
-    _benchBaselineLabel = hit.label;
-    _benchBaselineAt = DateTime.now();
-    _stashActiveRoom();
-    unawaited(_persistActiveRoomLayout());
-    notifyListeners();
-    return true;
   }
 
-  /// After Bench Apply: optionally treat the new Rig layout as the next baseline.
+  /// Furniture for a compare side. [autoRig] returns null (caller runs optimizer).
+  List<FurnitureItem>? resolveBenchCompareFurniture(BenchCompareSource source) {
+    switch (source.kind) {
+      case BenchCompareKind.currentRig:
+        return committedFurniture
+            .where((f) => !f.hidden)
+            .map((f) => f.copyWith())
+            .toList(growable: false);
+      case BenchCompareKind.autoRig:
+        return null;
+      case BenchCompareKind.checkpoint:
+        final id = source.checkpointId;
+        for (final r in activeRoomRevisions) {
+          if (r.id == id) {
+            return r.furniture
+                .where((f) => !f.hidden)
+                .map((f) => f.copyWith())
+                .toList(growable: false);
+          }
+        }
+        return committedFurniture
+            .where((f) => !f.hidden)
+            .map((f) => f.copyWith())
+            .toList(growable: false);
+    }
+  }
+
+  /// Seed inventory for Auto-Rig when that side is selected (prefer the other side).
+  List<FurnitureItem> benchAutoRigSeedFurniture({required bool forRight}) {
+    final other = forRight ? _benchCompareLeft : _benchCompareRight;
+    if (other.isAutoRig) {
+      return committedFurniture
+          .where((f) => !f.hidden)
+          .map((f) => f.copyWith())
+          .toList(growable: false);
+    }
+    return resolveBenchCompareFurniture(other) ??
+        committedFurniture
+            .where((f) => !f.hidden)
+            .map((f) => f.copyWith())
+            .toList(growable: false);
+  }
+
+  /// After Apply: optionally snapshot the new Rig as a checkpoint.
   void keepAppliedAsBenchBaseline() {
-    setBenchBaselineFromRig(label: 'after Apply');
+    checkpointActiveRoom('After Apply');
   }
 
   /// Restore a checkpoint into the live editor (pushes undo).

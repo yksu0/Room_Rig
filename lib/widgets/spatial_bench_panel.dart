@@ -46,6 +46,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
   bool _ready = false;
 
   BenchLayouts? _layouts;
+  String? _layoutSyncKey;
   int _seenFocusToken = 0;
   SpatialMetrics? _myRoomMetrics;
   SpatialMetrics? _improvedMetrics;
@@ -66,11 +67,21 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
 
   void _recompute(AppState state, {bool resetStep = true}) {
     final room = state.currentRoomData;
-    state.ensureBenchBaseline(notify: false);
+    final left =
+        state.resolveBenchCompareFurniture(state.benchCompareLeft) ?? const [];
+    final rightIsAuto = state.benchCompareRight.isAutoRig;
+    final right = rightIsAuto
+        ? null
+        : state.resolveBenchCompareFurniture(state.benchCompareRight);
     final layouts = BenchLayoutBuilder.build(
       mode: BenchMode.spatial,
       roomFurniture: state.committedFurniture,
-      baselineFurniture: state.benchBaselineFurniture,
+      leftFurniture: left,
+      rightFurniture: right,
+      rightIsAutoRig: rightIsAuto,
+      autoRigSeed: state.benchAutoRigSeedFurniture(forRight: true),
+      leftCaption: state.benchCompareSourceLabel(state.benchCompareLeft),
+      rightCaption: state.benchCompareSourceLabel(state.benchCompareRight),
       gridCols: room.gridCols,
       gridRows: room.gridRows,
       weights: state.optimizeWeights,
@@ -109,15 +120,10 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       _layoutVariant = kind;
       _analyzeVariant = kind;
     }
-    final fp = BenchLayoutBuilder.fingerprintOf(benchSyncFurniture(state));
-    if (benchLayoutsInSync(
-      _layouts,
-      furnitureFingerprint: fp,
-      weightsCacheKey: state.optimizeWeights.cacheKey,
-      alternateCursor: state.benchAlternateCursor,
-    )) {
-      return;
-    }
+    final key =
+        '${benchCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchAlternateCursor}';
+    if (_layouts != null && _layoutSyncKey == key) return;
+    _layoutSyncKey = key;
     _recompute(state, resetStep: false);
   }
 
@@ -294,7 +300,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       ),
       resultsExtra: resultsExtra,
       resultsBody: _results(state),
-      applyEnabled: !applyBlocked,
+      applyEnabled: !applyBlocked && (_layouts?.rightIsAutoRig ?? true),
       applyBlockedReason: applyValidation.hasHardLayoutConflicts
           ? 'Fix overlaps or blocked doorways before applying.'
           : (_improvedIsNoOp ? 'Auto-Rig matches Baseline — nothing to apply.' : null),

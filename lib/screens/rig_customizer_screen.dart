@@ -267,6 +267,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                                       const Divider(color: AppColors.borderSubtle),
                                       const SizedBox(height: 12),
                                       _buildToolsPanelBody(context, state, embedded: true),
+                                      const SizedBox(height: 20),
+                                      const Divider(color: AppColors.borderSubtle),
+                                      const SizedBox(height: 12),
+                                      _buildSnapshotPanelBody(context, state),
                                     ],
                                   ),
                                 ),
@@ -317,8 +321,31 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
             fit: StackFit.expand,
             children: [
               _buildCanvas(state),
-              // Overlay — never in header flow, so Edit/Orbit/Check do not jump.
-              if (state.layoutConflicts.isNotEmpty)
+              // Selection + conflicts share one top column so they never overlap.
+              if (selectedFurniture != null &&
+                  !state.hasPendingPlacement &&
+                  !_drag2dGestureStarted &&
+                  _drag2dItemId == null)
+                Positioned(
+                  left: 8,
+                  // Orbit/Model keep a gutter so MOVE stays tappable.
+                  right: _viewMode == _RigViewMode.twoD ? 8 : 100,
+                  top: _viewMode == _RigViewMode.model3D ? 40 : 8,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (state.layoutConflicts.isNotEmpty) ...[
+                        IgnorePointer(
+                          child: _ConflictBanner(conflicts: state.layoutConflicts),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      _buildFurnitureInfoCard(state, selectedFurniture),
+                    ],
+                  ),
+                )
+              else if (state.layoutConflicts.isNotEmpty)
                 Positioned(
                   left: 10,
                   right: 10,
@@ -326,19 +353,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   child: IgnorePointer(
                     child: _ConflictBanner(conflicts: state.layoutConflicts),
                   ),
-                ),
-              if (selectedFurniture != null &&
-                  !state.hasPendingPlacement &&
-                  !_drag2dGestureStarted &&
-                  _drag2dItemId == null)
-                Positioned(
-                  left: 8,
-                  // Orbit/Model keep a gutter so MOVE + yaw chrome stay tappable.
-                  right: _viewMode == _RigViewMode.twoD ? 8 : 100,
-                  top: state.layoutConflicts.isNotEmpty
-                      ? (_viewMode == _RigViewMode.model3D ? 84 : 52)
-                      : 4,
-                  child: _buildFurnitureInfoCard(state, selectedFurniture),
                 ),
               if (_showDimensions && _viewMode == _RigViewMode.twoD) ...[
                 Positioned(
@@ -494,6 +508,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                               visible: const [
                                 ChromeRegion.view,
                                 ChromeRegion.tools,
+                                ChromeRegion.snapshot,
                                 ChromeRegion.inspect,
                               ],
                               regionLabels: const {
@@ -806,6 +821,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
         builder: (ctx) => _buildToolsPanelBody(ctx, state, embedded: false),
       ),
       AdaptivePanelSpec(
+        region: ChromeRegion.snapshot,
+        preferTall: true,
+        builder: (ctx) => _buildSnapshotPanelBody(ctx, state),
+      ),
+      AdaptivePanelSpec(
         region: ChromeRegion.inspect,
         builder: (ctx) => _buildInspectPanelBody(ctx, state, embedded: false),
       ),
@@ -987,6 +1007,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     _lookAtZ = item.gridY + item.height * 0.5;
     _cameraPitchRad = 0.42;
     _cameraDistance = (math.max(cols, rows) * 0.55).clamp(5.0, 16.0);
+  }
+
+  Widget _buildSnapshotPanelBody(BuildContext ctx, AppState state) {
+    return _RigSnapshotPanel(
+      state: state,
+      onCloseSheet: _maybeCloseSupportingSheet,
+    );
   }
 
   Widget _buildToolsPanelBody(
@@ -2289,8 +2316,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                     ),
                   ),
                 Positioned(
-                  top: showMove ? 40 : 8,
-                  right: 10,
+                  left: 10,
+                  bottom: 10,
                   child: IgnorePointer(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2643,6 +2670,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
         SnackBar(
           content: Text('Deleted "$name"'),
           behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () {
@@ -2663,6 +2691,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
       ..showSnackBar(
         SnackBar(
           content: Text('Deleted "${obj.label}"'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
           action: SnackBarAction(
             label: 'Undo',
             onPressed: () {
@@ -4480,6 +4510,137 @@ class _InspectImpactChip extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _RigSnapshotPanel extends StatefulWidget {
+  final AppState state;
+  final VoidCallback onCloseSheet;
+
+  const _RigSnapshotPanel({
+    required this.state,
+    required this.onCloseSheet,
+  });
+
+  @override
+  State<_RigSnapshotPanel> createState() => _RigSnapshotPanelState();
+}
+
+class _RigSnapshotPanelState extends State<_RigSnapshotPanel> {
+  late final TextEditingController _nameCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _nameCtrl = TextEditingController(
+      text: 'Snapshot ${now.hour.toString().padLeft(2, '0')}:'
+          '${now.minute.toString().padLeft(2, '0')}',
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final revs = widget.state.activeRoomRevisions;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'SNAPSHOT',
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.4,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Save the current Rig layout as a Hub checkpoint. Bench Compare can pick it as Left or Right.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.35),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _nameCtrl,
+          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+          decoration: const InputDecoration(
+            labelText: 'Name',
+            labelStyle: TextStyle(color: AppColors.textMuted),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 10),
+        FilledButton.tonal(
+          onPressed: () {
+            final label =
+                _nameCtrl.text.trim().isEmpty ? 'Snapshot' : _nameCtrl.text.trim();
+            final ok = widget.state.checkpointActiveRoom(label);
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(ok ? 'Saved “$label”' : 'Nothing to snapshot yet'),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+            if (ok) {
+              setState(() {});
+              widget.onCloseSheet();
+            }
+          },
+          child: const Text('Save snapshot'),
+        ),
+        if (revs.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          const Text(
+            'Recent',
+            style: TextStyle(
+              color: AppColors.cyan,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          for (final r in revs.reversed.take(8))
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                r.label,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              subtitle: Text(
+                '${r.furniture.length} items',
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              trailing: TextButton(
+                onPressed: () {
+                  final ok = widget.state.restoreRoomRevision(r.id);
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(ok ? 'Restored “${r.label}”' : 'Could not restore'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                  if (ok) widget.onCloseSheet();
+                },
+                child: const Text('Restore'),
+              ),
+            ),
+        ],
+      ],
     );
   }
 }
