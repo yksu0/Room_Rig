@@ -2,6 +2,7 @@
 # Secrets (repo Settings → Secrets → Actions):
 #   SUPABASE_URL, SUPABASE_ANON_KEY
 #   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+# ORG/PROJECT IDs must match local .vercel/project.json (team_… / prj_…).
 name: Deploy web
 
 on:
@@ -26,14 +27,16 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: bash scripts/build_web.sh
 
-      # Deploy only the built site (not the whole monorepo — hits Vercel file limits).
       - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          # build/web alone stays under Vercel file limits; CLI in this action
-          # is too old for --archive.
-          working-directory: build/web
-          vercel-args: '--prod'
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm install -g vercel@latest
+          mkdir -p .vercel
+          printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" > .vercel/project.json
+          cp vercel.json build/web/vercel.json
+          # Ship only build/web; archive avoids file-count limits on large trees.
+          vercel deploy build/web --prod --yes --token="$VERCEL_TOKEN" --archive=tgz
