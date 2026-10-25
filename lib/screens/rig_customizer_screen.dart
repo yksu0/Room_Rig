@@ -2933,6 +2933,19 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     );
   }
 
+  /// Inward depth (px) for a wall fitting — doors need room for a full leaf swing.
+  static double _wallFittingInwardPx({
+    required MountStyle style,
+    required double alongPx,
+  }) {
+    if (style == MountStyle.door) {
+      // Leaf ≈ opening length; +pad for stroke. Never smaller than touch target.
+      return math.max(_minTouchTarget.toDouble(), alongPx * 0.94 + 10);
+    }
+    // Window / vent / etc.: compact strip flush on the wall (not a floating card).
+    return 22;
+  }
+
   /// Places a wall fitting as a band along its wall instead of a floor cell.
   Widget _buildWallFitting2D({
     required AppState state,
@@ -2945,33 +2958,37 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     required double cellH,
   }) {
     final span = mount.span!;
-    const band = _minTouchTarget;
-    double left;
-    double top;
-    double width;
-    double height;
+    final alongPx = switch (span.wall) {
+      RoomWall.north || RoomWall.south => math.max((span.x1 - span.x0) * cellW, 34.0),
+      RoomWall.west || RoomWall.east => math.max((span.z1 - span.z0) * cellH, 34.0),
+    };
+    final inward = _wallFittingInwardPx(style: mount.style, alongPx: alongPx);
+    late final double left;
+    late final double top;
+    late final double width;
+    late final double height;
 
     switch (span.wall) {
       case RoomWall.north:
-        width = math.max((span.x1 - span.x0) * cellW, 34);
-        height = band;
+        width = alongPx;
+        height = inward;
         left = roomRect.left + span.x0 * cellW;
         top = roomRect.top;
       case RoomWall.south:
-        width = math.max((span.x1 - span.x0) * cellW, 34);
-        height = band;
+        width = alongPx;
+        height = inward;
         left = roomRect.left + span.x0 * cellW;
-        top = roomRect.bottom - band;
+        top = roomRect.bottom - inward;
       case RoomWall.west:
-        width = band;
-        height = math.max((span.z1 - span.z0) * cellH, 34);
+        width = inward;
+        height = alongPx;
         top = roomRect.top + span.z0 * cellH;
         left = roomRect.left;
       case RoomWall.east:
-        width = band;
-        height = math.max((span.z1 - span.z0) * cellH, 34);
+        width = inward;
+        height = alongPx;
         top = roomRect.top + span.z0 * cellH;
-        left = roomRect.right - band;
+        left = roomRect.right - inward;
     }
 
     return Positioned(
@@ -3502,134 +3519,138 @@ class _WallFittingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final wallFace = Paint()
-      ..color = color.withValues(alpha: selected ? 0.95 : 0.6)
-      ..strokeWidth = selected ? 3.4 : 2.6
+      ..color = color.withValues(alpha: selected ? 0.95 : 0.7)
+      ..strokeWidth = selected ? 3.2 : 2.4
       ..strokeCap = StrokeCap.square;
 
-    // Fill the hitbox band so openings read at their true span width.
-    final bandFill = Paint()..color = color.withValues(alpha: selected ? 0.32 : 0.18);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, size.width, size.height),
-        const Radius.circular(4),
-      ),
-      bandFill,
+    final alongPx = wall == RoomWall.north || wall == RoomWall.south
+        ? size.width
+        : size.height;
+    final inwardPx = wall == RoomWall.north || wall == RoomWall.south
+        ? size.height
+        : size.width;
+
+    // Flush strip on the wall edge (depth 0) — no floating rounded card.
+    final stripDepth = style == MountStyle.door ? 5.0 : math.min(inwardPx, 16.0);
+    final stripFill = Paint()..color = color.withValues(alpha: selected ? 0.34 : 0.2);
+    canvas.drawRect(
+      Rect.fromPoints(_p(size, 0, 0), _p(size, 1, stripDepth)),
+      stripFill,
     );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0.5, 0.5, size.width - 1, size.height - 1),
-        const Radius.circular(4),
-      ),
-      Paint()
-        ..color = color.withValues(alpha: selected ? 0.95 : 0.65)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = selected ? 2.2 : 1.4,
-    );
+    // Hard edge on the wall so the opening reads flush with the room outline.
+    _line(canvas, size, 0, 0.5, 1, 0.5, wallFace);
 
     switch (style) {
       case MountStyle.window:
-        // Glazing fills the opening; mullions mark panes.
-        final pane = Paint()..color = color.withValues(alpha: selected ? 0.28 : 0.16);
-        final a = _p(size, 0.04, 4);
-        final b = _p(size, 0.96, math.min(size.shortestSide * 0.72, 28));
-        canvas.drawRect(Rect.fromPoints(a, b), pane);
-        _line(canvas, size, 0, 2, 1, 2, wallFace);
+        final paneDepth = math.min(inwardPx - 1, 15.0);
+        final pane = Paint()..color = color.withValues(alpha: selected ? 0.3 : 0.16);
+        canvas.drawRect(
+          Rect.fromPoints(_p(size, 0.02, 1), _p(size, 0.98, paneDepth)),
+          pane,
+        );
         final mullion = Paint()
-          ..color = color.withValues(alpha: selected ? 0.9 : 0.65)
+          ..color = color.withValues(alpha: selected ? 0.95 : 0.7)
           ..strokeWidth = 1.4;
-        _line(canvas, size, 0.5, 4, 0.5, math.min(size.shortestSide * 0.72, 28), mullion);
-        final mid = math.min(size.shortestSide * 0.38, 16.0);
-        _line(canvas, size, 0.04, mid, 0.96, mid, mullion);
+        _line(canvas, size, 0.5, 1, 0.5, paneDepth, mullion);
+        _line(canvas, size, 0.02, paneDepth * 0.55, 0.98, paneDepth * 0.55, mullion);
         final jamb = Paint()
-          ..color = color.withValues(alpha: 0.75)
+          ..color = color.withValues(alpha: 0.8)
           ..strokeWidth = 2;
-        _line(canvas, size, 0.04, 2, 0.04, math.min(size.shortestSide * 0.72, 28), jamb);
-        _line(canvas, size, 0.96, 2, 0.96, math.min(size.shortestSide * 0.72, 28), jamb);
+        _line(canvas, size, 0.02, 0.5, 0.02, paneDepth, jamb);
+        _line(canvas, size, 0.98, 0.5, 0.98, paneDepth, jamb);
       case MountStyle.door:
-        // Opening break + solid 90° swing; dashed other half → semicircle cue.
-        _line(canvas, size, 0, 2, 0.06, 2, wallFace);
-        _line(canvas, size, 0.94, 2, 1, 2, wallFace);
-        final alongPx = wall == RoomWall.north || wall == RoomWall.south
-            ? size.width
-            : size.height;
-        final inwardPx = wall == RoomWall.north || wall == RoomWall.south
-            ? size.height
-            : size.width;
-        final radius = math.min(alongPx * 0.88, math.max(inwardPx - 4, 8.0));
-        final hinge = _p(size, 0.06, 2);
+        // Opening break on the wall; leaf length = opening (alongPx).
+        _line(canvas, size, 0, 0.5, 0.05, 0.5, wallFace);
+        _line(canvas, size, 0.95, 0.5, 1, 0.5, wallFace);
+        final leaf = alongPx * 0.9;
+        final radius = math.min(leaf, math.max(inwardPx - 4, 8.0));
+        const hingeT = 0.05;
+        final hinge = _p(size, hingeT, 0.5);
         Offset tip(double angle) {
-          // 0 = along wall; π/2 = inward; π = opposite (outside / unused half).
-          final alongT = 0.06 + (radius / alongPx) * math.cos(angle);
-          final depth = 2 + radius * math.sin(angle);
+          // 0 = closed along wall; π/2 = open into room.
+          final alongT = hingeT + (radius / alongPx) * math.cos(angle);
+          final depth = 0.5 + radius * math.sin(angle);
           return _p(size, alongT, depth);
         }
         final closed = tip(0);
         final open = tip(math.pi / 2);
-        _line(canvas, size, 0.06, 2, 0.06, 2 + radius, wallFace);
-        final sector = Path()..moveTo(hinge.dx, hinge.dy)..lineTo(closed.dx, closed.dy);
-        for (int i = 1; i <= 24; i++) {
-          final pt = tip((i / 24) * math.pi / 2);
+        // Open leaf line (hinge → into room).
+        canvas.drawLine(
+          hinge,
+          open,
+          Paint()
+            ..color = color.withValues(alpha: selected ? 0.95 : 0.7)
+            ..strokeWidth = selected ? 2.6 : 2.0
+            ..strokeCap = StrokeCap.square,
+        );
+        final sector = Path()
+          ..moveTo(hinge.dx, hinge.dy)
+          ..lineTo(closed.dx, closed.dy);
+        for (int i = 1; i <= 28; i++) {
+          final pt = tip((i / 28) * math.pi / 2);
           sector.lineTo(pt.dx, pt.dy);
         }
         sector.close();
         canvas.drawPath(
           sector,
-          Paint()..color = color.withValues(alpha: selected ? 0.16 : 0.08),
+          Paint()..color = color.withValues(alpha: selected ? 0.18 : 0.1),
         );
         final stroke = Paint()
-          ..color = color.withValues(alpha: selected ? 0.7 : 0.4)
+          ..color = color.withValues(alpha: selected ? 0.85 : 0.55)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2;
+          ..strokeWidth = 1.3;
         final arc = Path()..moveTo(closed.dx, closed.dy);
-        for (int i = 1; i <= 24; i++) {
-          final pt = tip((i / 24) * math.pi / 2);
+        for (int i = 1; i <= 28; i++) {
+          final pt = tip((i / 28) * math.pi / 2);
           arc.lineTo(pt.dx, pt.dy);
         }
         canvas.drawPath(arc, stroke);
         canvas.drawLine(hinge, closed, stroke);
-        canvas.drawLine(hinge, open, stroke);
         final dashedPts = <Offset>[
-          for (int i = 0; i <= 24; i++) tip(math.pi / 2 + (i / 24) * math.pi / 2),
+          for (int i = 0; i <= 28; i++) tip(math.pi / 2 + (i / 28) * math.pi / 2),
         ];
         drawDashedPolyline(
           canvas,
           dashedPts,
           Paint()
-            ..color = color.withValues(alpha: selected ? 0.4 : 0.22)
+            ..color = color.withValues(alpha: selected ? 0.45 : 0.25)
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1.1,
         );
       case MountStyle.vent:
-        // Wall unit with louvers facing into the room.
-        _line(canvas, size, 0, 2, 1, 2, wallFace);
-        final body = Paint()..color = color.withValues(alpha: selected ? 0.26 : 0.15);
-        final a = _p(size, 0, 3);
-        final b = _p(size, 1, 13);
-        canvas.drawRect(Rect.fromPoints(a, b), body);
+        _line(canvas, size, 0, 0.5, 1, 0.5, wallFace);
+        final body = Paint()..color = color.withValues(alpha: selected ? 0.28 : 0.16);
+        canvas.drawRect(
+          Rect.fromPoints(_p(size, 0, 1), _p(size, 1, math.min(inwardPx, 14))),
+          body,
+        );
         final louver = Paint()
           ..color = color.withValues(alpha: selected ? 0.9 : 0.6)
           ..strokeWidth = 1.3;
+        final louDepth = math.min(inwardPx, 13.0);
         for (final t in const [0.22, 0.5, 0.78]) {
-          _line(canvas, size, t, 4, t, 12, louver);
+          _line(canvas, size, t, 2, t, louDepth, louver);
         }
       case MountStyle.intake:
-        _line(canvas, size, 0, 2, 1, 2, wallFace);
+        _line(canvas, size, 0, 0.5, 1, 0.5, wallFace);
         final arrow = Paint()
           ..color = color.withValues(alpha: selected ? 0.95 : 0.7)
           ..strokeWidth = 1.6
           ..strokeCap = StrokeCap.round;
-        _line(canvas, size, 0.5, 6, 0.5, 11, arrow);
-        _line(canvas, size, 0.35, 9.5, 0.5, 11.5, arrow);
-        _line(canvas, size, 0.65, 9.5, 0.5, 11.5, arrow);
+        final tipD = math.min(inwardPx - 2, 14.0);
+        _line(canvas, size, 0.5, 3, 0.5, tipD, arrow);
+        _line(canvas, size, 0.35, tipD - 3, 0.5, tipD, arrow);
+        _line(canvas, size, 0.65, tipD - 3, 0.5, tipD, arrow);
       case MountStyle.exhaust:
-        _line(canvas, size, 0, 2, 1, 2, wallFace);
+        _line(canvas, size, 0, 0.5, 1, 0.5, wallFace);
         final arrow = Paint()
           ..color = color.withValues(alpha: selected ? 0.95 : 0.7)
           ..strokeWidth = 1.6
           ..strokeCap = StrokeCap.round;
-        _line(canvas, size, 0.5, 11, 0.5, 6, arrow);
-        _line(canvas, size, 0.35, 7.5, 0.5, 5.5, arrow);
-        _line(canvas, size, 0.65, 7.5, 0.5, 5.5, arrow);
+        final tipD = math.min(inwardPx - 2, 14.0);
+        _line(canvas, size, 0.5, tipD, 0.5, 3, arrow);
+        _line(canvas, size, 0.35, 5, 0.5, 3, arrow);
+        _line(canvas, size, 0.65, 5, 0.5, 3, arrow);
       case MountStyle.floorItem:
       case MountStyle.deskItem:
       case MountStyle.ceilingFixture:

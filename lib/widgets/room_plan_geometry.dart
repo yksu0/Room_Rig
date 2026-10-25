@@ -155,12 +155,23 @@ class RoomPlanGeometry {
       final mount = mounts[item.id]!;
       final span = mount.span;
       if (!mount.isWall || span == null) continue;
+      final cw = cellW(roomRect, gridCols);
+      final ch = cellH(roomRect, gridRows);
+      final along = switch (span.wall) {
+        RoomWall.north || RoomWall.south => math.max((span.x1 - span.x0) * cw, 34),
+        RoomWall.west || RoomWall.east => math.max((span.z1 - span.z0) * ch, 34),
+      };
+      // Match Rig wall-fitting inward depth (doors need leaf swing room).
+      final band = mount.style == MountStyle.door
+          ? math.max(46.0, along * 0.94 + 10)
+          : 22.0;
       if (hitWallBand(
         local: local,
         roomRect: roomRect,
         span: span,
         gridCols: gridCols,
         gridRows: gridRows,
+        band: band,
       )) {
         return item;
       }

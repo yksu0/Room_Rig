@@ -687,6 +687,14 @@ class BenchFurnitureRenderer {
       _ => categoryColor(item.category),
     };
 
+    final along = switch (span.wall) {
+      RoomWall.north || RoomWall.south => math.max((span.x1 - span.x0) * cellW, 20),
+      RoomWall.west || RoomWall.east => math.max((span.z1 - span.z0) * cellH, 20),
+    };
+    final inward = mount.style == MountStyle.door
+        ? math.max(28.0, along * 0.94 + 6)
+        : 14.0;
+
     late Rect band;
     switch (span.wall) {
       case RoomWall.north:
@@ -694,12 +702,12 @@ class BenchFurnitureRenderer {
           roomRect.left + span.x0 * cellW,
           roomRect.top,
           roomRect.left + span.x1 * cellW,
-          roomRect.top + 14,
+          roomRect.top + inward,
         );
       case RoomWall.south:
         band = Rect.fromLTRB(
           roomRect.left + span.x0 * cellW,
-          roomRect.bottom - 14,
+          roomRect.bottom - inward,
           roomRect.left + span.x1 * cellW,
           roomRect.bottom,
         );
@@ -707,73 +715,102 @@ class BenchFurnitureRenderer {
         band = Rect.fromLTRB(
           roomRect.left,
           roomRect.top + span.z0 * cellH,
-          roomRect.left + 14,
+          roomRect.left + inward,
           roomRect.top + span.z1 * cellH,
         );
       case RoomWall.east:
         band = Rect.fromLTRB(
-          roomRect.right - 14,
+          roomRect.right - inward,
           roomRect.top + span.z0 * cellH,
           roomRect.right,
           roomRect.top + span.z1 * cellH,
         );
     }
 
-    final rrect = RRect.fromRectAndRadius(band, const Radius.circular(4));
-    canvas.drawRRect(rrect, Paint()..color = color.withValues(alpha: selected ? 0.45 : 0.28));
-    canvas.drawRRect(
-      rrect,
-      Paint()
-        ..color = color.withValues(alpha: selected ? 1.0 : 0.85)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = selected ? 2.0 : 1.4,
-    );
+    // Flush strip on the wall edge (square corners — no floating card gap).
+    final strip = switch (span.wall) {
+      RoomWall.north => Rect.fromLTRB(band.left, band.top, band.right, band.top + 5),
+      RoomWall.south => Rect.fromLTRB(band.left, band.bottom - 5, band.right, band.bottom),
+      RoomWall.west => Rect.fromLTRB(band.left, band.top, band.left + 5, band.bottom),
+      RoomWall.east => Rect.fromLTRB(band.right - 5, band.top, band.right, band.bottom),
+    };
+    canvas.drawRect(strip, Paint()..color = color.withValues(alpha: selected ? 0.45 : 0.28));
+    final wallStroke = Paint()
+      ..color = color.withValues(alpha: selected ? 1.0 : 0.85)
+      ..strokeWidth = selected ? 2.4 : 1.8
+      ..strokeCap = StrokeCap.square;
+    switch (span.wall) {
+      case RoomWall.north:
+        canvas.drawLine(Offset(band.left, band.top + 0.5), Offset(band.right, band.top + 0.5), wallStroke);
+      case RoomWall.south:
+        canvas.drawLine(Offset(band.left, band.bottom - 0.5), Offset(band.right, band.bottom - 0.5), wallStroke);
+      case RoomWall.west:
+        canvas.drawLine(Offset(band.left + 0.5, band.top), Offset(band.left + 0.5, band.bottom), wallStroke);
+      case RoomWall.east:
+        canvas.drawLine(Offset(band.right - 0.5, band.top), Offset(band.right - 0.5, band.bottom), wallStroke);
+    }
 
-    // Draw cues across the full span — do not shrink to a fixed icon size.
     final stroke = Paint()
       ..color = color.withValues(alpha: 0.85)
       ..strokeWidth = 1.2;
     if (mount.style == MountStyle.window) {
       canvas.drawLine(
-        Offset(band.center.dx, band.top + 2),
-        Offset(band.center.dx, band.bottom - 2),
+        Offset(band.center.dx, strip.top + 1),
+        Offset(band.center.dx, strip.bottom - 1),
         stroke,
       );
       canvas.drawLine(
-        Offset(band.left + 2, band.center.dy),
-        Offset(band.right - 2, band.center.dy),
+        Offset(band.left + 2, strip.center.dy),
+        Offset(band.right - 2, strip.center.dy),
         stroke,
       );
     } else if (mount.style == MountStyle.door) {
-      final hinge = Offset(
-        band.left + span.inwardX.abs() * band.width * 0.15 + (1 - span.inwardX.abs()) * 2,
-        band.top + span.inwardZ.abs() * band.height * 0.15 + (1 - span.inwardZ.abs()) * 2,
-      );
-      canvas.drawCircle(hinge, 2.2, Paint()..color = color);
-      // Leaf cue along the opening so width matches the hitbox.
-      if (band.width >= band.height) {
-        canvas.drawLine(
-          Offset(band.left + 3, band.center.dy),
-          Offset(band.right - 3, band.center.dy),
-          stroke,
-        );
-      } else {
-        canvas.drawLine(
-          Offset(band.center.dx, band.top + 3),
-          Offset(band.center.dx, band.bottom - 3),
-          stroke,
-        );
+      // Quarter-circle swing scaled to opening length.
+      final hinge = switch (span.wall) {
+        RoomWall.north => Offset(band.left + 2, band.top + 0.5),
+        RoomWall.south => Offset(band.left + 2, band.bottom - 0.5),
+        RoomWall.west => Offset(band.left + 0.5, band.top + 2),
+        RoomWall.east => Offset(band.right - 0.5, band.top + 2),
+      };
+      final radius = math.min(along * 0.9, inward - 3);
+      final arc = Path()..moveTo(hinge.dx, hinge.dy);
+      for (var i = 0; i <= 24; i++) {
+        final a = (i / 24) * math.pi / 2;
+        late Offset pt;
+        switch (span.wall) {
+          case RoomWall.north:
+            pt = Offset(hinge.dx + radius * math.cos(a), hinge.dy + radius * math.sin(a));
+          case RoomWall.south:
+            pt = Offset(hinge.dx + radius * math.cos(a), hinge.dy - radius * math.sin(a));
+          case RoomWall.west:
+            pt = Offset(hinge.dx + radius * math.sin(a), hinge.dy + radius * math.cos(a));
+          case RoomWall.east:
+            pt = Offset(hinge.dx - radius * math.sin(a), hinge.dy + radius * math.cos(a));
+        }
+        if (i == 0) {
+          arc.moveTo(pt.dx, pt.dy);
+        } else {
+          arc.lineTo(pt.dx, pt.dy);
+        }
       }
+      canvas.drawPath(
+        arc,
+        Paint()
+          ..color = color.withValues(alpha: selected ? 0.7 : 0.45)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+      canvas.drawCircle(hinge, 2.0, Paint()..color = color);
     } else if (mount.style == MountStyle.vent ||
         mount.style == MountStyle.intake ||
         mount.style == MountStyle.exhaust) {
       for (var i = 1; i <= 2; i++) {
         final t = i / 3;
         if (band.width >= band.height) {
-          final y = band.top + band.height * t;
+          final y = strip.top + strip.height * t;
           canvas.drawLine(Offset(band.left + 2, y), Offset(band.right - 2, y), stroke);
         } else {
-          final x = band.left + band.width * t;
+          final x = strip.left + strip.width * t;
           canvas.drawLine(Offset(x, band.top + 2), Offset(x, band.bottom - 2), stroke);
         }
       }
