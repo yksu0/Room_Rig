@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -99,13 +102,40 @@ class _AuthScreenState extends State<AuthScreen> {
                     });
                     final err = await auth.signInWithGoogle();
                     if (!mounted) return;
-                    setState(() {
-                      _busy = false;
-                      _error = err;
-                    });
-                    if (err == null && auth.isSignedIn) {
-                      if (!mounted) return;
+                    if (err != null) {
+                      setState(() {
+                        _busy = false;
+                        _error = err;
+                      });
+                      return;
+                    }
+                    // Mobile: browser returns via deep link; wait for session.
+                    if (!kIsWeb && !auth.isSignedIn) {
+                      final done = Completer<bool>();
+                      void listener() {
+                        if (auth.isSignedIn && !done.isCompleted) {
+                          done.complete(true);
+                        }
+                      }
+                      auth.addListener(listener);
+                      try {
+                        await done.future.timeout(const Duration(minutes: 3));
+                      } on TimeoutException {
+                        if (!done.isCompleted) done.complete(false);
+                      } finally {
+                        auth.removeListener(listener);
+                      }
+                    }
+                    if (!mounted) return;
+                    setState(() => _busy = false);
+                    if (auth.isSignedIn) {
                       Navigator.of(context).maybePop(true);
+                    } else if (!kIsWeb) {
+                      setState(() {
+                        _error =
+                            'Google sign-in did not finish. If the browser stayed open, add '
+                            '${AuthService.mobileAuthRedirect} to Supabase Auth redirect URLs, then try again.';
+                      });
                     }
                   },
             icon: const Icon(Icons.g_mobiledata_rounded, size: 28),

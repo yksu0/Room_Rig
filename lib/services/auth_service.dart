@@ -101,14 +101,21 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Google OAuth (Supabase Free tier). Web uses redirect; mobile uses same PKCE flow.
+  /// Deep link that must be allow-listed in Supabase Auth → URL Configuration.
+  /// Android intent-filter: scheme `com.roomrig.room_rig`, host `login-callback`.
+  static const mobileAuthRedirect = 'com.roomrig.room_rig://login-callback/';
+
+  String? get _authRedirectTo =>
+      kIsWeb ? Uri.base.origin : mobileAuthRedirect;
+
+  /// Google OAuth (Supabase Free tier). Web uses HTTPS origin; Android uses deep link.
   Future<String?> signInWithGoogle() async {
     final client = SupabaseBootstrap.clientOrNull;
     if (client == null) return 'Cloud auth is not configured on this build.';
     try {
       final launched = await client.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: kIsWeb ? Uri.base.origin : null,
+        redirectTo: _authRedirectTo,
         authScreenLaunchMode: kIsWeb
             ? LaunchMode.platformDefault
             : LaunchMode.externalApplication,
@@ -130,7 +137,7 @@ class AuthService extends ChangeNotifier {
     try {
       await client.auth.resetPasswordForEmail(
         trimmed,
-        redirectTo: kIsWeb ? Uri.base.origin : null,
+        redirectTo: _authRedirectTo,
       );
       return null;
     } on AuthException catch (e) {

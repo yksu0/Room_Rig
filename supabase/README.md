@@ -5,7 +5,12 @@ Free-tier orgs are limited to **2 active projects**. Creating `room-rig` failed 
 1. Create project `room-rig` (region `ap-southeast-1` recommended).
 2. Run SQL in [migrations/20261018120000_room_rig_init.sql](migrations/20261018120000_room_rig_init.sql) (SQL editor or CLI).
 3. Auth → Email enabled; Confirm email **off** until Brevo SMTP works, then turn **on**.
-4. Auth → URL: Site URL + redirect `http://localhost:7357` (and any production origin).
+4. Auth → URL Configuration:
+   - Site URL: production web origin (e.g. `https://roomrig.vercel.app`) or `http://localhost:7357` while developing web.
+   - Redirect URLs (allow list) must include:
+     - `http://localhost:7357/**`
+     - `https://roomrig.vercel.app/**` (or your Vercel URL)
+     - `com.roomrig.room_rig://login-callback/**` (**required for Android Google sign-in** — without this the phone opens a website instead of returning to the app)
 5. Auth → Providers → **Google** (Free tier): enable, paste Client ID + Client Secret from Google Cloud Console (OAuth 2.0 Web client). Authorized redirect URI = Supabase callback shown in the provider panel (`https://YOUR_PROJECT.supabase.co/auth/v1/callback`).
 6. Auth → SMTP: Brevo credentials (optional for email/password).
 7. Copy Project URL + anon key into gitignored `supabase.local.json` (see example) and run:
