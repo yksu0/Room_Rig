@@ -83,7 +83,7 @@ class PasswordFormFields extends StatelessWidget {
                       ),
                     );
                   },
-            icon: const Icon(Icons.auto_awesome, size: 18),
+            icon: const Icon(Icons.password_outlined, size: 18),
             label: const Text('Generate strong password'),
           ),
         ),

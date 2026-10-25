@@ -1127,22 +1127,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
             ),
           ],
         ),
-        const SizedBox(height: 10),
-        SwitchListTile.adaptive(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-          title: const Text('AI layout sort', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-          subtitle: Text(
-            AutoRigRanker.isLoaded
-                ? 'Rank Auto-Rig candidates with on-device weights (off by default)'
-                : 'Ranker weights not loaded — toggle has no effect yet',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-          ),
-          value: AutoRigRanker.enabled,
-          activeThumbColor: AppColors.cyan,
-          onChanged: AutoRigRanker.isLoaded
-              ? (v) => setState(() => AutoRigRanker.enabled = v)
-              : null,
-        ),
         const SizedBox(height: 14),
         Row(
           children: [
@@ -1162,6 +1146,22 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 6),
+        SwitchListTile.adaptive(
+          contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          title: const Text('AI layout sort', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+          subtitle: Text(
+            AutoRigRanker.isLoaded
+                ? 'Rank Auto-Rig candidates with on-device weights (off by default)'
+                : 'Ranker weights not loaded — toggle has no effect yet',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          value: AutoRigRanker.enabled,
+          activeThumbColor: AppColors.cyan,
+          onChanged: AutoRigRanker.isLoaded
+              ? (v) => setState(() => AutoRigRanker.enabled = v)
+              : null,
         ),
         if (state.lastOptimizeReasons.isNotEmpty) ...[
           const SizedBox(height: 10),
