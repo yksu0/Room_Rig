@@ -1127,29 +1127,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
             ),
           ],
         ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(64, 48),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                ),
-                onPressed: () {
-                  Navigator.of(ctx).maybePop();
-                  _runAutoRig(context, state);
-                },
-                icon: const Icon(Icons.auto_awesome_rounded, size: 20),
-                label: const Text('Rearrange my inventory'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 10),
         SwitchListTile.adaptive(
           contentPadding: const EdgeInsets.symmetric(vertical: 4),
+          secondary: const Icon(
+            Icons.auto_awesome_rounded,
+            color: AppColors.cyan,
+            size: 22,
+          ),
           title: const Text('AI layout sort', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
           subtitle: Text(
             AutoRigRanker.isLoaded
@@ -1162,6 +1147,25 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
           onChanged: AutoRigRanker.isLoaded
               ? (v) => setState(() => AutoRigRanker.enabled = v)
               : null,
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(64, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).maybePop();
+                  _runAutoRig(context, state);
+                },
+                child: const Text('Rearrange my inventory'),
+              ),
+            ),
+          ],
         ),
         if (state.lastOptimizeReasons.isNotEmpty) ...[
           const SizedBox(height: 10),
