@@ -56,7 +56,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
   int _seenFocusToken = 0;
   ErgonomicsSimSnapshot? _myRoomSim;
   ErgonomicsSimSnapshot? _improvedSim;
-  ErgonomicsSimSnapshot? _sampleSim;
 
   @override
   void initState() {
@@ -95,21 +94,18 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     final bounds = SimRoomBounds.fromRoomData(room);
     _myRoomSim = ErgonomicsSimulator.build(furniture: layouts.myRoom, optimized: false, bounds: bounds);
     _improvedSim = ErgonomicsSimulator.build(furniture: layouts.improved, optimized: true, bounds: bounds);
-    _sampleSim = ErgonomicsSimulator.build(furniture: layouts.sample, optimized: false, bounds: bounds);
     _ready = true;
     if (resetStep) {
       _step = _ErgoStep.layout;
       // A pending focus request (the Rig's "Sim Prototype" button) wins once;
       // after that a reset lands back on the user's own room.
       final pending = state.benchLayoutFocusToken != _seenFocusToken;
-      final kind = pending ? state.benchLayoutFocus : BenchLayoutKind.myRoom;
+      var kind = pending ? state.benchLayoutFocus : BenchLayoutKind.myRoom;
+      if (kind == BenchLayoutKind.sample) kind = BenchLayoutKind.myRoom;
       _seenFocusToken = state.benchLayoutFocusToken;
       _layoutVariant = kind;
       _simVariant = kind;
       _showResults = false;
-      if (kind == BenchLayoutKind.sample) {
-        _roomView = _View.twoD;
-      }
     }
   }
 
@@ -120,12 +116,11 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     if (state.currentTab != benchTabIndex) return;
     if (state.benchLayoutFocusToken != _seenFocusToken) {
       _seenFocusToken = state.benchLayoutFocusToken;
-      _layoutVariant = state.benchLayoutFocus;
-      _simVariant = state.benchLayoutFocus;
+      var kind = state.benchLayoutFocus;
+      if (kind == BenchLayoutKind.sample) kind = BenchLayoutKind.myRoom;
+      _layoutVariant = kind;
+      _simVariant = kind;
       _selectedFurnitureId = null;
-      if (state.benchLayoutFocus == BenchLayoutKind.sample) {
-        _roomView = _View.twoD;
-      }
     }
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
@@ -176,7 +171,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       case BenchLayoutKind.improved:
         return _improvedSim;
       case BenchLayoutKind.sample:
-        return _sampleSim;
       case BenchLayoutKind.myRoom:
         return _myRoomSim;
     }
@@ -491,6 +485,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            BenchInspectLockBlock(furniture: _furnitureFor(BenchLayoutKind.myRoom)),
             Text(
               _roomView == _View.compare
                   ? 'My Room vs Improved'

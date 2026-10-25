@@ -55,7 +55,6 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
   int _seenFocusToken = 0;
   LightingSimSnapshot? _myRoomSim;
   LightingSimSnapshot? _improvedSim;
-  LightingSimSnapshot? _sampleSim;
 
   @override
   void initState() {
@@ -94,21 +93,18 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     final bounds = SimRoomBounds.fromRoomData(room);
     _myRoomSim = LightingSimulator.build(furniture: layouts.myRoom, optimized: false, bounds: bounds);
     _improvedSim = LightingSimulator.build(furniture: layouts.improved, optimized: true, bounds: bounds);
-    _sampleSim = LightingSimulator.build(furniture: layouts.sample, optimized: false, bounds: bounds);
     _ready = true;
     if (resetStep) {
       _step = _LightStep.layout;
       // A pending focus request (the Rig's "Sim Prototype" button) wins once;
       // after that a reset lands back on the user's own room.
       final pending = state.benchLayoutFocusToken != _seenFocusToken;
-      final kind = pending ? state.benchLayoutFocus : BenchLayoutKind.myRoom;
+      var kind = pending ? state.benchLayoutFocus : BenchLayoutKind.myRoom;
+      if (kind == BenchLayoutKind.sample) kind = BenchLayoutKind.myRoom;
       _seenFocusToken = state.benchLayoutFocusToken;
       _layoutVariant = kind;
       _simVariant = kind;
       _showResults = false;
-      if (kind == BenchLayoutKind.sample) {
-        _roomView = _View.twoD;
-      }
     }
   }
 
@@ -119,12 +115,11 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     if (state.currentTab != benchTabIndex) return;
     if (state.benchLayoutFocusToken != _seenFocusToken) {
       _seenFocusToken = state.benchLayoutFocusToken;
-      _layoutVariant = state.benchLayoutFocus;
-      _simVariant = state.benchLayoutFocus;
+      var kind = state.benchLayoutFocus;
+      if (kind == BenchLayoutKind.sample) kind = BenchLayoutKind.myRoom;
+      _layoutVariant = kind;
+      _simVariant = kind;
       _selectedFurnitureId = null;
-      if (state.benchLayoutFocus == BenchLayoutKind.sample) {
-        _roomView = _View.twoD;
-      }
     }
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
@@ -175,7 +170,6 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       case BenchLayoutKind.improved:
         return _improvedSim;
       case BenchLayoutKind.sample:
-        return _sampleSim;
       case BenchLayoutKind.myRoom:
         return _myRoomSim;
     }
@@ -474,6 +468,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            BenchInspectLockBlock(furniture: _furnitureFor(BenchLayoutKind.myRoom)),
             Text(
               _roomView == _View.compare
                   ? 'My Room vs Improved'

@@ -406,6 +406,7 @@ class AppState extends ChangeNotifier {
     _preOptimizeLightingMetrics = null;
     _ergonomicsMetrics = null;
     _preOptimizeErgonomicsMetrics = null;
+    _preOptimizeSpatialScore = null;
     _airflowMetricsDirty = true;
     _lightingMetricsDirty = true;
     _ergonomicsMetricsDirty = true;
@@ -985,6 +986,7 @@ class AppState extends ChangeNotifier {
     _preOptimizeLightingMetrics = null;
     _ergonomicsMetrics = null;
     _preOptimizeErgonomicsMetrics = null;
+    _preOptimizeSpatialScore = null;
     _airflowMetricsDirty = true;
     _lightingMetricsDirty = true;
     _ergonomicsMetricsDirty = true;
@@ -1073,6 +1075,7 @@ class AppState extends ChangeNotifier {
     _preOptimizeLightingMetrics = null;
     _ergonomicsMetrics = null;
     _preOptimizeErgonomicsMetrics = null;
+    _preOptimizeSpatialScore = null;
     _airflowMetricsDirty = true;
     _lightingMetricsDirty = true;
     _ergonomicsMetricsDirty = true;
@@ -1898,6 +1901,7 @@ class AppState extends ChangeNotifier {
     _preOptimizeLightingMetrics = null;
     _ergonomicsMetrics = null;
     _preOptimizeErgonomicsMetrics = null;
+    _preOptimizeSpatialScore = null;
     _airflowMetricsDirty = true;
     _lightingMetricsDirty = true;
     _ergonomicsMetricsDirty = true;
@@ -2208,6 +2212,7 @@ class AppState extends ChangeNotifier {
   LightingMetrics? _preOptimizeLightingMetrics;
   ErgonomicsMetrics? _ergonomicsMetrics;
   ErgonomicsMetrics? _preOptimizeErgonomicsMetrics;
+  double? _preOptimizeSpatialScore;
   List<String> _lastOptimizeReasons = const [];
   bool _airflowMetricsDirty = true;
   bool _lightingMetricsDirty = true;
@@ -2320,6 +2325,12 @@ class AppState extends ChangeNotifier {
 
   double get spatialScore => spatialMetrics.overallScore;
 
+  double get baselineSpatialScore {
+    final pre = _preOptimizeSpatialScore;
+    if (pre != null) return pre.clamp(0, 100);
+    return spatialScore;
+  }
+
   String? _overallScoreFp;
   double? _overallScoreCache;
 
@@ -2375,6 +2386,14 @@ class AppState extends ChangeNotifier {
 
   void _captureErgonomicsBaselineIfNeeded() {
     _preOptimizeErgonomicsMetrics ??= ErgonomicsOptimizer.evaluate(committedFurniture, bounds: simBounds);
+  }
+
+  void _captureSpatialBaselineIfNeeded() {
+    _preOptimizeSpatialScore ??= SpatialAnalyzer.evaluate(
+      furniture: committedFurniture,
+      gridCols: currentRoomData.gridCols,
+      gridRows: currentRoomData.gridRows,
+    ).overallScore;
   }
 
   void _setAirflowMetrics(AirflowMetrics metrics, {bool markClean = true}) {
@@ -2472,6 +2491,7 @@ class AppState extends ChangeNotifier {
     _captureAirflowBaselineIfNeeded();
     _captureLightingBaselineIfNeeded();
     _captureErgonomicsBaselineIfNeeded();
+    _captureSpatialBaselineIfNeeded();
 
     final live = committedFurniture;
     final liveKey = _autoRigInventoryKey(live);
@@ -2583,6 +2603,13 @@ class AppState extends ChangeNotifier {
     final beforeAir = markOptimized ? AirflowOptimizer.evaluate(committedFurniture, bounds: simBounds) : null;
     final beforeLight = markOptimized ? LightingOptimizer.evaluate(committedFurniture, bounds: simBounds) : null;
     final beforeErgo = markOptimized ? ErgonomicsOptimizer.evaluate(committedFurniture, bounds: simBounds) : null;
+    final beforeSpatial = markOptimized
+        ? SpatialAnalyzer.evaluate(
+            furniture: committedFurniture,
+            gridCols: currentRoomData.gridCols,
+            gridRows: currentRoomData.gridRows,
+          ).overallScore
+        : null;
     if (markOptimized) _captureOriginalIfNeeded();
 
     final room = currentRoomData;
@@ -2606,6 +2633,7 @@ class AppState extends ChangeNotifier {
       _preOptimizeAirflowMetrics ??= beforeAir;
       _preOptimizeLightingMetrics ??= beforeLight;
       _preOptimizeErgonomicsMetrics ??= beforeErgo;
+      _preOptimizeSpatialScore ??= beforeSpatial;
     }
     final mode = lockMode?.toLowerCase();
     final lockAll = markOptimized && (mode == null || mode == 'balanced');

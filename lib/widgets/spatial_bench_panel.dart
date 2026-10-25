@@ -49,7 +49,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
   int _seenFocusToken = 0;
   SpatialMetrics? _myRoomMetrics;
   SpatialMetrics? _improvedMetrics;
-  SpatialMetrics? _sampleMetrics;
 
   @override
   void initState() {
@@ -86,23 +85,16 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       gridCols: room.gridCols,
       gridRows: room.gridRows,
     );
-    _sampleMetrics = SpatialAnalyzer.evaluate(
-      furniture: layouts.sample,
-      gridCols: room.gridCols,
-      gridRows: room.gridRows,
-    );
     _ready = true;
     if (resetStep) {
       _step = _SpatialStep.layout;
       final pending = state.benchLayoutFocusToken != _seenFocusToken;
-      final kind = pending ? state.benchLayoutFocus : BenchLayoutKind.myRoom;
+      var kind = pending ? state.benchLayoutFocus : BenchLayoutKind.myRoom;
+      if (kind == BenchLayoutKind.sample) kind = BenchLayoutKind.myRoom;
       _seenFocusToken = state.benchLayoutFocusToken;
       _layoutVariant = kind;
       _analyzeVariant = kind;
       _showResults = false;
-      if (kind == BenchLayoutKind.sample) {
-        _layoutView = _LayoutView.heatmap;
-      }
     }
   }
 
@@ -110,11 +102,10 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
     if (state.currentTab != benchTabIndex) return;
     if (state.benchLayoutFocusToken != _seenFocusToken) {
       _seenFocusToken = state.benchLayoutFocusToken;
-      _layoutVariant = state.benchLayoutFocus;
-      _analyzeVariant = state.benchLayoutFocus;
-      if (state.benchLayoutFocus == BenchLayoutKind.sample) {
-        _layoutView = _LayoutView.heatmap;
-      }
+      var kind = state.benchLayoutFocus;
+      if (kind == BenchLayoutKind.sample) kind = BenchLayoutKind.myRoom;
+      _layoutVariant = kind;
+      _analyzeVariant = kind;
     }
     final fp = BenchLayoutBuilder.fingerprintOf(
       state.committedFurniture.where((f) => !f.hidden).toList(growable: false),
@@ -138,7 +129,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
       case BenchLayoutKind.improved:
         return _improvedMetrics;
       case BenchLayoutKind.sample:
-        return _sampleMetrics;
       case BenchLayoutKind.myRoom:
         return _myRoomMetrics;
     }
@@ -469,6 +459,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            BenchInspectLockBlock(furniture: _furnitureFor(BenchLayoutKind.myRoom)),
             Text(
               _layoutView == _LayoutView.compare
                   ? 'My Room vs Improved — same Auto-Rig mix as Rig'

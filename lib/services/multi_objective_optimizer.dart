@@ -2,6 +2,7 @@ import 'dart:math';
 
 import '../models/room_model.dart';
 import '../models/sim_room_bounds.dart';
+import '../models/surface_mount.dart';
 import 'airflow_optimizer.dart';
 import 'airflow_simulator.dart';
 import 'benchmark_validator.dart';
@@ -589,7 +590,7 @@ class MultiObjectiveOptimizer {
 
     final blended = <FurnitureItem>[];
     for (final base in baseline) {
-      if (base.locked) {
+      if (base.locked || SurfaceMounts.isStructuralMount(base)) {
         blended.add(base.copyWith());
         continue;
       }
@@ -643,7 +644,11 @@ class MultiObjectiveOptimizer {
     for (int pass = 0; pass < 3; pass++) {
       for (int i = 0; i < next.length; i++) {
         final item = next[i];
-        if (item.locked || LayoutCollision.nonColliding.contains(item.id)) continue;
+        if (item.locked ||
+            SurfaceMounts.isStructuralMount(item) ||
+            LayoutCollision.nonColliding.contains(item.id)) {
+          continue;
+        }
         final resolved = LayoutCollision.resolveMove(
           id: item.id,
           proposedX: item.gridX,

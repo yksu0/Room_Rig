@@ -47,6 +47,10 @@ class LayoutOptimizerCommon {
     required int gridRows,
   }) {
     var next = source.map((item) {
+      // Doors/windows/locked pieces stay put — Auto-Rig must not nudge them.
+      if (item.locked || SurfaceMounts.isStructuralMount(item)) {
+        return item.copyWith();
+      }
       final pos = targets[item.id];
       if (pos == null) return item.copyWith();
       final maxX = (cols - item.width).clamp(0.0, cols);

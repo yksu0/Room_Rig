@@ -95,12 +95,6 @@ class AirflowOptimizer {
       reasons.add('Moved exhaust opposite the AC throw so extract does not short-circuit');
     }
 
-    final door = LayoutOptimizerCommon.findDoor(furniture);
-    if (door != null) {
-      targets[door.id] = (x: 0.0, y: (rows - 1.8).clamp(4.0, rows - 1));
-      reasons.add('Anchored entry door with a clear approach aisle');
-    }
-
     reasons.addAll(
       LayoutOptimizerCommon.planWorkCluster(
         furniture: furniture,

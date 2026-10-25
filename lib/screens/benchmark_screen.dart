@@ -34,6 +34,7 @@ class BenchmarkScreen extends StatefulWidget {
 
 class _BenchmarkScreenState extends State<BenchmarkScreen> {
   bool _showResults = false;
+  static var _scoreTipShownThisSession = false;
 
   // Locks page scroll synchronously on pointer down (setState alone is too late on Android).
   final _scrollLocked = ValueNotifier(false);
@@ -58,7 +59,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   int _seenFocusToken = 0;
   AirflowSimSnapshot? _myRoomSim;
   AirflowSimSnapshot? _improvedSim;
-  AirflowSimSnapshot? _sampleSim;
   bool _prototypeReady = false;
   String? _selectedFurnitureId;
 
@@ -87,8 +87,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       case BenchLayoutKind.improved:
         return _improvedSim;
       case BenchLayoutKind.sample:
-        return _sampleSim;
       case BenchLayoutKind.myRoom:
+        // Sample chip removed; empty-Rig fallback already uses sample as myRoom.
         return _myRoomSim;
     }
   }
@@ -136,18 +136,14 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       optimized: true,
       bounds: bounds,
     );
-    _sampleSim = AirflowSimulator.build(
-      furniture: layouts.sample,
-      optimized: false,
-      bounds: bounds,
-    );
     _prototypeReady = true;
     if (resetStep) {
       _airflowStep = _AirflowStep.layout;
       // A pending focus request (the Rig's "Sim Prototype" button) wins once;
       // after that a reset lands back on the user's own room.
       final pending = state.benchLayoutFocusToken != _seenFocusToken;
-      final kind = pending ? state.benchLayoutFocus : BenchLayoutKind.myRoom;
+      var kind = pending ? state.benchLayoutFocus : BenchLayoutKind.myRoom;
+      if (kind == BenchLayoutKind.sample) kind = BenchLayoutKind.myRoom;
       _seenFocusToken = state.benchLayoutFocusToken;
       _layoutVariant = kind;
       _simVariant = kind;
@@ -322,7 +318,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       'spatial' => (
           'Space',
           state.spatialScore,
-          null,
+          state.baselineSpatialScore,
           AppColors.spatialColor,
         ),
       _ => (
@@ -332,8 +328,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           AppColors.airflowColor,
         ),
     };
-    // Only show delta when baseline differs (post-simulate).
-    final showDelta = prev != null && (score - prev).abs() >= 0.5;
+    // Only show delta when baseline differs (post-simulate / Apply).
+    final showDelta = (score - prev).abs() >= 0.5;
     return BenchScoreHero(
       label: label,
       score: score,
@@ -346,6 +342,20 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   Widget _buildMobileHeader(AppState state) {
     // Domain View/Inspect + compact score live on BenchPanelScaffold chrome.
     // Keep header thin: title, room chip, mode picker only.
+    if (!_scoreTipShownThisSession) {
+      _scoreTipShownThisSession = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'These scores are layout estimates. Higher is better. Tap ? on the score for what each means.',
+            ),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      });
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -708,6 +718,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          BenchInspectLockBlock(furniture: _furnitureFor(BenchLayoutKind.myRoom)),
           Text(
             _roomViewMode == _RoomViewMode.compare
                 ? 'My Room vs Improved'

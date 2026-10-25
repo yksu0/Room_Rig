@@ -51,20 +51,6 @@ class ErgonomicsOptimizer {
     final reasons = <String>[];
     final targets = <String, ({double x, double y})>{};
 
-    final window = LayoutOptimizerCommon.findWindow(furniture);
-    if (window != null) {
-      targets[window.id] = (
-        x: window.gridX.clamp(0.5, cols - window.width - 0.2),
-        y: 0.0,
-      );
-    }
-
-    final door = LayoutOptimizerCommon.findDoor(furniture);
-    if (door != null) {
-      targets[door.id] = (x: 0.0, y: (rows - 1.8).clamp(4.0, rows - 1));
-      reasons.add('Kept entry door clear on the side wall');
-    }
-
     reasons.addAll(
       LayoutOptimizerCommon.planWorkCluster(
         furniture: furniture,

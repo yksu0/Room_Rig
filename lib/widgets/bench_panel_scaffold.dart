@@ -5,10 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
+import '../models/upgrade_catalog.dart';
 import '../services/bench_layouts.dart';
+import '../services/bench_score_copy.dart';
 import '../services/benchmark_validator.dart';
 import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
+import 'auto_rig_lock_summary.dart';
 import 'benchmark_validation_card.dart';
 import 'bench_room_views.dart';
 import 'chrome/adaptive_panel.dart';
@@ -195,12 +198,22 @@ class BenchScoreHero extends StatelessWidget {
     this.expand = false,
   });
 
+  BenchScoreDomain get _domain => BenchScoreCopy.domainFromBenchmarkMode(
+        switch (label.toLowerCase()) {
+          'lighting' || 'light' => 'lighting',
+          'ergonomics' || 'comfort' || 'ergo' => 'ergonomics',
+          'space' || 'spatial' => 'spatial',
+          _ => 'airflow',
+        },
+      );
+
   @override
   Widget build(BuildContext context) {
     final prev = previousScore;
-    final delta = prev == null ? null : score - prev;
-    final height = expand ? 88.0 : 64.0;
-    final valueSize = expand ? 36.0 : 28.0;
+    final domain = _domain;
+    final grade = BenchScoreCopy.gradeWord(score, domain);
+    final vsRoom = BenchScoreCopy.deltaVsRoom(score, prev);
+    final height = expand ? 96.0 : 72.0;
     return Container(
       height: height,
       width: double.infinity,
@@ -234,42 +247,48 @@ class BenchScoreHero extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  score.round().toString(),
-                  style: TextStyle(
+                  grade,
+                  style: const TextStyle(
                     color: AppColors.textPrimary,
-                    fontSize: valueSize,
+                    fontSize: 22,
                     fontWeight: FontWeight.w800,
                     height: 1.05,
+                  ),
+                ),
+                Text(
+                  '${score.round()}${vsRoom.isEmpty ? '' : ' · $vsRoom'}',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
           ),
-          if (delta != null)
+          if (expand)
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    delta >= 0 ? '+${delta.round()}' : '${delta.round()}',
-                    style: TextStyle(
-                      color: delta >= 0 ? AppColors.green : AppColors.amber,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(999),
-                    child: LinearProgressIndicator(
-                      value: (score / 100).clamp(0.0, 1.0),
-                      minHeight: 6,
-                      backgroundColor: AppColors.borderSubtle,
-                      color: color,
-                    ),
-                  ),
-                ],
+              child: Text(
+                BenchScoreCopy.blurb(domain),
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  height: 1.3,
+                ),
+                textAlign: TextAlign.end,
+              ),
+            )
+          else
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: SizedBox(
+                width: 72,
+                child: LinearProgressIndicator(
+                  value: (score / 100).clamp(0.0, 1.0),
+                  minHeight: 6,
+                  backgroundColor: AppColors.borderSubtle,
+                  color: color,
+                ),
               ),
             ),
         ],
@@ -284,67 +303,144 @@ class BenchChromeScore extends StatelessWidget {
 
   final Color accentColor;
 
+  void _openScoreHelp(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'WHAT THESE SCORES MEAN',
+                style: TextStyle(
+                  color: AppColors.cyan,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.4,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'These are layout estimates (0–100). Higher is better. '
+                '${HubScoreLabels.roughEst} means a live guess; ${HubScoreLabels.benchOk} means a Bench run locked the number.',
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.35),
+              ),
+              const SizedBox(height: 12),
+              for (final d in BenchScoreDomain.values) ...[
+                Text(
+                  BenchScoreCopy.shortLabel(d),
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  BenchScoreCopy.blurb(d),
+                  style: const TextStyle(color: AppColors.textMuted, fontSize: 12, height: 1.3),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final (label, score, prev) = switch (state.benchmarkMode) {
-      'lighting' => (
-          'Light',
-          state.lightingScore,
-          state.baselineLightingScore,
-        ),
-      'ergonomics' => (
-          'Ergo',
-          state.ergonomicsScore,
-          state.baselineErgonomicsScore,
-        ),
-      'spatial' => ('Space', state.spatialScore, null),
-      _ => ('Air', state.airflowScore, state.baselineAirflowScore),
+    final domain = BenchScoreCopy.domainFromBenchmarkMode(state.benchmarkMode);
+    final score = switch (domain) {
+      BenchScoreDomain.lighting => state.lightingScore,
+      BenchScoreDomain.ergonomics => state.ergonomicsScore,
+      BenchScoreDomain.spatial => state.spatialScore,
+      BenchScoreDomain.airflow => state.airflowScore,
     };
-    final showDelta = prev != null && (score - prev).abs() >= 0.5;
-    final delta = showDelta ? score - prev : null;
+    final prev = switch (domain) {
+      BenchScoreDomain.lighting => state.baselineLightingScore,
+      BenchScoreDomain.ergonomics => state.baselineErgonomicsScore,
+      BenchScoreDomain.spatial => state.baselineSpatialScore,
+      BenchScoreDomain.airflow => state.baselineAirflowScore,
+    };
+    final vsRoom = BenchScoreCopy.deltaVsRoom(score, prev);
 
-    return Container(
-      constraints: const BoxConstraints(minHeight: 44),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.card,
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: accentColor.withValues(alpha: 0.55)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: accentColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
+        onTap: () => _openScoreHelp(context),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(color: accentColor.withValues(alpha: 0.55)),
           ),
-          const SizedBox(width: 6),
-          Text(
-            score.round().toString(),
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              height: 1,
-            ),
-          ),
-          if (delta != null) ...[
-            const SizedBox(width: 4),
-            Text(
-              delta >= 0 ? '+${delta.round()}' : '${delta.round()}',
-              style: TextStyle(
-                color: delta >= 0 ? AppColors.green : AppColors.amber,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  BenchScoreCopy.chromeLine(domain: domain, score: score),
+                  style: TextStyle(
+                    color: accentColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ),
-            ),
-          ],
-        ],
+              if (vsRoom.isNotEmpty) ...[
+                const SizedBox(width: 4),
+                Text(
+                  vsRoom,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(width: 4),
+              Icon(Icons.help_outline_rounded, size: 16, color: accentColor.withValues(alpha: 0.85)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Prefixed lock summary for Bench Inspect sheets.
+class BenchInspectLockBlock extends StatelessWidget {
+  const BenchInspectLockBlock({super.key, required this.furniture});
+
+  final List<FurnitureItem> furniture;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: AutoRigLockSummary(furniture: furniture, compact: true),
+        ),
       ),
     );
   }

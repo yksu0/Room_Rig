@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/app_state.dart';
 import '../../models/surface_mount.dart';
 import '../../theme/app_theme.dart';
+import '../auto_rig_lock_summary.dart';
 import '../room_icons.dart';
 import '../confirm_dialogs.dart';
 import 'rig_scan_action_button.dart';
@@ -125,6 +126,23 @@ class RigRoomItemsDrawer extends StatelessWidget {
                       onTap: () => onMinConfidenceChanged(entry.$1),
                     ),
                 ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+                  child: AutoRigLockSummary(
+                    furniture: state.furniture,
+                    compact: true,
+                  ),
+                ),
               ),
             ),
             const Divider(color: AppColors.border, height: 1),
