@@ -26,6 +26,9 @@ class SavedRoom {
   /// True when the live layout is still the last applied/optimized arrangement.
   final bool isOptimized;
 
+  /// Auth user id when this lot was saved while signed in; null = guest/device-only.
+  final String? ownerUserId;
+
   const SavedRoom({
     required this.id,
     required this.name,
@@ -40,7 +43,11 @@ class SavedRoom {
     this.revisions = const [],
     this.scoresClean = false,
     this.isOptimized = false,
+    this.ownerUserId,
   });
+
+  /// True guest / device-only lots — safe to offer for upload after sign-in.
+  bool get isGuestOwned => ownerUserId == null;
 
   SavedRoom copyWith({
     String? name,
@@ -55,7 +62,9 @@ class SavedRoom {
     List<RoomRevision>? revisions,
     bool? scoresClean,
     bool? isOptimized,
+    String? ownerUserId,
     bool clearOriginal = false,
+    bool clearOwner = false,
   }) {
     return SavedRoom(
       id: id,
@@ -66,11 +75,14 @@ class SavedRoom {
       layout: layout ?? this.layout,
       furniture: furniture ?? this.furniture,
       installedUpgrades: installedUpgrades ?? this.installedUpgrades,
-      originalFurniture: clearOriginal ? null : (originalFurniture ?? this.originalFurniture),
-      originalScores: clearOriginal ? null : (originalScores ?? this.originalScores),
+      originalFurniture:
+          clearOriginal ? null : (originalFurniture ?? this.originalFurniture),
+      originalScores:
+          clearOriginal ? null : (originalScores ?? this.originalScores),
       revisions: revisions ?? this.revisions,
       scoresClean: scoresClean ?? this.scoresClean,
       isOptimized: isOptimized ?? this.isOptimized,
+      ownerUserId: clearOwner ? null : (ownerUserId ?? this.ownerUserId),
     );
   }
 
@@ -85,8 +97,10 @@ class SavedRoom {
         'installedUpgrades': installedUpgrades,
         'scoresClean': scoresClean,
         'isOptimized': isOptimized,
+        if (ownerUserId != null) 'ownerUserId': ownerUserId,
         if (originalFurniture != null)
-          'originalFurniture': originalFurniture!.map((f) => f.toJson()).toList(growable: false),
+          'originalFurniture':
+              originalFurniture!.map((f) => f.toJson()).toList(growable: false),
         if (originalScores != null) 'originalScores': originalScores,
         if (revisions.isNotEmpty)
           'revisions': revisions.map((r) => r.toJson()).toList(growable: false),
@@ -141,6 +155,7 @@ class SavedRoom {
       // Prefer explicit flag; never claim Applied when scores are still rough.
       isOptimized: json['isOptimized'] as bool? ??
           (scoresClean && originalFurniture != null),
+      ownerUserId: json['ownerUserId'] as String?,
     );
   }
 }

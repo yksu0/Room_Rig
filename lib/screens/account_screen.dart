@@ -113,7 +113,8 @@ class _AccountScreenState extends State<AccountScreen> {
           const SizedBox(height: 8),
           const Text(
             'Rooms sync to your account when signed in. '
-            'Give it a moment after a big change before closing the app.',
+            'Give it a moment after a big change before closing the app. '
+            'Signing out removes rooms from this device; they stay in your account online.',
             style: TextStyle(color: AppColors.textMuted, fontSize: 12),
           ),
           const SizedBox(height: 28),

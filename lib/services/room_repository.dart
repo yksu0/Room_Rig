@@ -94,6 +94,8 @@ class RoomRepository {
       'originalScores': row['original_scores'],
       'scoresClean': row['scores_clean'] ?? false,
       'isOptimized': row['is_optimized'] ?? false,
+      // Cloud rows always belong to the fetching account.
+      'ownerUserId': row['user_id'],
     });
   }
 }

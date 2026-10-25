@@ -1089,6 +1089,7 @@ class AppState extends ChangeNotifier {
       originalScores: _originalScores == null ? null : Map<String, double>.from(_originalScores!),
       scoresClean: !scoresAreSimulated,
       isOptimized: _isOptimized,
+      ownerUserId: signedInUserId,
       revisions: src == null
           ? const []
           : List.unmodifiable(
@@ -1167,6 +1168,7 @@ class AppState extends ChangeNotifier {
         existingIdx >= 0 ? _rooms[existingIdx].revisions : const <RoomRevision>[];
     // Never stash unfinished Place ghosts into My Rooms / cold-start restore.
     final committed = committedFurniture;
+    final uid = signedInUserId;
     final snap = SavedRoom(
       id: _activeRoomId,
       name: currentRoomData.name,
@@ -1185,6 +1187,7 @@ class AppState extends ChangeNotifier {
       revisions: priorRevisions,
       scoresClean: !scoresAreSimulated,
       isOptimized: _isOptimized,
+      ownerUserId: uid,
     );
     if (existingIdx >= 0) {
       _rooms[existingIdx] = snap;
@@ -1192,7 +1195,6 @@ class AppState extends ChangeNotifier {
       _rooms.add(snap);
     }
     // Cloud only when signed in — guests stay local.
-    final uid = signedInUserId;
     if (uid != null) {
       unawaited(_roomRepo.upsertRoom(uid, snap));
     }
@@ -1202,10 +1204,11 @@ class AppState extends ChangeNotifier {
   Future<void> handleSignedIn() async {
     final uid = signedInUserId;
     if (uid == null) return;
-    // Snapshot guest lots before cloud replace.
+    // Snapshot true guest lots BEFORE stash tags the active room with this uid.
+    final guestSnapshot = _rooms.where((r) => r.isGuestOwned).toList(growable: false);
     _stashActiveRoom();
-    final guestSnapshot = List<SavedRoom>.from(_rooms);
     await _roomRepo.ensureProfile(userId: uid, displayName: signedInEmail);
+    var cloudLoaded = false;
     try {
       final cloud = await _roomRepo.fetchRooms(uid);
       if (cloud.isNotEmpty) {
@@ -1213,9 +1216,23 @@ class AppState extends ChangeNotifier {
           ..clear()
           ..addAll(cloud);
         _applySavedRoom(_rooms.first);
+        cloudLoaded = true;
       }
     } catch (e) {
       debugPrint('handleSignedIn fetch: $e');
+    }
+
+    if (!cloudLoaded) {
+      // Drop any leftover account-owned lots; keep only true guest drafts.
+      _rooms
+        ..clear()
+        ..addAll(guestSnapshot);
+      if (_rooms.isEmpty) {
+        _bootstrapEmptyLot();
+        _stashActiveRoom();
+      } else {
+        _applySavedRoom(_rooms.first);
+      }
     }
 
     final alreadyImported = await _hasImportedGuestRooms(uid);
@@ -1244,6 +1261,7 @@ class AppState extends ChangeNotifier {
     final toUpload = <SavedRoom>[];
     var i = 0;
     for (final g in pending) {
+      if (!g.isGuestOwned) continue;
       if (cloudIds.contains(g.id)) {
         final copy = SavedRoom(
           id: 'room_${DateTime.now().millisecondsSinceEpoch}_$i',
@@ -1263,12 +1281,19 @@ class AppState extends ChangeNotifier {
           revisions: g.revisions,
           scoresClean: g.scoresClean,
           isOptimized: g.isOptimized,
+          ownerUserId: uid,
         );
         toUpload.add(copy);
         _rooms.add(copy);
       } else {
-        toUpload.add(g);
-        _rooms.add(g);
+        final owned = g.copyWith(ownerUserId: uid);
+        toUpload.add(owned);
+        final idx = _rooms.indexWhere((r) => r.id == g.id);
+        if (idx >= 0) {
+          _rooms[idx] = owned;
+        } else {
+          _rooms.add(owned);
+        }
       }
       i++;
     }
@@ -1287,17 +1312,45 @@ class AppState extends ChangeNotifier {
   Future<void> declineGuestImport() async {
     final uid = signedInUserId;
     if (uid != null) await _markImportedGuestRooms(uid);
+    final pendingIds = _guestRoomsPendingImport.map((r) => r.id).toSet();
     _awaitingGuestImportPrompt = false;
     _guestRoomsPendingImport = const [];
+    // Discard declined guest drafts from this device (privacy).
+    _rooms.removeWhere((r) => pendingIds.contains(r.id) && r.isGuestOwned);
+    if (_rooms.isEmpty) {
+      _bootstrapEmptyLot();
+      _stashActiveRoom();
+    } else if (pendingIds.contains(_activeRoomId) ||
+        !_rooms.any((r) => r.id == _activeRoomId)) {
+      _applySavedRoom(_rooms.first);
+    }
+    unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
 
   Future<void> handleSignedOut() async {
+    _abandonInFlightHydrate();
+    if (isScanSessionActive) {
+      endScanSession();
+    }
+    invalidateScanSession();
     _awaitingGuestImportPrompt = false;
     _guestRoomsPendingImport = const [];
-    // Keep last local draft; cloud data stays on server.
-    unawaited(_persistActiveRoomLayout());
+    // Wipe personal rooms from this device; cloud copy stays on the server.
+    await _clearDeviceRoomCache();
+    _rooms.clear();
+    _bootstrapEmptyLot();
+    _stashActiveRoom();
+    await _persistActiveRoomLayout();
     notifyListeners();
+  }
+
+  Future<void> _clearDeviceRoomCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_persistedLayoutKey);
+      await prefs.remove(_persistedScanSessionKey);
+    } catch (_) {}
   }
 
   Future<bool> _hasImportedGuestRooms(String uid) async {
