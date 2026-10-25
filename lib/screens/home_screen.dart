@@ -110,7 +110,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(email, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 4),
                 const Text(
-                  'Rooms sync to your account when signed in.',
+                  'Rooms sync to your account when signed in. '
+                  'Give it a moment after a big change before closing the app.',
                   style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                 ),
                 const SizedBox(height: 16),
