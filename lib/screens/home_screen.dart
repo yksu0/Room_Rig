@@ -23,6 +23,7 @@ import '../widgets/onboarding_sheet.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/room_status_strip.dart';
 import '../widgets/score_ring.dart';
+import 'account_screen.dart';
 import 'auth_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -83,50 +84,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openAccountSheet(BuildContext context) async {
     final auth = context.read<AuthService>();
     if (auth.isSignedIn) {
-      final email = auth.email ?? 'Signed in';
-      final action = await showModalBottomSheet<String>(
-        context: context,
-        backgroundColor: AppColors.surface,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (ctx) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  'ACCOUNT',
-                  style: TextStyle(
-                    color: AppColors.cyan,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(email, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 4),
-                const Text(
-                  'Rooms sync to your account when signed in. '
-                  'Give it a moment after a big change before closing the app.',
-                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx, 'signOut'),
-                  child: const Text('Sign out'),
-                ),
-              ],
-            ),
-          ),
-        ),
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(builder: (_) => const AccountScreen()),
       );
-      if (action == 'signOut' && context.mounted) {
-        await auth.signOut();
-      }
       return;
     }
     await Navigator.of(context).push<bool>(

@@ -17,6 +17,7 @@ import 'screens/home_screen.dart';
 import 'screens/scanner_screen_selector.dart';
 import 'screens/rig_customizer_screen.dart';
 import 'screens/benchmark_screen.dart';
+import 'screens/set_password_screen.dart';
 import 'screens/upgrades_screen.dart';
 import 'widgets/room_model_scene_pointer_guard.dart';
 
@@ -101,6 +102,7 @@ class _MainShellState extends State<_MainShell> {
   int? _handledTab;
   bool _authHooked = false;
   bool _importDialogOpen = false;
+  bool _recoveryRouteOpen = false;
 
   void _consumeTabNotice(AppState state) {
     final notice = state.takeTabNotice();
@@ -131,6 +133,27 @@ class _MainShellState extends State<_MainShell> {
       }
       wasSignedIn = now;
     });
+  }
+
+  Future<void> _maybeOpenPasswordRecovery(AuthService auth) async {
+    if (!auth.passwordRecoveryPending || _recoveryRouteOpen || !mounted) {
+      return;
+    }
+    _recoveryRouteOpen = true;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const SetPasswordScreen(mode: SetPasswordMode.recovery),
+      ),
+    );
+    if (!mounted) return;
+    _recoveryRouteOpen = false;
+    // If they closed somehow without saving, keep flag until password is set.
+    if (auth.passwordRecoveryPending) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_maybeOpenPasswordRecovery(auth));
+      });
+    }
   }
 
   Future<void> _maybePromptGuestImport(AppState state) async {
@@ -177,6 +200,11 @@ class _MainShellState extends State<_MainShell> {
     final auth = context.watch<AuthService>();
     final state = context.watch<AppState>();
     _hookAuth(auth, state);
+    if (auth.passwordRecoveryPending) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_maybeOpenPasswordRecovery(auth));
+      });
+    }
     if (state.awaitingGuestImportPrompt) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_maybePromptGuestImport(state));

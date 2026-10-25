@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../services/supabase_bootstrap.dart';
 import '../theme/app_theme.dart';
+import '../utils/password_strength.dart';
+import '../widgets/password_form_fields.dart';
 
 /// Email/password sign-in. Guest continues without an account.
 class AuthScreen extends StatefulWidget {
@@ -18,6 +20,7 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _confirm = TextEditingController();
   var _signUp = false;
   var _busy = false;
   String? _error;
@@ -26,10 +29,21 @@ class _AuthScreenState extends State<AuthScreen> {
   void dispose() {
     _email.dispose();
     _password.dispose();
+    _confirm.dispose();
     super.dispose();
   }
 
   Future<void> _submit(AuthService auth) async {
+    if (_signUp) {
+      if (_password.text != _confirm.text) {
+        setState(() => _error = 'Passwords do not match.');
+        return;
+      }
+      if (PasswordStrength.score(_password.text) < 2) {
+        setState(() => _error = 'Choose a stronger password.');
+        return;
+      }
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -124,16 +138,25 @@ class _AuthScreenState extends State<AuthScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: _password,
-            obscureText: true,
-            enabled: cloud && !_busy,
-            style: const TextStyle(color: AppColors.textPrimary),
-            decoration: const InputDecoration(
-              labelText: 'Password',
-              labelStyle: TextStyle(color: AppColors.textMuted),
+          if (_signUp)
+            PasswordFormFields(
+              password: _password,
+              confirm: _confirm,
+              enabled: cloud && !_busy,
+              onChanged: () => setState(() => _error = null),
+            )
+          else
+            TextField(
+              controller: _password,
+              obscureText: true,
+              enabled: cloud && !_busy,
+              autofillHints: const [AutofillHints.password],
+              style: const TextStyle(color: AppColors.textPrimary),
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                labelStyle: TextStyle(color: AppColors.textMuted),
+              ),
             ),
-          ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!, style: const TextStyle(color: AppColors.amber, fontSize: 13)),

@@ -1,0 +1,177 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
+import 'set_password_screen.dart';
+
+/// Signed-in profile: password, delete account, sign out.
+class AccountScreen extends StatefulWidget {
+  const AccountScreen({super.key});
+
+  @override
+  State<AccountScreen> createState() => _AccountScreenState();
+}
+
+class _AccountScreenState extends State<AccountScreen> {
+  var _busy = false;
+
+  Future<void> _changeOrSetPassword(AuthService auth) async {
+    final mode = auth.hasGoogleIdentity && !auth.hasEmailIdentity
+        ? SetPasswordMode.setForGoogle
+        : SetPasswordMode.change;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => SetPasswordScreen(mode: mode)),
+    );
+  }
+
+  Future<void> _deleteAccount(AuthService auth) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text(
+          'Delete account?',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: const Text(
+          'This permanently deletes your Room Rig account and synced rooms. '
+          'This cannot be undone.',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    setState(() => _busy = true);
+    final err = await auth.deleteAccount();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+      return;
+    }
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Account deleted.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+    final email = auth.email ?? 'Signed in';
+    final providers = <String>[
+      if (auth.hasGoogleIdentity) 'Google',
+      if (auth.hasEmailIdentity) 'Email',
+      if (!auth.hasGoogleIdentity && !auth.hasEmailIdentity) 'Account',
+    ];
+
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        backgroundColor: AppColors.surface,
+        title: const Text('Account'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const Text(
+            'PROFILE',
+            style: TextStyle(
+              color: AppColors.cyan,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            email,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Sign-in: ${providers.join(' · ')}',
+            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Rooms sync to your account when signed in. '
+            'Give it a moment after a big change before closing the app.',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+          const SizedBox(height: 28),
+          const Text(
+            'SECURITY',
+            style: TextStyle(
+              color: AppColors.cyan,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.lock_outline, color: AppColors.cyan),
+            title: Text(
+              auth.hasGoogleIdentity && !auth.hasEmailIdentity
+                  ? 'Set a password'
+                  : 'Change password',
+              style: const TextStyle(color: AppColors.textPrimary),
+            ),
+            subtitle: Text(
+              auth.hasGoogleIdentity && !auth.hasEmailIdentity
+                  ? 'Optional — also sign in with email, or recover without Google'
+                  : 'Update the password for this account',
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
+            onTap: _busy ? null : () => _changeOrSetPassword(auth),
+          ),
+          const Divider(color: AppColors.border),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.delete_outline, color: AppColors.red),
+            title: const Text(
+              'Delete account',
+              style: TextStyle(color: AppColors.red),
+            ),
+            subtitle: const Text(
+              'Permanently remove your account and synced rooms',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+            onTap: _busy ? null : () => _deleteAccount(auth),
+          ),
+          const SizedBox(height: 28),
+          OutlinedButton(
+            onPressed: _busy
+                ? null
+                : () async {
+                    await auth.signOut();
+                    if (!context.mounted) return;
+                    Navigator.of(context).popUntil((r) => r.isFirst);
+                  },
+            child: const Text('Sign out'),
+          ),
+        ],
+      ),
+    );
+  }
+}
