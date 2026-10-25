@@ -42,8 +42,8 @@ void main() {
     expect(GltfCatalog.profileFor('monitor').localYawBiasDegrees, 0);
     expect(GltfCatalog.profileFor('tv').localYawBiasDegrees, 0);
     expect(GltfCatalog.profileFor('heater').localYawBiasDegrees, 0);
-    // Sketchfab fan.glb cage is authored ~45° off +Z.
-    expect(GltfCatalog.profileFor('fan').localYawBiasDegrees, 45);
+    // Sketchfab fan.glb needs a 180° flip so cage faces Orbit +Z.
+    expect(GltfCatalog.profileFor('fan').localYawBiasDegrees, 180);
   });
 
   test('portable AC is a floor profile, not wall-AC niche', () {
