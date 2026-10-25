@@ -25,7 +25,7 @@ class RoomCompare {
   RoomCompare._();
 
   static Map<String, double> estimateScores(List<FurnitureItem> furniture) {
-    // Lightweight Hub-style estimate from footprint impacts (matches simulated feel).
+    // Hub-only rough compare from authored impacts — not Bench CFD / lux / ergo fields.
     double sum(String field) {
       var total = 55.0;
       for (final f in furniture) {

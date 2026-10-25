@@ -21,7 +21,6 @@ import '../widgets/confirm_dialogs.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/onboarding_sheet.dart';
 import '../widgets/room_icons.dart';
-import '../widgets/room_status_strip.dart';
 import '../widgets/score_ring.dart';
 import 'account_screen.dart';
 import 'auth_screen.dart';
@@ -151,8 +150,6 @@ class _HomeScreenState extends State<HomeScreen> {
           MediaQuery.sizeOf(context).width >= AppLayout.desktopMinWidth;
       return Scaffold(
         backgroundColor: AppColors.bg,
-        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-        floatingActionButton: _buildCreateRoomFab(context, state),
         body: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -185,13 +182,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (state.roomIsReady) ...[
-                                RoomStatusStrip(
-                                  compact: true,
-                                  onTapScores: () => state.setTab(3),
-                                ),
-                                const SizedBox(height: AppSpace.md),
-                              ],
                               ..._hubStatusBlocks(context, state),
                               _buildScoreSection(context, state),
                               if (state.roomIsReady &&
@@ -262,8 +252,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: _buildCreateRoomFab(context, state),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
@@ -276,13 +264,6 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(context, room, state),
-              if (state.roomIsReady) ...[
-                const SizedBox(height: AppSpace.sm),
-                RoomStatusStrip(
-                  compact: true,
-                  onTapScores: () => state.setTab(3),
-                ),
-              ],
               const SizedBox(height: AppSpace.xl),
               ..._hubStatusBlocks(context, state),
               _buildScoreSection(context, state),
@@ -303,18 +284,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildCreateRoomFab(BuildContext context, AppState state) {
-    return FloatingActionButton(
-      heroTag: 'hub_create_room_fab',
-      backgroundColor: AppColors.cyan,
-      foregroundColor: AppColors.bg,
-      tooltip: 'New room',
-      onPressed: () => _showCreateRoomSheet(context, state),
-      child: const Icon(Icons.add_rounded),
-    );
-  }
-
-  /// Getting-started / journey banners shared by mobile stack and desktop Status rail.
+  /// Empty-room onboarding + scan confidence only. Journey lives in the score card.
   List<Widget> _hubStatusBlocks(BuildContext context, AppState state) {
     if (!state.roomIsReady) {
       return [
@@ -328,17 +298,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (state.scanComplete && state.lastScanConfidence != null) {
       return [
         _ScanConfidenceBanner(metrics: state.lastScanConfidence!),
-        const SizedBox(height: AppSpace.md),
-        _JourneySteps(state: state),
         const SizedBox(height: AppSpace.xl),
       ];
     }
-    return [
-      _ManualRoomBanner(state: state),
-      const SizedBox(height: AppSpace.md),
-      _JourneySteps(state: state),
-      const SizedBox(height: AppSpace.xl),
-    ];
+    return const [];
   }
 
   Widget _buildHeader(BuildContext context, RoomData room, AppState state) {
@@ -467,197 +430,172 @@ class _HomeScreenState extends State<HomeScreen> {
         glowAlpha: state.roomIsReady ? (simulated ? 0.12 : 0.2) : 0.06,
       ),
       child: GlassCard(
-      gradient: const LinearGradient(
-        colors: [Color(0xFF1A1E32), Color(0xFF0E1020)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
-      child: Column(
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                'Overall Rig Score',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1,
-                ),
-              ),
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: simulated
-                      ? () {
-                          state.setTab(3);
-                        }
-                      : null,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(
-                        color: (simulated ? AppColors.amber : AppColors.green).withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: Text(
-                      simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk,
-                      style: TextStyle(
-                        color: simulated ? AppColors.amber : AppColors.green,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.cyan.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  border: Border.all(color: AppColors.cyan.withValues(alpha: 0.4)),
-                ),
-                child: Text(
-                  'GRADE ${state.scoreGrade}',
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1A1E32), Color(0xFF0E1020)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text(
+                  'Overall Rig Score',
                   style: TextStyle(
-                    color: AppColors.cyan,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                     letterSpacing: 1,
                   ),
                 ),
-              ),
-            ],
-          ),
-          if (simulated) ...[
-            const SizedBox(height: AppSpace.sm),
-            GestureDetector(
-              onTap: () => state.setTab(3),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: AppSpace.md, vertical: AppSpace.sm),
-                decoration: BoxDecoration(
-                  color: AppColors.amber.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  border: Border.all(color: AppColors.amber.withValues(alpha: 0.35)),
-                ),
-                child: Row(
-                  children: [
-                    const Expanded(
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => state.setTab(3),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                        border: Border.all(color: accent.withValues(alpha: 0.4)),
+                      ),
                       child: Text(
-                        HubScoreLabels.roughSubtitle,
+                        simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk,
                         style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                          color: accent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
                         ),
                       ),
                     ),
-                    Text(
-                      'OPEN BENCH',
-                      style: TextStyle(
-                        color: AppColors.amber,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.cyan.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    border: Border.all(color: AppColors.cyan.withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    'GRADE ${state.scoreGrade}',
+                    style: const TextStyle(
+                      color: AppColors.cyan,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpace.sm),
+            Text(
+              state.roomIsReady
+                  ? (simulated
+                      ? '${HubScoreLabels.roughSubtitle} Tap a ring to open that Bench domain.'
+                      : 'Bench locked these scores. Tap a ring for that domain — edit in Rig, then Bench again after layout changes.')
+                  : 'Create or Scan a room first. Then arrange in Rig and run Bench to lock scores.',
+              style: const TextStyle(
+                color: AppColors.textMuted,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 16),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final tight = constraints.maxWidth < 360;
+                final side = tight ? 56.0 : 70.0;
+                final overall = tight ? 84.0 : 104.0;
+                return Row(
+                  children: [
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: _tappableRing(
+                          state,
+                          'airflow',
+                          state.airflowScore,
+                          side,
+                          AppColors.airflowColor,
+                          'Airflow',
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: ScoreRing(
+                          score: state.overallScore,
+                          size: overall,
+                          color: AppColors.cyan,
+                          label: 'Overall',
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: _tappableRing(
+                          state,
+                          'lighting',
+                          state.lightingScore,
+                          side,
+                          AppColors.lightingColor,
+                          'Lighting',
+                        ),
                       ),
                     ),
                   ],
-                ),
-              ),
+                );
+              },
             ),
-          ],
-          const SizedBox(height: 20),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final tight = constraints.maxWidth < 360;
-              final side = tight ? 56.0 : 70.0;
-              final overall = tight ? 84.0 : 104.0;
-              return Row(
-                children: [
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: _tappableRing(
-                        state,
-                        'airflow',
-                        state.airflowScore,
-                        side,
-                        AppColors.airflowColor,
-                        'Airflow',
-                      ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: _tappableRing(
+                      state,
+                      'ergonomics',
+                      state.ergonomicsScore,
+                      64,
+                      AppColors.ergonomicsColor,
+                      'Ergo',
                     ),
-                  ),
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: ScoreRing(
-                        score: state.overallScore,
-                        size: overall,
-                        color: AppColors.cyan,
-                        label: 'Overall',
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: _tappableRing(
-                        state,
-                        'lighting',
-                        state.lightingScore,
-                        side,
-                        AppColors.lightingColor,
-                        'Lighting',
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: _tappableRing(
-                    state,
-                    'ergonomics',
-                    state.ergonomicsScore,
-                    64,
-                    AppColors.ergonomicsColor,
-                    'Ergo',
                   ),
                 ),
-              ),
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: _tappableRing(
-                    state,
-                    'spatial',
-                    state.spatialScore,
-                    64,
-                    AppColors.spatialColor,
-                    'Space',
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: _tappableRing(
+                      state,
+                      'spatial',
+                      state.spatialScore,
+                      64,
+                      AppColors.spatialColor,
+                      'Space',
+                    ),
                   ),
                 ),
-              ),
+              ],
+            ),
+            if (state.roomIsReady) ...[
+              const SizedBox(height: 16),
+              _JourneySteps(state: state),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 
@@ -688,7 +626,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Row(
           children: [
-            Text(
+            const Text(
               'MY ROOMS',
               style: TextStyle(
                 color: AppColors.textMuted,
@@ -698,35 +636,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const Spacer(),
-          ],
-        ),
-        Wrap(
-          spacing: 0,
-          runSpacing: 0,
-          alignment: WrapAlignment.end,
-          children: [
-            TextButton(
-              onPressed: () {
-                final ok = state.checkpointActiveRoom('Manual save');
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(ok ? 'Checkpoint saved' : 'Nothing to checkpoint yet'),
-                  ),
-                );
-              },
-              child: const Text('Save checkpoint', style: TextStyle(fontWeight: FontWeight.w700)),
-            ),
+            // Create lives in Quick Actions / Set up banner; checkpoints + rough compare here.
             TextButton(
               onPressed: () => _showRoomHistorySheet(context, state),
-              child: const Text('History', style: TextStyle(fontWeight: FontWeight.w700)),
-            ),
-            TextButton(
-              onPressed: () => _showCompareRoomsSheet(context, state),
-              child: const Text('Compare rooms', style: TextStyle(fontWeight: FontWeight.w700)),
-            ),
-            TextButton(
-              onPressed: () => _showCreateRoomSheet(context, state),
-              child: const Text('New', style: TextStyle(fontWeight: FontWeight.w800)),
+              child: const Text('Checkpoints', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -809,7 +722,7 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'ROOM HISTORY',
+                  'CHECKPOINTS',
                   style: TextStyle(
                     color: AppColors.cyan,
                     fontSize: 11,
@@ -819,15 +732,45 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Checkpoints for ${state.currentRoomData.name}',
+                  'Named snapshots for ${state.currentRoomData.name}. Auto-save already keeps the live lot.',
                   style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonal(
+                        onPressed: () {
+                          final ok = state.checkpointActiveRoom('Manual save');
+                          if (Navigator.canPop(ctx)) Navigator.pop(ctx);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(ok ? 'Checkpoint saved' : 'Nothing to checkpoint yet'),
+                            ),
+                          );
+                        },
+                        child: const Text('Save snapshot'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          if (Navigator.canPop(ctx)) Navigator.pop(ctx);
+                          _showCompareRoomsSheet(context, state);
+                        },
+                        child: const Text('Compare lots'),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 if (revisions.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Text(
-                      'No checkpoints yet. Use Save checkpoint to capture this layout.',
+                      'No checkpoints yet. Save a snapshot to restore this layout later.',
                       style: TextStyle(color: AppColors.textMuted, fontSize: 13),
                     ),
                   )
@@ -1486,49 +1429,6 @@ class _StartChip extends StatelessWidget {
   }
 }
 
-class _ManualRoomBanner extends StatelessWidget {
-  final AppState state;
-  const _ManualRoomBanner({required this.state});
-
-  @override
-  Widget build(BuildContext context) {
-    final isManual = state.activeRoomLayout?.scanSource == 'manual';
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.purple.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.purple.withValues(alpha: 0.35)),
-      ),
-      child: Row(
-        children: [
-          SvgIcon(RoomSvg.home, size: 22, color: AppColors.purple),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isManual ? 'Room created · ready to edit' : 'Room ready',
-                  style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 13),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  isManual
-                      ? 'Add furniture in Rig or run Bench to simulate scores.'
-                      : 'Continue with Rig, Bench, or Upgrades.',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ScanConfidenceBanner extends StatelessWidget {
   final ScanConfidenceMetrics metrics;
   const _ScanConfidenceBanner({required this.metrics});
@@ -1998,7 +1898,7 @@ class _CompareRoomsSheetBodyState extends State<_CompareRoomsSheetBody> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'COMPARE ROOMS',
+              'COMPARE LOTS',
               style: TextStyle(
                 color: AppColors.cyan,
                 fontSize: 11,
@@ -2008,8 +1908,8 @@ class _CompareRoomsSheetBodyState extends State<_CompareRoomsSheetBody> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Pick two saved lots to see score deltas and layout changes.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              'Rough side-by-side from furniture tags — not Bench sims. Use Bench Apply for locked scores.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.35),
             ),
             const SizedBox(height: 14),
             _roomPicker(
