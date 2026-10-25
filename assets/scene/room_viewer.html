@@ -71,9 +71,13 @@
 
   function resolveAsset(url) {
     if (!url) return url;
-    if (/^(https?:|file:|blob:)/i.test(url)) return url;
+    if (/^(https?:|file:|blob:|\/)/i.test(url)) return url;
     if (url.indexOf('../gltf/') === 0) return assetBase + url.slice('../gltf/'.length);
     if (url.indexOf('gltf/') === 0) return assetBase + url.slice('gltf/'.length);
+    // Flutter web sometimes passes bare `kenney/desk.glb`.
+    if (url.indexOf('kenney/') === 0 || url.indexOf('hvac/') === 0) {
+      return assetBase + url;
+    }
     return url;
   }
   const mmCanvas = document.getElementById('mm');
@@ -716,10 +720,16 @@
   function placeholderMesh(kind, w, d, h) {
     const g = new THREE.Group();
     const body = new THREE.Mesh(
-      new THREE.BoxGeometry(w * 0.92, h * 0.9, d * 0.92),
-      new THREE.MeshStandardMaterial({ color: 0x5a6a88, roughness: 0.65, metalness: 0.08 })
+      new THREE.BoxGeometry(Math.max(w, 0.35) * 0.92, Math.max(h, 0.5) * 0.9, Math.max(d, 0.25) * 0.92),
+      new THREE.MeshStandardMaterial({
+        color: 0x00e5ff,
+        roughness: 0.55,
+        metalness: 0.05,
+        emissive: 0x003844,
+        emissiveIntensity: 0.35,
+      })
     );
-    body.position.y = h * 0.45;
+    body.position.y = Math.max(h, 0.5) * 0.45;
     body.castShadow = true;
     body.receiveShadow = true;
     g.add(body);
@@ -792,8 +802,18 @@
           model = src.clone(true);
           enableShadows(model, !it.opening);
           fitFurnitureModel(model, it, fitW, fitD, h);
+          // If fit collapsed the mesh, fall back so selection rings are not empty.
+          model.updateWorldMatrix(true, true);
+          const fitted = new THREE.Box3().setFromObject(model);
+          const fs = new THREE.Vector3();
+          fitted.getSize(fs);
+          if (!isFinite(fs.x) || fs.x < 0.05 || fs.y < 0.05 || fs.z < 0.02) {
+            console.warn('GLB fit too small, using placeholder', it.model, fs);
+            model = null;
+          }
         } catch (e) {
           console.warn('GLB failed', it.model, e);
+          model = null;
         }
       }
       if (!model) model = placeholderMesh(it.kind || 'box', fitW, fitD, h);
@@ -1355,7 +1375,7 @@
       if (data.focusId) focusItem(data.focusId);
       if (data.miniMap != null) setMiniMap(!!data.miniMap);
       if (data.moveMode != null) window.setMoveMode(!!data.moveMode);
-      if (data.liveField) setLiveField(data.liveField);
+      // Furniture first — live field must never block GLB placement.
       const measured = await setFurniture(data.items || []);
       // Second pass: shrink/grow shell cuts to the fitted GLB bounds.
       if (measured && measured.length) {
@@ -1371,40 +1391,51 @@
         }).filter((op) => op.along1 - op.along0 > 0.08 && op.y1 - op.y0 > 0.08);
         if (clamped.length) rebuildRoom(w, d, h, clamped);
       }
+      if (data.liveField) setLiveField(data.liveField);
+      else setLiveField([]);
     } catch (e) {
       showError('Scene update failed: ' + e);
     }
   }
 
   function setLiveField(cells) {
-    clearGroup(liveFieldRoot);
-    const list = cells || [];
-    for (let i = 0; i < list.length; i++) {
-      const c = list[i];
-      const x0 = +c.x0 || 0;
-      const z0 = +c.z0 || 0;
-      const x1 = +c.x1 || x0;
-      const z1 = +c.z1 || z0;
-      const w = Math.max(0.02, x1 - x0);
-      const d = Math.max(0.02, z1 - z0);
-      const r = c.r != null ? +c.r : 0.2;
-      const g = c.g != null ? +c.g : 0.8;
-      const b = c.b != null ? +c.b : 0.9;
-      const a = c.a != null ? +c.a : 0.25;
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(w, d),
-        new THREE.MeshBasicMaterial({
-          color: new THREE.Color(r, g, b),
-          transparent: true,
-          opacity: Math.max(0.04, Math.min(0.7, a)),
-          depthWrite: false,
-          side: THREE.DoubleSide,
-        })
-      );
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set((x0 + x1) * 0.5, 0.025, (z0 + z1) * 0.5);
-      mesh.renderOrder = 1;
-      liveFieldRoot.add(mesh);
+    try {
+      clearGroup(liveFieldRoot);
+      const list = cells || [];
+      for (let i = 0; i < list.length; i++) {
+        const c = list[i];
+        const x0 = +c.x0 || 0;
+        const z0 = +c.z0 || 0;
+        const x1 = +c.x1 || x0;
+        const z1 = +c.z1 || z0;
+        const w = Math.max(0.02, x1 - x0);
+        const d = Math.max(0.02, z1 - z0);
+        const r = c.r != null ? +c.r : 0.2;
+        const g = c.g != null ? +c.g : 0.8;
+        const b = c.b != null ? +c.b : 0.9;
+        const a = c.a != null ? +c.a : 0.25;
+        if (![r, g, b, a, w, d, x0, z0].every((v) => isFinite(v))) continue;
+        const mesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(w, d),
+          new THREE.MeshBasicMaterial({
+            color: new THREE.Color(
+              Math.max(0, Math.min(1, r)),
+              Math.max(0, Math.min(1, g)),
+              Math.max(0, Math.min(1, b)),
+            ),
+            transparent: true,
+            opacity: Math.max(0.04, Math.min(0.7, a)),
+            depthWrite: false,
+            side: THREE.DoubleSide,
+          })
+        );
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set((x0 + x1) * 0.5, 0.025, (z0 + z1) * 0.5);
+        mesh.renderOrder = 1;
+        liveFieldRoot.add(mesh);
+      }
+    } catch (e) {
+      console.warn('setLiveField failed', e);
     }
   }
 

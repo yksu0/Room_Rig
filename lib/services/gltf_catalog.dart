@@ -12,6 +12,8 @@
 // - Kenney Furniture Kit — most furniture
 // - Poly Haven / HVAC pack — ac, fan, purifier, heater, vents
 
+import 'package:flutter/foundation.dart';
+
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
 
@@ -435,7 +437,8 @@ class GltfCatalog {
       clearHeightMeters: 1.92,
       fitMode: MeshFitMode.wallOpening,
       targetWidthMeters: 0.9,
-      targetDepthMeters: 0.14,
+      // Slightly proud of the plaster so the leaf reads from interior cameras.
+      targetDepthMeters: 0.22,
       alignFootprint: true,
     ),
     'window': const MeshProfile(
@@ -538,8 +541,18 @@ class GltfCatalog {
   static Iterable<String> get catalogKeys => _profiles.keys;
 
   /// Base URL for textures / GLBs inside the Model WebView.
-  /// Android stages assets to a real temp folder so `../gltf/` XHR works.
-  static String get sceneAssetBase => '../gltf/';
+  ///
+  /// - **Web:** absolute `/assets/assets/gltf/` so XHR works from the scene
+  ///   iframe regardless of the parent route (Flutter serves pubspec assets
+  ///   under the duplicated `assets/` prefix).
+  /// - **Mobile/desktop WebView:** relative `../gltf/` against the staged
+  ///   `scene/room_viewer.html` (Android HTTP stage or file bundle).
+  static String get sceneAssetBase =>
+      kIsWeb ? '/assets/assets/gltf/' : '../gltf/';
+
+  /// Absolute URL to `room_viewer.html` on Flutter web (iframe `src`).
+  static String get sceneViewerUrl =>
+      kIsWeb ? '/assets/assets/scene/room_viewer.html' : 'assets/scene/room_viewer.html';
 
   static String? sceneUrlForIcon(String iconName) {
     final asset = assetForIcon(iconName);

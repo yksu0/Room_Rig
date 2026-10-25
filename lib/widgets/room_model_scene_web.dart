@@ -17,7 +17,9 @@ void registerRoomModelIFrameFactory() {
     'room-model-scene',
     (int viewId) {
       final iframe = html.IFrameElement()
-        ..src = 'assets/scene/room_viewer.html'
+        // Absolute path — relative `assets/scene/...` breaks when the app
+        // route is not `/`, and GLB XHR then 404s leaving empty selection rings.
+        ..src = '/assets/assets/scene/room_viewer.html'
         ..style.border = 'none'
         ..style.width = '100%'
         ..style.height = '100%'
