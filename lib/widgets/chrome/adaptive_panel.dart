@@ -3,6 +3,8 @@
 // Expanded width (later): same regions as persistent side rails.
 // Refs: Android Adaptive Apps SupportingPaneScaffold; MD3 window size classes.
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../models/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../room_model_scene_pointer_guard.dart';
 import '../room_model_scene_stub.dart'
@@ -203,7 +205,15 @@ class AdaptivePanelController {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Flexible(child: SingleChildScrollView(child: panel.builder(ctx))),
+                  // Rebuild when AppState changes — modal routes do not inherit
+                  // parent setState, so switches would snap back without this.
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Consumer<AppState>(
+                        builder: (context, state, child) => panel.builder(ctx),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),

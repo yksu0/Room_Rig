@@ -896,13 +896,20 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
           },
         ),
         const SizedBox(height: 16),
-        SwitchListTile.adaptive(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-          title: const Text('Mini-map', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-          subtitle: const Text('Picture-in-picture floor plan', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-          value: _showMiniMap,
-          activeThumbColor: AppColors.cyan,
-          onChanged: (v) => setState(() => _showMiniMap = v),
+        StatefulBuilder(
+          builder: (context, setLocal) {
+            return SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              title: const Text('Mini-map', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+              subtitle: const Text('Picture-in-picture floor plan', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              value: _showMiniMap,
+              activeThumbColor: AppColors.cyan,
+              onChanged: (v) {
+                setLocal(() => _showMiniMap = v);
+                setState(() {});
+              },
+            );
+          },
         ),
         Material(
           color: AppColors.card,
@@ -1074,13 +1081,22 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
           ],
         ),
         const SizedBox(height: 12),
-        SwitchListTile.adaptive(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-          title: const Text('Dimensions', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-          subtitle: const Text('Show cm labels on the plan', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-          value: _showDimensions,
-          activeThumbColor: AppColors.cyan,
-          onChanged: (v) => setState(() => _showDimensions = v),
+        // Material Switch (not adaptive): Cupertino thumb is drag-first and
+        // modal sheets do not rebuild on parent setState without setLocal.
+        StatefulBuilder(
+          builder: (context, setLocal) {
+            return SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              title: const Text('Dimensions', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+              subtitle: const Text('Show cm labels on the plan', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              value: _showDimensions,
+              activeThumbColor: AppColors.cyan,
+              onChanged: (v) {
+                setLocal(() => _showDimensions = v);
+                setState(() {});
+              },
+            );
+          },
         ),
         const SizedBox(height: 10),
         Row(
@@ -1163,25 +1179,33 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
           ],
         ),
         const SizedBox(height: 10),
-        SwitchListTile.adaptive(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-          secondary: const Icon(
-            Icons.auto_awesome_rounded,
-            color: AppColors.cyan,
-            size: 22,
-          ),
-          title: const Text('AI layout sort', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-          subtitle: Text(
-            AutoRigRanker.isLoaded
-                ? 'Rank Auto-Rig candidates with on-device weights (off by default)'
-                : 'Ranker weights not loaded — toggle has no effect yet',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-          ),
-          value: AutoRigRanker.enabled,
-          activeThumbColor: AppColors.cyan,
-          onChanged: AutoRigRanker.isLoaded
-              ? (v) => setState(() => AutoRigRanker.enabled = v)
-              : null,
+        StatefulBuilder(
+          builder: (context, setLocal) {
+            return SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              secondary: const Icon(
+                Icons.auto_awesome_rounded,
+                color: AppColors.cyan,
+                size: 22,
+              ),
+              title: const Text('AI layout sort', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
+              subtitle: Text(
+                AutoRigRanker.isLoaded
+                    ? 'Rank Auto-Rig candidates with on-device weights (off by default)'
+                    : 'Ranker weights not loaded — toggle has no effect yet',
+                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              value: AutoRigRanker.enabled,
+              activeThumbColor: AppColors.cyan,
+              onChanged: AutoRigRanker.isLoaded
+                  ? (v) {
+                      AutoRigRanker.enabled = v;
+                      setLocal(() {});
+                      setState(() {});
+                    }
+                  : null,
+            );
+          },
         ),
         const SizedBox(height: 14),
         Row(

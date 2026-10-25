@@ -64,8 +64,7 @@ class RigRoomItemsDrawer extends StatelessWidget {
     final layoutItems = state.furniture.where((item) {
       if (!matchesQuery(item.name, item.category, item.id)) return false;
       if (!matchesCategory(item.category)) return false;
-      final conf = state.confidenceForFurniture(item.id) ?? 0.95;
-      return conf >= sidebarMinConfidence;
+      return true;
     }).toList(growable: false);
 
     final body = Column(
@@ -94,7 +93,7 @@ class RigRoomItemsDrawer extends StatelessWidget {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
               child: Wrap(
                 spacing: 6,
                 runSpacing: 6,
@@ -104,26 +103,6 @@ class RigRoomItemsDrawer extends StatelessWidget {
                       label: cat ?? 'All',
                       active: sidebarCategory == cat,
                       onTap: () => onCategoryChanged(cat),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final entry in const [
-                    (0.0, 'Any %'),
-                    (0.5, '≥50%'),
-                    (0.7, '≥70%'),
-                    (0.85, '≥85%'),
-                  ])
-                    _SidebarFilterChip(
-                      label: entry.$2,
-                      active: (sidebarMinConfidence - entry.$1).abs() < 0.001,
-                      onTap: () => onMinConfidenceChanged(entry.$1),
                     ),
                 ],
               ),
@@ -164,8 +143,6 @@ class RigRoomItemsDrawer extends StatelessWidget {
                     ...layoutItems.map((item) {
                       final isSelected = state.selectedItemId == item.id && !state.selectedIsScanObject;
                       final catColor = _categoryColor(item.category);
-                      final conf = state.confidenceForFurniture(item.id);
-                      final confLabel = conf == null ? '—' : '${(conf * 100).round()}%';
                       final isStructural = SurfaceMounts.isStructuralMount(item);
                       final canDelete = item.iconName != 'door' &&
                           item.iconName != 'window' &&
@@ -220,7 +197,7 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                           Text(item.name, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
                                           const SizedBox(height: 3),
                                           Text(
-                                            '${item.category.toUpperCase()}  •  ${item.statusLabel}  •  $confLabel'
+                                            '${item.category.toUpperCase()}  •  ${item.statusLabel}'
                                             '${isStructural ? '  •  WALL' : ''}',
                                             style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
                                           ),
