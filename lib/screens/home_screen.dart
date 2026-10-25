@@ -150,6 +150,8 @@ class _HomeScreenState extends State<HomeScreen> {
           MediaQuery.sizeOf(context).width >= AppLayout.desktopMinWidth;
       return Scaffold(
         backgroundColor: AppColors.bg,
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        floatingActionButton: _buildCreateRoomFab(context, state),
         body: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -252,6 +254,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: _buildCreateRoomFab(context, state),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
@@ -284,18 +288,42 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Empty-room onboarding + scan confidence only. Journey lives in the score card.
+  Widget _buildCreateRoomFab(BuildContext context, AppState state) {
+    return FloatingActionButton(
+      heroTag: 'hub_create_room_fab',
+      backgroundColor: AppColors.cyan,
+      foregroundColor: AppColors.bg,
+      tooltip: 'New room',
+      onPressed: () => _showCreateRoomSheet(context, state),
+      child: const Icon(Icons.add_rounded),
+    );
+  }
+
+  Future<void> _openHowItWorks(BuildContext context, AppState state) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => OnboardingSheet(
+        onDone: () {
+          if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
+        },
+        onJumpTab: (tab) {
+          if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
+          state.setTab(tab);
+        },
+      ),
+    );
+  }
+
+  /// Scan confidence only — Set up banner removed; create via + FAB / Quick Actions.
   List<Widget> _hubStatusBlocks(BuildContext context, AppState state) {
-    if (!state.roomIsReady) {
-      return [
-        _GettingStartedBanner(
-          onScan: () => state.setTab(1),
-          onCreate: () => _showCreateRoomSheet(context, state),
-        ),
-        const SizedBox(height: AppSpace.xl),
-      ];
-    }
-    if (state.scanComplete && state.lastScanConfidence != null) {
+    if (state.roomIsReady &&
+        state.scanComplete &&
+        state.lastScanConfidence != null) {
       return [
         _ScanConfidenceBanner(metrics: state.lastScanConfidence!),
         const SizedBox(height: AppSpace.xl),
@@ -332,34 +360,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         const Spacer(),
-        if (state.hasSeenOnboarding)
-          GestureDetector(
-            onTap: () {
-              _onboardingPresented = false;
-              state.completeOnboarding(); // keep flag; reopen sheet manually
-              showModalBottomSheet<void>(
-                context: context,
-                backgroundColor: AppColors.surface,
-                isScrollControlled: true,
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                builder: (ctx) => OnboardingSheet(
-                  onDone: () {
-                    if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
-                  },
-                  onJumpTab: (tab) {
-                    if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
-                    state.setTab(tab);
-                  },
-                ),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: Icon(Icons.help_outline_rounded, color: AppColors.textMuted, size: 22),
-            ),
-          ),
         Padding(
           padding: const EdgeInsets.only(right: 10),
           child: Material(
@@ -438,59 +438,78 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Overall Rig Score',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1,
-                  ),
-                ),
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => state.setTab(3),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(AppRadius.sm),
-                        border: Border.all(color: accent.withValues(alpha: 0.4)),
-                      ),
-                      child: Text(
-                        simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk,
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text(
+                        'Overall Rig Score',
                         style: TextStyle(
-                          color: accent,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.8,
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1,
                         ),
                       ),
-                    ),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => state.setTab(3),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(AppRadius.sm),
+                              border: Border.all(color: accent.withValues(alpha: 0.4)),
+                            ),
+                            child: Text(
+                              simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk,
+                              style: TextStyle(
+                                color: accent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.cyan.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
+                          border: Border.all(color: AppColors.cyan.withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          'GRADE ${state.scoreGrade}',
+                          style: const TextStyle(
+                            color: AppColors.cyan,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.cyan.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border: Border.all(color: AppColors.cyan.withValues(alpha: 0.4)),
-                  ),
-                  child: Text(
-                    'GRADE ${state.scoreGrade}',
-                    style: const TextStyle(
-                      color: AppColors.cyan,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
-                    ),
+                IconButton(
+                  tooltip: 'How Room Rig works',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  onPressed: () => _openHowItWorks(context, state),
+                  icon: Icon(
+                    Icons.help_outline_rounded,
+                    color: AppColors.textMuted,
+                    size: 22,
                   ),
                 ),
               ],
@@ -499,9 +518,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               state.roomIsReady
                   ? (simulated
-                      ? '${HubScoreLabels.roughSubtitle} Tap a ring to open that Bench domain.'
-                      : 'Bench locked these scores. Tap a ring for that domain — edit in Rig, then Bench again after layout changes.')
-                  : 'Create or Scan a room first. Then arrange in Rig and run Bench to lock scores.',
+                      ? '${HubScoreLabels.roughSubtitle} Tap a ring to open that Bench domain. Tap ? for Create → Rig → Bench tips.'
+                      : 'Bench locked these scores. Tap a ring for that domain — edit in Rig, then Bench again after layout changes. Tap ? for a quick tour.')
+                  : 'Use + to create a room or Scan in Quick Actions. Then arrange in Rig and run Bench to lock scores. Tap ? for the tour.',
               style: const TextStyle(
                 color: AppColors.textMuted,
                 fontSize: 12,
@@ -1315,117 +1334,6 @@ class _HomeScreenState extends State<HomeScreen> {
         SnackBar(content: Text('Created ${state.currentRoomData.name}')),
       );
     }
-  }
-}
-
-class _GettingStartedBanner extends StatelessWidget {
-  final VoidCallback onScan;
-  final VoidCallback onCreate;
-  const _GettingStartedBanner({
-    required this.onScan,
-    required this.onCreate,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpace.md),
-      decoration: BoxDecoration(
-        color: AppColors.cyan.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(color: AppColors.cyan.withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              SvgIcon(RoomSvg.scan, size: 24, color: AppColors.cyan),
-              const SizedBox(width: AppSpace.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Set up your room',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpace.xxs),
-                    Text(
-                      'Create an empty room or Scan to measure. Then arrange in Rig and run Bench.',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpace.md),
-          Row(
-            children: [
-              Expanded(
-                child: _StartChip(
-                  label: 'Create',
-                  color: AppColors.amber,
-                  onTap: onCreate,
-                ),
-              ),
-              const SizedBox(width: AppSpace.xs),
-              Expanded(
-                child: _StartChip(
-                  label: 'Scan',
-                  color: AppColors.cyan,
-                  onTap: onScan,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StartChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _StartChip({
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.16),
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(color: color.withValues(alpha: 0.45)),
-          boxShadow: AppColors.activeGlow(color, blur: 12, alpha: 0.2),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 13),
-        ),
-      ),
-    );
   }
 }
 
