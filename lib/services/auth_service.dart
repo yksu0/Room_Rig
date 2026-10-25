@@ -164,29 +164,39 @@ class AuthService extends ChangeNotifier {
       if (!google.supportsAuthenticate()) {
         return 'This device cannot run native Google Sign-In.';
       }
-      final account = await google.authenticate();
+      const scopes = ['email', 'profile'];
+      final account = await google.authenticate(scopeHint: scopes);
       final idToken = account.authentication.idToken;
       if (idToken == null || idToken.isEmpty) {
-        return 'Google did not return an ID token. Check the Web client ID and SHA-1.';
+        return 'Google did not return an ID token. Check the Web client ID and '
+            'that an Android OAuth client exists for com.roomrig.room_rig + your SHA-1.';
       }
-      String? accessToken;
-      try {
-        final authz = await account.authorizationClient.authorizationForScopes(
-          const ['email', 'profile'],
-        );
-        accessToken = authz?.accessToken;
-      } catch (_) {}
+      // Prefer existing grants; otherwise prompt for scopes (needed for accessToken).
+      final authz = await account.authorizationClient.authorizationForScopes(
+            scopes,
+          ) ??
+          await account.authorizationClient.authorizeScopes(scopes);
 
       await client.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
-        accessToken: accessToken,
+        accessToken: authz.accessToken,
       );
       notifyListeners();
       return null;
     } on GoogleSignInException catch (e) {
       if (e.code == GoogleSignInExceptionCode.canceled) {
-        return 'Google sign-in cancelled.';
+        // Credential Manager often reports config failures (missing Android
+        // OAuth client / wrong SHA-1) as "canceled" after account pick.
+        return 'Google sign-in failed after account pick. In Google Cloud → '
+            'Credentials, create an Android OAuth client for package '
+            'com.roomrig.room_rig with debug SHA-1 '
+            '6C:10:FA:51:E8:C4:9F:B9:E3:93:18:93:8A:55:3A:3D:AE:64:F8:AE '
+            '(same Cloud project as the Web client used in Supabase).';
+      }
+      if (e.code == GoogleSignInExceptionCode.clientConfigurationError) {
+        return e.description ??
+            'Google client misconfigured. Add Android OAuth client + SHA-1.';
       }
       return e.description ?? e.toString();
     } on AuthException catch (e) {
