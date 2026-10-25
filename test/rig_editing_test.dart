@@ -18,6 +18,8 @@ void main() {
 
   Future<AppState> pumpRig(WidgetTester tester) async {
     final state = AppState();
+    // Cold start is an empty lot; tests exercise a populated gaming layout.
+    state.selectPreset(RoomPreset.gamingSetup);
     await tester.binding.setSurfaceSize(const Size(1200, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -127,7 +129,7 @@ void main() {
 
   group('catalog placement', () {
     test('adds an item, selects it, and keeps ids unique', () {
-      final state = AppState();
+      final state = AppState()..selectPreset(RoomPreset.gamingSetup);
       final desk = RigCatalogEntry(
         baseId: 'desk',
         name: 'Desk',
@@ -149,7 +151,7 @@ void main() {
     });
 
     test('placed item lands inside the room and clear of other furniture', () {
-      final state = AppState();
+      final state = AppState()..selectPreset(RoomPreset.gamingSetup);
       final room = state.currentRoomData;
       final bed = RigCatalogEntry(
         baseId: 'spare_bed',
@@ -177,7 +179,7 @@ void main() {
     });
 
     test('reports failure instead of stacking when the room is full', () {
-      final state = AppState();
+      final state = AppState()..selectPreset(RoomPreset.gamingSetup);
       final filler = RigCatalogEntry(
         baseId: 'filler',
         name: 'Filler',
@@ -201,7 +203,7 @@ void main() {
 
     test('every catalog entry fits an empty-ish room', () {
       for (final entry in RigCatalog.items) {
-        final state = AppState();
+        final state = AppState()..selectPreset(RoomPreset.gamingSetup);
         expect(
           state.addCatalogFurniture(entry),
           isNotNull,
@@ -216,7 +218,7 @@ void main() {
         state.activeRoomLayout!.objects.firstWhere((o) => o.id == 'fan').center.x;
 
     test('defers the layout rebuild until the gesture ends', () {
-      final state = AppState();
+      final state = AppState()..selectPreset(RoomPreset.gamingSetup);
       final before = state.activeRoomLayout;
       expect(before, isNotNull);
       final centerBefore = fanCenterX(state);
@@ -243,7 +245,7 @@ void main() {
     });
 
     test('a whole drag collapses into one undo step', () {
-      final state = AppState();
+      final state = AppState()..selectPreset(RoomPreset.gamingSetup);
       state.clearLayoutHistory();
       final start = state.furniture.firstWhere((f) => f.id == 'fan');
       final startX = start.gridX;
@@ -268,7 +270,7 @@ void main() {
     });
 
     test('endFurnitureGesture without a drag is a no-op', () {
-      final state = AppState();
+      final state = AppState()..selectPreset(RoomPreset.gamingSetup);
       state.clearLayoutHistory();
       state.endFurnitureGesture();
       expect(state.canUndoLayout, isFalse);
@@ -371,9 +373,7 @@ void main() {
 
       state.selectFurniture('fan');
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('rig3d_move_mode')).hitTestable());
-      await tester.pumpAndSettle();
-      expect(find.textContaining('MOVE on'), findsWidgets);
+      expect(find.byKey(const ValueKey('rig_move_mode')), findsNothing);
       final before = state.furniture.firstWhere((f) => f.id == 'fan');
 
       // Aim at the item where it actually renders in the 3D canvas.
@@ -394,7 +394,7 @@ void main() {
       expect(projected, isNotNull);
       final start = canvasRect.topLeft + projected!.offset;
 
-      // Pointer events (not dragFrom) so the Listener arms MOVE before Scale.
+      // Pointer events (not dragFrom) so the Listener arms furniture drag before Scale.
       final gesture = await tester.startGesture(start);
       await gesture.moveBy(const Offset(0, 100));
       await tester.pump();
@@ -408,7 +408,7 @@ void main() {
       expect(after.gridY, inInclusiveRange(0.0, state.currentRoomData.gridRows.toDouble()));
     });
 
-    testWidgets('short drag on selected item orbits without moving furniture', (tester) async {
+    testWidgets('deselected empty-floor drag orbits without moving furniture', (tester) async {
       final state = await pumpRig(tester);
 
       await tester.tap(find.byKey(const ValueKey('chrome_view_orbit')));
@@ -416,7 +416,8 @@ void main() {
 
       state.selectFurniture('fan');
       await tester.pumpAndSettle();
-      // MOVE mode off: one-finger drag should orbit only.
+      state.clearSelection();
+      await tester.pumpAndSettle();
       final before = state.furniture.firstWhere((f) => f.id == 'fan');
 
       final canvasRect = tester.getRect(find.byKey(const ValueKey('rig3d_canvas')));
@@ -464,7 +465,7 @@ void main() {
       }
     });
 
-    testWidgets('pending ghost can be dragged without tapping MOVE', (tester) async {
+    testWidgets('pending ghost can be dragged without a separate move toggle', (tester) async {
       final state = await pumpRig(tester);
 
       await tester.tap(find.byKey(const ValueKey('chrome_view_orbit')));
@@ -493,13 +494,12 @@ void main() {
       expect(projected, isNotNull);
       final start = canvasRect.topLeft + projected!.offset;
 
-      // No MOVE tap — pending placement alone should arm drag.
       await tester.dragFrom(start, const Offset(0, 50));
       await tester.pumpAndSettle();
 
       final after = state.furniture.firstWhere((f) => f.id == id);
       final moved = (after.gridX - before.gridX).abs() + (after.gridY - before.gridY).abs();
-      expect(moved, greaterThan(0.05), reason: 'pending ghost should move without MOVE mode');
+      expect(moved, greaterThan(0.05), reason: 'pending ghost should move while placing');
       expect(state.hasPendingPlacement, isTrue);
     });
   });

@@ -99,9 +99,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
   /// Where the finger touched down in the 3D canvas, before touch slop.
   Offset? _pointerDownPos;
 
-  /// When true, one-finger drags move the selected item; otherwise they orbit.
-  bool _rigMoveMode = false;
-
   /// Lift preview follows the finger while dragging in 2D or 3D.
   Offset? _dragPointerLocal;
 
@@ -200,16 +197,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final selectedFurniture = state.selectedFurniture;
-    final canMoveSelected = selectedFurniture != null &&
-        !state.selectedIsScanObject &&
-        state.canMoveFurniture(selectedFurniture);
-    if (!canMoveSelected && _rigMoveMode) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (_rigMoveMode) setState(() => _rigMoveMode = false);
-      });
-    }
 
     final desktop = AppLayout.isDesktop(context);
     _maybeOpenToolsAfterLanding(state, desktop: desktop);
@@ -311,62 +298,19 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     );
   }
 
-  bool _showMoveChip(AppState state) {
-    if (_viewMode == _RigViewMode.twoD) return false;
+  /// Selected unlocked item (or Place ghost) → drag furniture; otherwise orbit.
+  bool _furnitureDragArmed(AppState state) {
+    if (state.hasPendingPlacement) return true;
     final sel = state.selectedFurniture;
-    return (sel != null &&
-            !state.selectedIsScanObject &&
-            state.canMoveFurniture(sel)) ||
-        _rigMoveMode ||
-        state.hasPendingPlacement;
-  }
-
-  /// Arms drag-vs-orbit in 3D: off = camera orbit, on = drag the selected item.
-  Widget _buildMoveModeChip(AppState state) {
-    return Material(
-      color: _rigMoveMode
-          ? AppColors.cyan
-          : AppColors.surface.withValues(alpha: 0.92),
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        key: const ValueKey('rig_move_mode'),
-        onTap: () {
-          HapticFeedback.selectionClick();
-          final sel = state.selectedFurniture;
-          if (!_rigMoveMode &&
-              (sel == null ||
-                  state.selectedIsScanObject ||
-                  !state.canMoveFurniture(sel))) {
-            _showStructuralLockedHint(context);
-            return;
-          }
-          setState(() => _rigMoveMode = !_rigMoveMode);
-        },
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Text(
-            'MOVE',
-            style: TextStyle(
-              color: _rigMoveMode ? Colors.black : AppColors.cyan,
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
-      ),
-    );
+    return sel != null &&
+        !state.selectedIsScanObject &&
+        state.canMoveFurniture(sel);
   }
 
   Widget _buildCanvasWorkspace(AppState state) {
     final selectedFurniture = state.selectedFurniture;
     final selectedScanObject = state.selectedScanObject;
-    final showMove = _showMoveChip(state);
-    // Leave room for MOVE (top-right) so warnings never paint under it.
-    final topChromeRight = _viewMode == _RigViewMode.twoD
-        ? 8.0
-        : (showMove ? 88.0 : 8.0);
+    const topChromeRight = 8.0;
     final topChromeTop = _viewMode == _RigViewMode.model3D ? 40.0 : 8.0;
     return Column(
       children: [
@@ -406,12 +350,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   child: IgnorePointer(
                     child: _ConflictBanner(conflicts: state.layoutConflicts),
                   ),
-                ),
-              if (showMove)
-                Positioned(
-                  top: topChromeTop,
-                  right: 10,
-                  child: _buildMoveModeChip(state),
                 ),
               if (_showDimensions && _viewMode == _RigViewMode.twoD) ...[
                 Positioned(
@@ -1759,11 +1697,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     );
     if (hit != null) {
       state.selectFurniture(hit.id, toggle: true);
-      setState(() {
-        _furnitureDetailsExpanded = false;
-        // Selecting an item arms drag immediately so the canvas stays usable.
-        _rigMoveMode = state.selectedFurniture != null && state.canMoveFurniture(hit);
-      });
+      setState(() => _furnitureDetailsExpanded = false);
       if (!state.canMoveFurniture(hit)) {
         _showStructuralLockedHint(context);
       }
@@ -1800,7 +1734,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                 pendingPreset: _pendingPreset,
                 showMiniMap: _showMiniMap,
                 focusToken: _focusToken,
-                moveMode: _rigMoveMode || state.hasPendingPlacement,
+                moveMode: _furnitureDragArmed(state),
                 liveDrag: _dragItemId != null,
                 pendingPlacementId: state.pendingPlacementId,
                 dragBlocked: _dragItemId != null && state.dragPoseBlocked,
@@ -1811,21 +1745,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   }
                 },
                 onSelect: (id) {
-                  if (!state.canMoveFurnitureId(id)) {
-                    state.selectFurniture(id);
-                    setState(() => _rigMoveMode = false);
-                    return;
-                  }
                   state.selectFurniture(id);
-                  // Ghosts drag without MOVE; other items arm MOVE like Orbit tap.
-                  setState(() {
-                    _rigMoveMode = !state.isPendingPlacement(id);
-                  });
+                  if (!state.canMoveFurnitureId(id)) {
+                    _showStructuralLockedHint(context);
+                  }
                 },
                 onDeselect: () {
                   if (state.hasPendingPlacement) return;
                   state.clearSelection();
-                  if (_rigMoveMode) setState(() => _rigMoveMode = false);
                 },
                 onDragStart: (id) {
                   if (!state.canMoveFurnitureId(id)) return;
@@ -1833,9 +1760,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   _dragItemId = id;
                   _dragGrabOffset = null;
                   state.beginFurnitureGesture();
-                  if (!_rigMoveMode && !state.isPendingPlacement(id)) {
-                    setState(() => _rigMoveMode = true);
-                  }
                 },
                 onDrag: (id, floorX, floorY) {
                   if (_dragItemId != id) return;
@@ -1862,7 +1786,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   });
                 },
               ),
-              // MOVE lives in [_buildCanvasWorkspace] so warnings cannot cover it.
             ],
           ),
         ),
@@ -2113,8 +2036,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                       _pointerDownPos = event.localPosition;
                       _pendingDragId = null;
                       _pendingGrabOffset = null;
-                      // Pending catalog ghosts must be draggable without tapping MOVE.
-                      if (_rigMoveMode || state.hasPendingPlacement) {
+                      // Selected unlocked item or Place ghost → drag; else orbit.
+                      if (_furnitureDragArmed(state)) {
                         _armItemDrag3D(event.localPosition, canvasSize, state);
                       }
                     },
@@ -2163,17 +2086,14 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                             setState(() => _scanDetailsExpanded = false);
                           } else {
                             state.selectFurniture(picked.id, toggle: true);
-                            setState(() {
-                              _furnitureDetailsExpanded = false;
-                              _rigMoveMode = state.selectedFurniture != null &&
-                                  state.canMoveFurniture(
-                                    state.furniture.firstWhere((f) => f.id == picked.id),
-                                  );
-                            });
+                            setState(() => _furnitureDetailsExpanded = false);
+                            final match = state.furniture.where((f) => f.id == picked.id);
+                            if (match.isNotEmpty && !state.canMoveFurniture(match.first)) {
+                              _showStructuralLockedHint(context);
+                            }
                           }
                         } else if (!state.hasPendingPlacement) {
                           state.clearSelection();
-                          if (_rigMoveMode) setState(() => _rigMoveMode = false);
                         }
                       },
                       onScaleStart: (details) {
@@ -2305,7 +2225,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                     ),
                   ),
                 ),
-                // MOVE lives in [_buildCanvasWorkspace] so warnings cannot cover it.
                 Positioned(
                   left: 10,
                   bottom: 10,
@@ -2354,8 +2273,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     );
   }
 
-  /// When MOVE mode is on (or a pending ghost is active), pointer-down near a
-  /// movable item arms a floor drag. Otherwise one-finger gestures orbit.
+  /// When a movable item is selected (or a Place ghost is active), pointer-down
+  /// near furniture arms a floor drag. Otherwise one-finger gestures orbit.
   void _armItemDrag3D(Offset localPos, Size size, AppState state) {
     _pendingDragId = null;
     _pendingGrabOffset = null;
@@ -2370,14 +2289,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
         state.canMoveFurniture(selected) &&
         _pointerNearSelected(selected, localPos, size, state)) {
       item = selected;
-    } else {
+    } else if (state.hasPendingPlacement) {
+      // Place ghosts stay draggable; other hits stay orbit/tap-select.
       final picked = _pickItemIn3D(localPos, size, state);
       if (picked == null || picked.isScanObject) return;
+      if (!state.isPendingPlacement(picked.id)) return;
       final matches = state.furniture.where((f) => f.id == picked.id);
       if (matches.isEmpty) return;
       item = matches.first;
-      if (!state.canMoveFurniture(item) || item.hidden) return;
-      state.selectFurniture(item.id);
+    } else {
+      return;
     }
 
     final floor = RoomProjection.unprojectToFloor(localPos, size, _cameraFor(state));
@@ -2729,7 +2650,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
       _showAddResult(sheetContext, 'No free space for a ${entry.name}', ok: false);
       return;
     }
-    setState(() => _rigMoveMode = true);
     _showAddResult(sheetContext, '${entry.name} — drag the ghost, then Place');
   }
 
@@ -2845,7 +2765,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
       );
       return;
     }
-    setState(() => _rigMoveMode = true);
     messenger.showSnackBar(
       SnackBar(
         content: Text('$label — drag the ghost, then Place'),

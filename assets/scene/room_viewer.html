@@ -1042,7 +1042,7 @@
 
   // Desktop: LMB orbit, RMB/MMB pan, wheel zoom.
   // Touch: 1-finger orbit, 2-finger pan + pinch zoom.
-  // MOVE mode: LMB on a mesh drags; tap selects / deselects.
+  // Selected mesh (or Place ghost): LMB drag moves it; empty / other = orbit / tap.
   const activePtrs = new Map();
   let gesture = null; // 'orbit' | 'pan' | 'panzoom' | 'drag'
   let lastX = 0, lastY = 0;
@@ -1255,8 +1255,10 @@
     pointerDownItemId = (activePtrs.size === 1 && e.button === 0)
       ? pickItemId(e.clientX, e.clientY)
       : null;
+    const hitSelected = pointerDownItemId && lastItems.some(
+      (it) => it.id === pointerDownItemId && it.selected);
     const canDragHit = pointerDownItemId &&
-      (moveMode || itemIsGhost(pointerDownItemId));
+      (itemIsGhost(pointerDownItemId) || (moveMode && hitSelected));
     if (canDragHit && activePtrs.size === 1 && e.button === 0) {
       gesture = 'drag';
       dragId = pointerDownItemId;
@@ -1346,7 +1348,7 @@
       const openings = data.openings || [];
       rebuildRoom(w, d, h, openings);
       // Preserve the live orbit unless Flutter explicitly asks to apply camera
-      // (select / MOVE / furniture refresh must not snap the view).
+      // (select / furniture drag / refresh must not snap the view).
       if (data.applyCamera) {
         if (data.yaw != null) yaw = +data.yaw;
         if (data.pitch != null) pitch = +data.pitch;

@@ -18,7 +18,7 @@ import 'room_model_scene_stub.dart'
 
 /// Interactive three.js room with Kenney CC0 furniture GLBs + textured shell.
 ///
-/// Rig Model view can select / MOVE-drag via JS raycasts → [onSelect] /
+/// Rig Model view can select / drag via JS raycasts → [onSelect] /
 /// [onDrag*] → AppState. Bench previews leave those callbacks null.
 class RoomModelScene extends StatefulWidget {
   final RoomData room;
@@ -32,11 +32,11 @@ class RoomModelScene extends StatefulWidget {
   final bool showMiniMap;
   final int focusToken;
   final VoidCallback? onPresetApplied;
-  /// When true, one-finger drag on a mesh moves it (camera orbit suppressed).
+  /// When true, one-finger drag on the selected mesh moves it (else orbit).
   final bool moveMode;
   /// While true, furniture pose changes push [updateItemPoses] instead of a full GLB reload.
   final bool liveDrag;
-  /// Catalog Place ghost id — translucent mesh; draggable without MOVE.
+  /// Catalog Place ghost id — translucent mesh; always draggable.
   final String? pendingPlacementId;
   /// Live drag collision feedback for the HTML loupe border.
   final bool dragBlocked;
@@ -238,7 +238,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
     final pendingChanged =
         oldWidget.pendingPlacementId != widget.pendingPlacementId;
     // Model orbit lives in the WebView. Flutter yaw/pitch/distance are only
-    // applied when those props actually change — never on select/MOVE alone.
+    // applied when those props actually change — never on select/drag alone.
     final cameraChanged = oldWidget.yaw != widget.yaw ||
         oldWidget.pitch != widget.pitch ||
         oldWidget.distance != widget.distance;
@@ -480,7 +480,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
       'moveMode': widget.moveMode || widget.pendingPlacementId != null,
       'lampGlow': lampGlow,
       'liveField': widget.liveFieldCells,
-      // Only when Flutter intentionally changed camera props — select/MOVE must
+      // Only when Flutter intentionally changed camera props — select/drag must
       // not clobber the WebView orbit the user already framed.
       if (applyCamera) ...{
         'applyCamera': true,
