@@ -40,6 +40,8 @@ class RoomModelScene extends StatefulWidget {
   final String? pendingPlacementId;
   /// Live drag collision feedback for the HTML loupe border.
   final bool dragBlocked;
+  /// Floor heatmap cells (metres) for Air / Light / Ergo live overlay.
+  final List<Map<String, dynamic>> liveFieldCells;
   final void Function(String id)? onSelect;
   final VoidCallback? onDeselect;
   final void Function(String id)? onDragStart;
@@ -64,6 +66,7 @@ class RoomModelScene extends StatefulWidget {
     this.liveDrag = false,
     this.pendingPlacementId,
     this.dragBlocked = false,
+    this.liveFieldCells = const [],
     this.onSelect,
     this.onDeselect,
     this.onDragStart,
@@ -84,6 +87,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
   CameraPreset? _lastPreset;
   int _lastFocusToken = 0;
   bool? _lastDragBlocked;
+  List<Map<String, dynamic>> _lastLiveField = const [];
 
   @override
   void initState() {
@@ -249,6 +253,8 @@ class RoomModelSceneState extends State<RoomModelScene> {
       _pushDragFeedback();
     }
 
+    final liveFieldChanged = !_liveFieldEquals(oldWidget.liveFieldCells, widget.liveFieldCells);
+
     if (widget.liveDrag &&
         furnitureChanged &&
         !cameraChanged &&
@@ -256,6 +262,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
         !selectedChanged &&
         !pendingChanged) {
       _pushLivePoses();
+      if (liveFieldChanged) _pushLiveField();
       return;
     }
     if (furnitureChanged ||
@@ -264,7 +271,22 @@ class RoomModelSceneState extends State<RoomModelScene> {
         cameraChanged ||
         shellChanged) {
       _pushScene(applyCamera: cameraChanged);
+    } else if (liveFieldChanged) {
+      _pushLiveField();
     }
+  }
+
+  bool _liveFieldEquals(List<Map<String, dynamic>> a, List<Map<String, dynamic>> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i]['x0'] != b[i]['x0'] ||
+          a[i]['z0'] != b[i]['z0'] ||
+          a[i]['a'] != b[i]['a']) {
+        return false;
+      }
+    }
+    return true;
   }
 
   String _wallName(RoomWall wall) {
@@ -456,6 +478,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
       'miniMap': widget.showMiniMap,
       'moveMode': widget.moveMode || widget.pendingPlacementId != null,
       'lampGlow': lampGlow,
+      'liveField': widget.liveFieldCells,
       // Only when Flutter intentionally changed camera props — select/MOVE must
       // not clobber the WebView orbit the user already framed.
       if (applyCamera) ...{
@@ -565,6 +588,21 @@ class RoomModelSceneState extends State<RoomModelScene> {
     await _runJs('window.setDragFeedback(${jsonEncode(payload)});');
   }
 
+  Future<void> _pushLiveField() async {
+    if (!_ready) return;
+    if (_liveFieldEquals(_lastLiveField, widget.liveFieldCells)) return;
+    _lastLiveField = List<Map<String, dynamic>>.from(widget.liveFieldCells);
+    final payload = {
+      'type': 'setLiveField',
+      'cells': widget.liveFieldCells,
+    };
+    if (kIsWeb) {
+      platform.pushRoomModelSceneWeb(payload);
+      return;
+    }
+    await _runJs('window.setLiveField(${jsonEncode(widget.liveFieldCells)});');
+  }
+
   Future<void> _pushScene({bool applyCamera = false}) async {
     if (!_ready) return;
     final payload = _scenePayload(applyCamera: applyCamera);
@@ -583,6 +621,7 @@ class RoomModelSceneState extends State<RoomModelScene> {
         debugPrint('RoomModelScene push failed: $e');
       }
     }
+    _lastLiveField = List<Map<String, dynamic>>.from(widget.liveFieldCells);
 
     if (preset != null && preset != _lastPreset) {
       _lastPreset = preset;

@@ -6,6 +6,7 @@ import '../../models/room_model.dart';
 import '../../models/surface_mount.dart';
 import '../../theme/app_theme.dart';
 import '../furniture_shapes.dart';
+import '../rig_live_field_overlay.dart';
 import '../room_orbit_projection.dart';
 /// Corners of the room-facing surface of a wall fitting, inset from the wall by
 /// [inset] grid units. Ordered bottom-start, bottom-end, top-end, top-start.
@@ -115,6 +116,7 @@ class RoomOrbit3DPainter extends CustomPainter {
   final double? lookAtX;
   final double? lookAtZ;
   final List<RoomRenderItem> items;
+  final List<RigLiveFieldCell> liveFieldCells;
 
   RoomOrbit3DPainter({
     required this.roomWidth,
@@ -128,6 +130,7 @@ class RoomOrbit3DPainter extends CustomPainter {
     this.lookAtX,
     this.lookAtZ,
     required this.items,
+    this.liveFieldCells = const [],
   });
 
   @override
@@ -145,6 +148,7 @@ class RoomOrbit3DPainter extends CustomPainter {
 
     _paintShell(canvas, size, cam);
     _paintFloorGrid(canvas, size, cam);
+    _paintLiveField(canvas, size, cam);
 
     final drawables = <_Drawable>[];
     for (final item in items) {
@@ -243,6 +247,30 @@ class RoomOrbit3DPainter extends CustomPainter {
       final a = RoomProjection.project(OrbitVec3(0, 0.001, r.toDouble()), size, cam);
       final b = RoomProjection.project(OrbitVec3(roomWidth, 0.001, r.toDouble()), size, cam);
       if (a != null && b != null) canvas.drawLine(a.offset, b.offset, gridPaint);
+    }
+  }
+
+  void _paintLiveField(Canvas canvas, Size size, CameraPose cam) {
+    if (liveFieldCells.isEmpty) return;
+    for (final cell in liveFieldCells) {
+      final face = RoomProjection.projectFace(
+        RoomFace(
+          [
+            OrbitVec3(cell.x0, 0.04, cell.z0),
+            OrbitVec3(cell.x1, 0.04, cell.z0),
+            OrbitVec3(cell.x1, 0.04, cell.z1),
+            OrbitVec3(cell.x0, 0.04, cell.z1),
+          ],
+          cell.color,
+        ),
+        size,
+        cam,
+      );
+      if (face == null) continue;
+      canvas.drawPath(
+        Path()..addPolygon(face.points, true),
+        Paint()..color = face.color,
+      );
     }
   }
 
@@ -671,7 +699,8 @@ class RoomOrbit3DPainter extends CustomPainter {
         oldDelegate.distance != distance ||
         oldDelegate.lookAtX != lookAtX ||
         oldDelegate.lookAtZ != lookAtZ ||
-        oldDelegate.items != items;
+        oldDelegate.items != items ||
+        oldDelegate.liveFieldCells != liveFieldCells;
   }
 }
 

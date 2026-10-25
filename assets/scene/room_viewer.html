@@ -84,6 +84,8 @@
   const gltfCache = new Map();
   const furnitureRoot = new THREE.Group();
   scene.add(furnitureRoot);
+  const liveFieldRoot = new THREE.Group();
+  scene.add(liveFieldRoot);
   const roomRoot = new THREE.Group();
   scene.add(roomRoot);
   const exteriorRoot = new THREE.Group();
@@ -1353,6 +1355,7 @@
       if (data.focusId) focusItem(data.focusId);
       if (data.miniMap != null) setMiniMap(!!data.miniMap);
       if (data.moveMode != null) window.setMoveMode(!!data.moveMode);
+      if (data.liveField) setLiveField(data.liveField);
       const measured = await setFurniture(data.items || []);
       // Second pass: shrink/grow shell cuts to the fitted GLB bounds.
       if (measured && measured.length) {
@@ -1373,11 +1376,44 @@
     }
   }
 
+  function setLiveField(cells) {
+    clearGroup(liveFieldRoot);
+    const list = cells || [];
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      const x0 = +c.x0 || 0;
+      const z0 = +c.z0 || 0;
+      const x1 = +c.x1 || x0;
+      const z1 = +c.z1 || z0;
+      const w = Math.max(0.02, x1 - x0);
+      const d = Math.max(0.02, z1 - z0);
+      const r = c.r != null ? +c.r : 0.2;
+      const g = c.g != null ? +c.g : 0.8;
+      const b = c.b != null ? +c.b : 0.9;
+      const a = c.a != null ? +c.a : 0.25;
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(w, d),
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(r, g, b),
+          transparent: true,
+          opacity: Math.max(0.04, Math.min(0.7, a)),
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        })
+      );
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set((x0 + x1) * 0.5, 0.025, (z0 + z1) * 0.5);
+      mesh.renderOrder = 1;
+      liveFieldRoot.add(mesh);
+    }
+  }
+
   window.setRoomScene = applyScene;
   window.applyCameraPreset = applyPreset;
   window.setExploreMode = setExploreMode;
   window.focusItem = focusItem;
   window.setMiniMap = setMiniMap;
+  window.setLiveField = setLiveField;
   window.addEventListener('message', (ev) => {
     if (!ev || ev.data == null) return;
     let data = ev.data;
@@ -1395,6 +1431,10 @@
     }
     if (data.type === 'setDragFeedback') {
       window.setDragFeedback(data);
+      return;
+    }
+    if (data.type === 'setLiveField') {
+      setLiveField(data.cells || []);
       return;
     }
     if (data.type === 'select' || data.type === 'deselect' ||

@@ -479,12 +479,44 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   void _setLiveDomain(AppState state, RigLiveDomain d) {
     setState(() {
       _liveDomain = d;
-      // Overlay paints on Edit 2D — switch there so Air/Light/Ergo is visible.
-      if (d != RigLiveDomain.none && _viewMode != _RigViewMode.twoD) {
-        _viewMode = _RigViewMode.twoD;
-      }
       _refreshLiveField(state);
     });
+  }
+
+  List<RigLiveFieldCell> _liveFieldCells(AppState state) {
+    if (_liveDomain == RigLiveDomain.none) return const [];
+    _refreshLiveField(state);
+    return sampleRigLiveFieldCells(
+      domain: _liveDomain,
+      gridCols: state.currentRoomData.gridCols,
+      gridRows: state.currentRoomData.gridRows,
+      airflow: _liveCache.airflow,
+      lighting: _liveCache.lighting,
+      ergonomics: _liveCache.ergonomics,
+    );
+  }
+
+  /// Model scene uses metres; convert grid-cell samples for the WebGL floor.
+  List<Map<String, dynamic>> _liveFieldCellsMeters(AppState state) {
+    final cells = _liveFieldCells(state);
+    if (cells.isEmpty) return const [];
+    final cols = state.currentRoomData.gridCols;
+    final rows = state.currentRoomData.gridRows;
+    final cellW = RoomScale.metersFromCells(cols) / cols;
+    final cellD = RoomScale.metersFromCells(rows) / rows;
+    return [
+      for (final c in cells)
+        {
+          'x0': c.x0 * cellW,
+          'z0': c.z0 * cellD,
+          'x1': c.x1 * cellW,
+          'z1': c.z1 * cellD,
+          'r': c.color.r,
+          'g': c.color.g,
+          'b': c.color.b,
+          'a': c.color.a,
+        },
+    ];
   }
 
   String _liveFurnitureFingerprint(AppState state) {
@@ -1222,11 +1254,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
   void _rotateSelected(AppState state, FurnitureItem selected, double delta) {
     if (!state.canMoveFurniture(selected)) {
-      final locked = selected.locked;
-      _toast(
-        'Unlock to rotate',
-        ok: false,
-      );
+      _toast('Unlock to rotate', ok: false);
       return;
     }
     if (!state.rotateFurniture(selected.id, deltaDegrees: delta)) {
@@ -1473,6 +1501,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 liveDrag: _dragItemId != null,
                 pendingPlacementId: state.pendingPlacementId,
                 dragBlocked: _dragItemId != null && state.dragPoseBlocked,
+                liveFieldCells: _liveFieldCellsMeters(state),
                 onPresetApplied: () {
                   if (_pendingPreset != null) {
                     setState(() => _pendingPreset = null);
@@ -2055,6 +2084,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                                 lookAtX: _lookAtX,
                                 lookAtZ: _lookAtZ,
                                 items: renderItems,
+                                liveFieldCells: _liveFieldCells(state),
                               ),
                             );
                           }
