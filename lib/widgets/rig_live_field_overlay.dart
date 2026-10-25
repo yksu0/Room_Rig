@@ -22,39 +22,51 @@ class RigLiveFieldCache {
   double score = 0;
   String detail = '';
 
+  /// True when furniture moved but debounce has not rebuilt yet.
+  bool isStale = false;
+
+  void clear() {
+    domain = RigLiveDomain.none;
+    fingerprint = '';
+    airflow = null;
+    lighting = null;
+    ergonomics = null;
+    score = 0;
+    detail = '';
+    isStale = false;
+  }
+
   void refresh({
     required RigLiveDomain domain,
     required List<FurnitureItem> furniture,
     required String fingerprint,
   }) {
     if (domain == RigLiveDomain.none) {
-      this.domain = domain;
-      this.fingerprint = fingerprint;
-      airflow = null;
-      lighting = null;
-      ergonomics = null;
-      score = 0;
-      detail = '';
+      clear();
       return;
     }
-    if (this.domain == domain && this.fingerprint == fingerprint) return;
+    if (this.domain == domain && this.fingerprint == fingerprint) {
+      isStale = false;
+      return;
+    }
     this.domain = domain;
     this.fingerprint = fingerprint;
+    isStale = false;
     switch (domain) {
       case RigLiveDomain.airflow:
-        // Same build as Bench My Room / AirflowOptimizer.evaluate (no particles).
+        // Bench My Room field + particles for LIVE overlay animation.
         airflow = AirflowSimulator.build(
           furniture: furniture,
           optimized: false,
-          particleCount: 0,
-          ambientCount: 0,
+          particleCount: 80,
+          ambientCount: 100,
         );
         lighting = null;
         ergonomics = null;
         final m = airflow!.metrics;
         score = m.circulationScore.clamp(0, 100);
         detail =
-            'Circ ${score.round()} · dead ${m.deadVoxelCount} · heat ${m.heatVoxelCount}';
+            'Circ ${score.round()} · dead ${m.deadVoxelCount} · heat ${m.heatVoxelCount} · particles on';
       case RigLiveDomain.lighting:
         lighting = LightingSimulator.build(
           furniture: furniture,
@@ -63,7 +75,7 @@ class RigLiveFieldCache {
         airflow = null;
         ergonomics = null;
         score = lighting!.metrics.exposureScore.clamp(0, 100);
-        detail = 'Exposure ${score.round()} (Bench My Room lux field)';
+        detail = 'Exposure ${score.round()} · Bench My Room lux field';
       case RigLiveDomain.ergonomics:
         ergonomics = ErgonomicsSimulator.build(
           furniture: furniture,
@@ -72,7 +84,7 @@ class RigLiveFieldCache {
         airflow = null;
         lighting = null;
         score = ergonomics!.metrics.comfortScore.clamp(0, 100);
-        detail = 'Comfort ${score.round()} (Bench My Room reach)';
+        detail = 'Comfort ${score.round()} · Bench My Room reach';
       case RigLiveDomain.none:
         break;
     }

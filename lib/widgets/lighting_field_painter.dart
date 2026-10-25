@@ -19,6 +19,10 @@ class LightingFieldPainter extends CustomPainter {
   final double? lookAtX;
   final double? lookAtZ;
   final double pulse;
+  final bool paintScene;
+  final Rect? overlayRect;
+  final double? overlayRoomWidth;
+  final double? overlayRoomDepth;
 
   LightingFieldPainter({
     required this.snapshot,
@@ -30,19 +34,28 @@ class LightingFieldPainter extends CustomPainter {
     this.lookAtX,
     this.lookAtZ,
     this.pulse = 0.5,
+    this.paintScene = true,
+    this.overlayRect,
+    this.overlayRoomWidth,
+    this.overlayRoomDepth,
   }) : super(repaint: FurnitureSprites.revision);
+
+  double get _mapW => overlayRoomWidth ?? snapshot.roomWidth;
+  double get _mapD => overlayRoomDepth ?? snapshot.roomDepth;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bg = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: snapshot.optimized
-            ? [AppColors.lightingColor.withValues(alpha: 0.12), Colors.transparent]
-            : [AppColors.red.withValues(alpha: 0.10), Colors.transparent],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bg);
+    if (paintScene) {
+      final bg = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: snapshot.optimized
+              ? [AppColors.lightingColor.withValues(alpha: 0.12), Colors.transparent]
+              : [AppColors.red.withValues(alpha: 0.10), Colors.transparent],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bg);
+    }
 
     if (vizMode == LightingVizMode.topDown2D) {
       _paint2D(canvas, size);
@@ -54,24 +67,38 @@ class LightingFieldPainter extends CustomPainter {
   void _paint2D(Canvas canvas, Size size) {
     final gridCols = snapshot.roomWidth.round().clamp(1, 64);
     final gridRows = snapshot.roomDepth.round().clamp(1, 64);
-    final rect = BenchRoom2DGeometry.fieldRectFor(
-      size: size,
-      gridCols: gridCols,
-      gridRows: gridRows,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
-      Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.9),
-    );
+    final rect = overlayRect ??
+        BenchRoom2DGeometry.fieldRectFor(
+          size: size,
+          gridCols: gridCols,
+          gridRows: gridRows,
+        );
+    if (paintScene) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+        Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.9),
+      );
+    }
 
-    final cellW = rect.width / snapshot.nx;
-    final cellH = rect.height / snapshot.nz;
+    final voxW = snapshot.roomWidth / snapshot.nx;
+    final voxD = snapshot.roomDepth / snapshot.nz;
+    final sx = rect.width / _mapW;
+    final sz = rect.height / _mapD;
     for (int z = 0; z < snapshot.nz; z++) {
       for (int x = 0; x < snapshot.nx; x++) {
+        final wx = x * voxW;
+        final wz = z * voxD;
+        if (wx >= _mapW || wz >= _mapD) continue;
         final v = snapshot.lux[snapshot.index(x, z)];
+        final cell = Rect.fromLTWH(
+          rect.left + wx * sx,
+          rect.top + wz * sz,
+          voxW * sx - 0.3,
+          voxD * sz - 0.3,
+        );
         if (v <= 0.001) {
           canvas.drawRect(
-            Rect.fromLTWH(rect.left + x * cellW, rect.top + z * cellH, cellW - 0.3, cellH - 0.3),
+            cell,
             Paint()..color = AppColors.textMuted.withValues(alpha: 0.35),
           );
           continue;
@@ -82,25 +109,27 @@ class LightingFieldPainter extends CustomPainter {
           v.clamp(0.0, 1.0),
         )!;
         canvas.drawRect(
-          Rect.fromLTWH(rect.left + x * cellW, rect.top + z * cellH, cellW - 0.3, cellH - 0.3),
+          cell,
           Paint()..color = color.withValues(alpha: (0.2 + v * 0.65).clamp(0.15, 0.85)),
         );
         if (v < 0.18) {
           canvas.drawRect(
-            Rect.fromLTWH(rect.left + x * cellW, rect.top + z * cellH, cellW - 0.3, cellH - 0.3),
+            cell,
             Paint()..color = AppColors.red.withValues(alpha: 0.16),
           );
         }
       }
     }
 
-    BenchFurnitureRenderer.paint2D(
-      canvas,
-      roomRect: rect,
-      gridCols: gridCols,
-      gridRows: gridRows,
-      furniture: furniture,
-    );
+    if (paintScene) {
+      BenchFurnitureRenderer.paint2D(
+        canvas,
+        roomRect: rect,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        furniture: furniture,
+      );
+    }
   }
 
   void _paint3D(Canvas canvas, Size size) {
@@ -108,25 +137,27 @@ class LightingFieldPainter extends CustomPainter {
     final gridRows = snapshot.roomDepth.round().clamp(1, 64);
     const roomHeight = 2.8;
 
-    BenchFurnitureRenderer.paint3DScene(
-      canvas,
-      size,
-      roomWidth: snapshot.roomWidth,
-      roomDepth: snapshot.roomDepth,
-      roomHeight: roomHeight,
-      gridCols: gridCols,
-      gridRows: gridRows,
-      yaw: yaw,
-      pitch: pitch,
-      distance: distance,
-      lookAtX: lookAtX,
-      lookAtZ: lookAtZ,
-      furniture: furniture,
-    );
+    if (paintScene) {
+      BenchFurnitureRenderer.paint3DScene(
+        canvas,
+        size,
+        roomWidth: snapshot.roomWidth,
+        roomDepth: snapshot.roomDepth,
+        roomHeight: roomHeight,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        yaw: yaw,
+        pitch: pitch,
+        distance: distance,
+        lookAtX: lookAtX,
+        lookAtZ: lookAtZ,
+        furniture: furniture,
+      );
+    }
 
     final cam = _Cam(
-      roomWidth: snapshot.roomWidth,
-      roomDepth: snapshot.roomDepth,
+      roomWidth: _mapW,
+      roomDepth: _mapD,
       roomHeight: roomHeight,
       yaw: yaw,
       pitch: pitch,
@@ -135,13 +166,13 @@ class LightingFieldPainter extends CustomPainter {
       lookAtZ: lookAtZ,
     );
 
-    // Floor lux points
     for (int z = 0; z < snapshot.nz; z += 2) {
       for (int x = 0; x < snapshot.nx; x += 2) {
         final v = snapshot.lux[snapshot.index(x, z)];
         if (v < 0.05) continue;
         final wx = (x + 0.5) * snapshot.roomWidth / snapshot.nx;
         final wz = (z + 0.5) * snapshot.roomDepth / snapshot.nz;
+        if (wx >= _mapW || wz >= _mapD) continue;
         final p = _project(_V(wx, 0.02, wz), size, cam);
         if (p == null) continue;
         canvas.drawCircle(
@@ -163,7 +194,11 @@ class LightingFieldPainter extends CustomPainter {
       old.distance != distance ||
       old.lookAtX != lookAtX ||
       old.lookAtZ != lookAtZ ||
-      old.pulse != pulse;
+      old.pulse != pulse ||
+      old.paintScene != paintScene ||
+      old.overlayRect != overlayRect ||
+      old.overlayRoomWidth != overlayRoomWidth ||
+      old.overlayRoomDepth != overlayRoomDepth;
 }
 
 class _V {

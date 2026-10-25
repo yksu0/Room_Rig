@@ -18,6 +18,10 @@ class ErgonomicsFieldPainter extends CustomPainter {
   final double? lookAtZ;
   final double pulse;
   final bool showPaths;
+  final bool paintScene;
+  final Rect? overlayRect;
+  final double? overlayRoomWidth;
+  final double? overlayRoomDepth;
 
   ErgonomicsFieldPainter({
     required this.snapshot,
@@ -29,7 +33,14 @@ class ErgonomicsFieldPainter extends CustomPainter {
     this.lookAtZ,
     this.pulse = 0.5,
     this.showPaths = true,
+    this.paintScene = true,
+    this.overlayRect,
+    this.overlayRoomWidth,
+    this.overlayRoomDepth,
   }) : super(repaint: FurnitureSprites.revision);
+
+  double get _mapW => overlayRoomWidth ?? snapshot.roomWidth;
+  double get _mapD => overlayRoomDepth ?? snapshot.roomDepth;
 
   /// Keep the busiest routes only so the view stays readable.
   List<ErgonomicsPath> get _focusPaths {
@@ -45,15 +56,17 @@ class ErgonomicsFieldPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bg = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: snapshot.optimized
-            ? [AppColors.ergonomicsColor.withValues(alpha: 0.10), Colors.transparent]
-            : [AppColors.amber.withValues(alpha: 0.08), Colors.transparent],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bg);
+    if (paintScene) {
+      final bg = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: snapshot.optimized
+              ? [AppColors.ergonomicsColor.withValues(alpha: 0.10), Colors.transparent]
+              : [AppColors.amber.withValues(alpha: 0.08), Colors.transparent],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bg);
+    }
 
     if (vizMode == ErgonomicsVizMode.topDown2D) {
       _paint2D(canvas, size);
@@ -65,35 +78,39 @@ class ErgonomicsFieldPainter extends CustomPainter {
   void _paint2D(Canvas canvas, Size size) {
     final gridCols = snapshot.roomWidth.round().clamp(1, 64);
     final gridRows = snapshot.roomDepth.round().clamp(1, 64);
-    final rect = BenchRoom2DGeometry.fieldRectFor(
-      size: size,
-      gridCols: gridCols,
-      gridRows: gridRows,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
-      Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.92),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
-      Paint()
-        ..color = AppColors.border.withValues(alpha: 0.7)
-        ..style = PaintingStyle.stroke,
-    );
+    final rect = overlayRect ??
+        BenchRoom2DGeometry.fieldRectFor(
+          size: size,
+          gridCols: gridCols,
+          gridRows: gridRows,
+        );
+    if (paintScene) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+        Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.92),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+        Paint()
+          ..color = AppColors.border.withValues(alpha: 0.7)
+          ..style = PaintingStyle.stroke,
+      );
+    }
 
     Offset map(double x, double z) => Offset(
-          rect.left + (x / snapshot.roomWidth) * rect.width,
-          rect.top + (z / snapshot.roomDepth) * rect.height,
+          rect.left + (x / _mapW) * rect.width,
+          rect.top + (z / _mapD) * rect.height,
         );
 
-    // Furniture silhouettes only — path labels/legend removed (display-only).
-    BenchFurnitureRenderer.paint2D(
-      canvas,
-      roomRect: rect,
-      gridCols: gridCols,
-      gridRows: gridRows,
-      furniture: snapshot.furniture,
-    );
+    if (paintScene) {
+      BenchFurnitureRenderer.paint2D(
+        canvas,
+        roomRect: rect,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        furniture: snapshot.furniture,
+      );
+    }
 
     if (!showPaths) return;
     final paths = _focusPaths;
@@ -142,25 +159,27 @@ class ErgonomicsFieldPainter extends CustomPainter {
     final gridRows = snapshot.roomDepth.round().clamp(1, 64);
     const roomHeight = 2.8;
 
-    BenchFurnitureRenderer.paint3DScene(
-      canvas,
-      size,
-      roomWidth: snapshot.roomWidth,
-      roomDepth: snapshot.roomDepth,
-      roomHeight: roomHeight,
-      gridCols: gridCols,
-      gridRows: gridRows,
-      yaw: yaw,
-      pitch: pitch,
-      distance: distance,
-      lookAtX: lookAtX,
-      lookAtZ: lookAtZ,
-      furniture: snapshot.furniture,
-    );
+    if (paintScene) {
+      BenchFurnitureRenderer.paint3DScene(
+        canvas,
+        size,
+        roomWidth: snapshot.roomWidth,
+        roomDepth: snapshot.roomDepth,
+        roomHeight: roomHeight,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        yaw: yaw,
+        pitch: pitch,
+        distance: distance,
+        lookAtX: lookAtX,
+        lookAtZ: lookAtZ,
+        furniture: snapshot.furniture,
+      );
+    }
 
     final cam = _Cam(
-      roomWidth: snapshot.roomWidth,
-      roomDepth: snapshot.roomDepth,
+      roomWidth: _mapW,
+      roomDepth: _mapD,
       roomHeight: roomHeight,
       yaw: yaw,
       pitch: pitch,
@@ -297,6 +316,10 @@ class ErgonomicsFieldPainter extends CustomPainter {
         oldDelegate.yaw != yaw ||
         oldDelegate.pitch != pitch ||
         oldDelegate.distance != distance ||
+        oldDelegate.paintScene != paintScene ||
+        oldDelegate.overlayRect != overlayRect ||
+        oldDelegate.overlayRoomWidth != overlayRoomWidth ||
+        oldDelegate.overlayRoomDepth != overlayRoomDepth ||
         oldDelegate.lookAtX != lookAtX ||
         oldDelegate.lookAtZ != lookAtZ ||
         oldDelegate.pulse != pulse ||

@@ -26,6 +26,16 @@ class AirflowVoxelPainter extends CustomPainter {
   final int gridCols;
   final int gridRows;
 
+  /// When false, skip Bench room chrome/furniture — field + particles only (Rig LIVE).
+  final bool paintScene;
+
+  /// Optional 2D rect (Rig room plan). When set, maps sim world into this footprint.
+  final Rect? overlayRect;
+
+  /// Camera / map room size for overlay (Rig grid). Defaults to sim field size.
+  final double? overlayRoomWidth;
+  final double? overlayRoomDepth;
+
   AirflowVoxelPainter({
     required this.snapshot,
     required this.furniture,
@@ -41,19 +51,28 @@ class AirflowVoxelPainter extends CustomPainter {
     this.showVoxels = true,
     this.showDeadZones = true,
     this.showParticles = true,
+    this.paintScene = true,
+    this.overlayRect,
+    this.overlayRoomWidth,
+    this.overlayRoomDepth,
   }) : super(repaint: FurnitureSprites.revision);
+
+  double get _mapW => overlayRoomWidth ?? snapshot.field.roomWidth;
+  double get _mapD => overlayRoomDepth ?? snapshot.field.roomDepth;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bg = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: snapshot.optimized
-            ? [AppColors.cyanDim.withValues(alpha: 0.14), Colors.transparent]
-            : [AppColors.red.withValues(alpha: 0.12), Colors.transparent],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bg);
+    if (paintScene) {
+      final bg = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: snapshot.optimized
+              ? [AppColors.cyanDim.withValues(alpha: 0.14), Colors.transparent]
+              : [AppColors.red.withValues(alpha: 0.12), Colors.transparent],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bg);
+    }
 
     if (vizMode == AirflowVizMode.topDown2D) {
       _paint2D(canvas, size);
@@ -64,47 +83,57 @@ class AirflowVoxelPainter extends CustomPainter {
 
   void _paint2D(Canvas canvas, Size size) {
     final field = snapshot.field;
-    final rect = BenchRoom2DGeometry.fieldRectFor(
-      size: size,
-      gridCols: gridCols,
-      gridRows: gridRows,
-    );
+    final rect = overlayRect ??
+        BenchRoom2DGeometry.fieldRectFor(
+          size: size,
+          gridCols: gridCols,
+          gridRows: gridRows,
+        );
 
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
-      Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.85),
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect, const Radius.circular(12)),
-      Paint()
-        ..color = AppColors.cyan.withValues(alpha: 0.3)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2,
-    );
+    if (paintScene) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+        Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.85),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(12)),
+        Paint()
+          ..color = AppColors.cyan.withValues(alpha: 0.3)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+    }
 
-    final cellW = rect.width / field.nx;
-    final cellH = rect.height / field.nz;
+    final voxW = field.roomWidth / field.nx;
+    final voxD = field.roomDepth / field.nz;
+    final sx = rect.width / _mapW;
+    final sz = rect.height / _mapD;
     final ySlice = field.ny ~/ 2;
 
     if (showVoxels) {
       for (int z = 0; z < field.nz; z++) {
         for (int x = 0; x < field.nx; x++) {
+          final wx = x * voxW;
+          final wz = z * voxD;
+          if (wx >= _mapW || wz >= _mapD) continue;
           final i = field.index(x, ySlice, z);
           if (field.solid[i]) continue;
 
-          // Blend floor cold pools + mid-room mix + ceiling hot layer for top-down realism.
           final temp = _compositeFloorTemp(field, x, z);
           final speed = field.speed[i];
           final color = Color.lerp(AppColors.cyan, AppColors.red, ((temp + 1) / 2).clamp(0.0, 1.0))!;
           final alpha = (0.08 + speed * 0.38 + temp.abs() * 0.14).clamp(0.05, 0.58);
-          canvas.drawRect(
-            Rect.fromLTWH(rect.left + x * cellW, rect.top + z * cellH, cellW - 0.4, cellH - 0.4),
-            Paint()..color = color.withValues(alpha: alpha),
+          final cell = Rect.fromLTWH(
+            rect.left + wx * sx,
+            rect.top + wz * sz,
+            voxW * sx - 0.4,
+            voxD * sz - 0.4,
           );
+          canvas.drawRect(cell, Paint()..color = color.withValues(alpha: alpha));
 
           if (showDeadZones && speed < 0.12) {
             canvas.drawRect(
-              Rect.fromLTWH(rect.left + x * cellW, rect.top + z * cellH, cellW - 0.4, cellH - 0.4),
+              cell,
               Paint()..color = AppColors.red.withValues(alpha: snapshot.optimized ? 0.05 : 0.18),
             );
           }
@@ -112,13 +141,15 @@ class AirflowVoxelPainter extends CustomPainter {
       }
     }
 
-    BenchFurnitureRenderer.paint2D(
-      canvas,
-      roomRect: rect,
-      gridCols: gridCols,
-      gridRows: gridRows,
-      furniture: furniture,
-    );
+    if (paintScene) {
+      BenchFurnitureRenderer.paint2D(
+        canvas,
+        roomRect: rect,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        furniture: furniture,
+      );
+    }
 
     // Flow arrows on a coarse subsample.
     final arrowPaint = Paint()
@@ -127,10 +158,13 @@ class AirflowVoxelPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     for (int z = 1; z < field.nz; z += 3) {
       for (int x = 1; x < field.nx; x += 3) {
+        final wx = (x + 0.5) * voxW;
+        final wz = (z + 0.5) * voxD;
+        if (wx >= _mapW || wz >= _mapD) continue;
         final i = field.index(x, ySlice, z);
         if (field.solid[i] || field.speed[i] < 0.08) continue;
-        final cx = rect.left + (x + 0.5) * cellW;
-        final cy = rect.top + (z + 0.5) * cellH;
+        final cx = rect.left + wx * sx;
+        final cy = rect.top + wz * sz;
         final len = (6.0 + field.speed[i] * 10).clamp(5.0, 16.0);
         final dx = field.vx[i];
         final dz = field.vz[i];
@@ -143,12 +177,14 @@ class AirflowVoxelPainter extends CustomPainter {
     }
 
     Offset map2d(AirflowVec3 p) => Offset(
-          rect.left + (p.x / field.roomWidth) * rect.width,
-          rect.top + (p.z / field.roomDepth) * rect.height,
+          rect.left + (p.x / _mapW) * rect.width,
+          rect.top + (p.z / _mapD) * rect.height,
         );
+    bool inMap(AirflowVec3 p) => p.x >= 0 && p.x < _mapW && p.z >= 0 && p.z < _mapD;
 
     // Oscillating stand-fan sweep wedge (±45°).
     for (final box in snapshot.boxes.where((b) => b.kind == 'fan')) {
+      if (!inMap(box.center)) continue;
       final origin = map2d(box.center);
       final aim = AirflowSimulator.fanAimDirection(box, time);
       final reach = math.min(rect.width, rect.height) * 0.28;
@@ -188,6 +224,7 @@ class AirflowVoxelPainter extends CustomPainter {
       ...snapshot.particles.where((p) => !p.isAmbient),
     ];
     for (final p in ordered2d) {
+      if (!inMap(p.position)) continue;
       final color = _parcelColor(p);
       final alpha = p.isAmbient
           ? 0.22
@@ -196,6 +233,7 @@ class AirflowVoxelPainter extends CustomPainter {
       // Trail shows wrap-around / collision path.
       if (p.trail.length >= 2) {
         for (int t = 1; t < p.trail.length; t++) {
+          if (!inMap(p.trail[t - 1]) || !inMap(p.trail[t])) continue;
           final a = map2d(p.trail[t - 1]);
           final b = map2d(p.trail[t]);
           final trailAlpha = alpha * (t / p.trail.length) * (p.isAmbient ? 0.45 : 0.65);
@@ -257,8 +295,8 @@ class AirflowVoxelPainter extends CustomPainter {
   void _paint3D(Canvas canvas, Size size) {
     final field = snapshot.field;
     final cam = _Cam3(
-      roomWidth: field.roomWidth,
-      roomDepth: field.roomDepth,
+      roomWidth: _mapW,
+      roomDepth: _mapD,
       roomHeight: field.roomHeight,
       yaw: yaw,
       pitch: pitch,
@@ -267,21 +305,23 @@ class AirflowVoxelPainter extends CustomPainter {
       lookAtZ: lookAtZ,
     );
 
-    BenchFurnitureRenderer.paint3DScene(
-      canvas,
-      size,
-      roomWidth: field.roomWidth,
-      roomDepth: field.roomDepth,
-      roomHeight: field.roomHeight,
-      gridCols: gridCols,
-      gridRows: gridRows,
-      yaw: yaw,
-      pitch: pitch,
-      distance: distance,
-      lookAtX: lookAtX,
-      lookAtZ: lookAtZ,
-      furniture: furniture,
-    );
+    if (paintScene) {
+      BenchFurnitureRenderer.paint3DScene(
+        canvas,
+        size,
+        roomWidth: field.roomWidth,
+        roomDepth: field.roomDepth,
+        roomHeight: field.roomHeight,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        yaw: yaw,
+        pitch: pitch,
+        distance: distance,
+        lookAtX: lookAtX,
+        lookAtZ: lookAtZ,
+        furniture: furniture,
+      );
+    }
 
     // Mid-height voxel points (subsampled).
     if (showVoxels) {
@@ -290,10 +330,11 @@ class AirflowVoxelPainter extends CustomPainter {
         for (int x = 0; x < field.nx; x += 2) {
           final i = field.index(x, ySlice, z);
           if (field.solid[i]) continue;
+          final c = field.voxelCenter(x, ySlice, z);
+          if (c.x >= _mapW || c.z >= _mapD) continue;
           final s = field.speed[i];
           final t = _compositeFloorTemp(field, x, z);
           if (s < 0.05 && t.abs() < 0.15) continue;
-          final c = field.voxelCenter(x, ySlice, z);
           final p = _project(_V(c.x, c.y, c.z), size, cam);
           if (p == null) continue;
           final color = Color.lerp(AppColors.cyan, AppColors.red, ((t + 1) / 2).clamp(0.0, 1.0))!;
@@ -306,7 +347,6 @@ class AirflowVoxelPainter extends CustomPainter {
     // Mark the voxels the metrics actually counted as stagnant or heat-trapped,
     // so the overlay can never disagree with the reported dead-zone ratio.
     if (showDeadZones) {
-      final field = snapshot.field;
       final yMid = field.ny ~/ 2;
       final deadPaint = Paint()..color = AppColors.red.withValues(alpha: 0.16);
       final heatPaint = Paint()..color = AppColors.orange.withValues(alpha: 0.14);
@@ -314,6 +354,9 @@ class AirflowVoxelPainter extends CustomPainter {
         for (int x = 0; x < field.nx; x += 2) {
           final i = field.index(x, yMid, z);
           if (field.solid[i]) continue;
+          final wx = (x + 0.5) * field.roomWidth / field.nx;
+          final wz = (z + 0.5) * field.roomDepth / field.nz;
+          if (wx >= _mapW || wz >= _mapD) continue;
           final s = field.speed[i];
           final t = field.temperature[i];
           final isHeat = t > 0.45 && s < 0.28;
@@ -321,9 +364,9 @@ class AirflowVoxelPainter extends CustomPainter {
           if (!isDead && !isHeat) continue;
           final p = _project(
             _V(
-              (x + 0.5) * AirflowSimulator.roomWidth / field.nx,
-              (yMid + 0.5) * AirflowSimulator.roomHeight / field.ny,
-              (z + 0.5) * AirflowSimulator.roomDepth / field.nz,
+              wx,
+              (yMid + 0.5) * field.roomHeight / field.ny,
+              wz,
             ),
             size,
             cam,
@@ -341,6 +384,7 @@ class AirflowVoxelPainter extends CustomPainter {
       ...snapshot.particles.where((p) => !p.isAmbient),
     ];
     for (final particle in ordered) {
+      if (particle.position.x >= _mapW || particle.position.z >= _mapD) continue;
       final color = _parcelColor(particle);
       final alpha = particle.isAmbient
           ? 0.2
@@ -414,7 +458,11 @@ class AirflowVoxelPainter extends CustomPainter {
       old.showDeadZones != showDeadZones ||
       old.showParticles != showParticles ||
       old.gridCols != gridCols ||
-      old.gridRows != gridRows;
+      old.gridRows != gridRows ||
+      old.paintScene != paintScene ||
+      old.overlayRect != overlayRect ||
+      old.overlayRoomWidth != overlayRoomWidth ||
+      old.overlayRoomDepth != overlayRoomDepth;
 }
 
 class _V {

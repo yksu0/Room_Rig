@@ -1,4 +1,5 @@
 // lib/screens/rig_customizer_screen.dart
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -33,9 +34,13 @@ import '../widgets/rig_customizer/rig_room_items_drawer.dart';
 import '../widgets/rig_customizer/room_grid_painter.dart';
 import '../widgets/rig_customizer/room_orbit_3d_painter.dart';
 import '../widgets/room_model_scene.dart';
+import '../widgets/airflow_voxel_painter.dart';
 import '../widgets/chrome/adaptive_panel.dart';
 import '../widgets/dash_path.dart';
+import '../widgets/ergonomics_field_painter.dart';
+import '../widgets/lighting_field_painter.dart';
 import '../widgets/rig_live_field_overlay.dart';
+import '../services/airflow_simulator.dart';
 
 enum _RigViewMode { twoD, threeD, model3D }
 enum _OptimizeGoal { balanced, airflow, lighting, ergonomics, spatial }
@@ -62,8 +67,10 @@ class RigCustomizerScreen extends StatefulWidget {
   State<RigCustomizerScreen> createState() => _RigCustomizerScreenState();
 }
 
-class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
+class _RigCustomizerScreenState extends State<RigCustomizerScreen>
+    with SingleTickerProviderStateMixin {
   static const double _minTouchTarget = 46;
+  static const _liveDebounce = Duration(milliseconds: 300);
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   _RigViewMode _viewMode = _RigViewMode.model3D;
@@ -106,6 +113,48 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
   RigLiveDomain _liveDomain = RigLiveDomain.none;
   final _liveCache = RigLiveFieldCache();
+  Timer? _liveDebounceTimer;
+  late final AnimationController _liveParticleTicker;
+
+  @override
+  void initState() {
+    super.initState();
+    _liveParticleTicker = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 16),
+    )..addListener(_stepLiveParticles);
+  }
+
+  @override
+  void dispose() {
+    _liveDebounceTimer?.cancel();
+    _liveParticleTicker.dispose();
+    super.dispose();
+  }
+
+  void _stepLiveParticles() {
+    final snap = _liveCache.airflow;
+    if (!mounted ||
+        _liveDomain != RigLiveDomain.airflow ||
+        snap == null ||
+        !_liveParticleTicker.isAnimating) {
+      return;
+    }
+    AirflowSimulator.stepParticles(
+      snap,
+      dt: 0.045,
+      time: _liveParticleTicker.lastElapsedDuration?.inMilliseconds.toDouble() ?? 0,
+    );
+  }
+
+  void _syncLiveParticleTicker() {
+    final want = _liveDomain == RigLiveDomain.airflow && _liveCache.airflow != null;
+    if (want && !_liveParticleTicker.isAnimating) {
+      _liveParticleTicker.repeat();
+    } else if (!want && _liveParticleTicker.isAnimating) {
+      _liveParticleTicker.stop();
+    }
+  }
 
   /// Adaptive supporting panes (compact sheet; expanded rails later).
   CameraPreset? _pendingPreset;
@@ -460,7 +509,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 RigLiveDomainBar(
                   domain: _liveDomain,
                   score: _liveCache.score,
-                  detail: _liveCache.detail,
+                  detail: _liveCache.isStale
+                      ? '${_liveCache.detail} · updating…'
+                      : _liveCache.detail,
                   onChanged: (d) => _setLiveDomain(state, d),
                 ),
               ],
@@ -470,7 +521,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             RigLiveDomainBar(
               domain: _liveDomain,
               score: _liveCache.score,
-              detail: _liveCache.detail,
+              detail: _liveCache.isStale
+                  ? '${_liveCache.detail} · updating…'
+                  : _liveCache.detail,
               onChanged: (d) => _setLiveDomain(state, d),
             ),
           ],
@@ -480,15 +533,17 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   }
 
   void _setLiveDomain(AppState state, RigLiveDomain d) {
+    _liveDebounceTimer?.cancel();
     setState(() {
       _liveDomain = d;
-      _refreshLiveField(state);
+      _refreshLiveFieldNow(state);
+      _syncLiveParticleTicker();
     });
   }
 
   List<RigLiveFieldCell> _liveFieldCells(AppState state) {
     if (_liveDomain == RigLiveDomain.none) return const [];
-    _refreshLiveField(state);
+    _scheduleLiveFieldRefresh(state);
     return sampleRigLiveFieldCells(
       domain: _liveDomain,
       gridCols: state.currentRoomData.gridCols,
@@ -496,6 +551,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
       airflow: _liveCache.airflow,
       lighting: _liveCache.lighting,
       ergonomics: _liveCache.ergonomics,
+      maxAxis: 36,
     );
   }
 
@@ -535,12 +591,191 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     return parts.join('|');
   }
 
-  void _refreshLiveField(AppState state) {
+  void _refreshLiveFieldNow(AppState state) {
     _liveCache.refresh(
       domain: _liveDomain,
       furniture: state.committedFurniture,
       fingerprint: _liveFurnitureFingerprint(state),
     );
+    _syncLiveParticleTicker();
+  }
+
+  /// Debounce sim rebuild while arranging; keep last snapshot visible.
+  void _scheduleLiveFieldRefresh(AppState state) {
+    if (_liveDomain == RigLiveDomain.none) return;
+    final fp = _liveFurnitureFingerprint(state);
+    if (_liveCache.domain == _liveDomain && _liveCache.fingerprint == fp) {
+      _liveCache.isStale = false;
+      return;
+    }
+    _liveCache.isStale = true;
+    _liveDebounceTimer?.cancel();
+    _liveDebounceTimer = Timer(_liveDebounce, () {
+      if (!mounted) return;
+      final latest = context.read<AppState>();
+      setState(() => _refreshLiveFieldNow(latest));
+    });
+  }
+
+  double get _liveParticleTimeMs =>
+      _liveParticleTicker.lastElapsedDuration?.inMilliseconds.toDouble() ?? 0;
+
+  Widget? _liveBenchOverlay2D({
+    required Size canvasSize,
+    required Rect roomRect,
+    required int gridCols,
+    required int gridRows,
+    required List<FurnitureItem> furniture,
+  }) {
+    if (_liveDomain == RigLiveDomain.none) return null;
+    final mapW = gridCols.toDouble();
+    final mapD = gridRows.toDouble();
+    switch (_liveDomain) {
+      case RigLiveDomain.airflow:
+        final snap = _liveCache.airflow;
+        if (snap == null) return null;
+        return AnimatedBuilder(
+          animation: _liveParticleTicker,
+          builder: (context, _) => CustomPaint(
+            size: canvasSize,
+            painter: AirflowVoxelPainter(
+              snapshot: snap,
+              furniture: furniture,
+              vizMode: AirflowVizMode.topDown2D,
+              yaw: 0,
+              pitch: 0.5,
+              distance: 12,
+              time: _liveParticleTimeMs,
+              gridCols: snap.field.roomWidth.round(),
+              gridRows: snap.field.roomDepth.round(),
+              paintScene: false,
+              overlayRect: roomRect,
+              overlayRoomWidth: mapW,
+              overlayRoomDepth: mapD,
+            ),
+          ),
+        );
+      case RigLiveDomain.lighting:
+        final snap = _liveCache.lighting;
+        if (snap == null) return null;
+        return CustomPaint(
+          size: canvasSize,
+          painter: LightingFieldPainter(
+            snapshot: snap,
+            furniture: furniture,
+            vizMode: LightingVizMode.topDown2D,
+            yaw: 0,
+            pitch: 0.5,
+            distance: 12,
+            paintScene: false,
+            overlayRect: roomRect,
+            overlayRoomWidth: mapW,
+            overlayRoomDepth: mapD,
+          ),
+        );
+      case RigLiveDomain.ergonomics:
+        final snap = _liveCache.ergonomics;
+        if (snap == null) return null;
+        return CustomPaint(
+          size: canvasSize,
+          painter: ErgonomicsFieldPainter(
+            snapshot: snap,
+            vizMode: ErgonomicsVizMode.topDown2D,
+            yaw: 0,
+            pitch: 0.5,
+            distance: 12,
+            paintScene: false,
+            overlayRect: roomRect,
+            overlayRoomWidth: mapW,
+            overlayRoomDepth: mapD,
+          ),
+        );
+      case RigLiveDomain.none:
+        return null;
+    }
+  }
+
+  Widget? _liveBenchOverlayOrbit({
+    required Size canvasSize,
+    required int gridCols,
+    required int gridRows,
+    required List<FurnitureItem> furniture,
+  }) {
+    if (_liveDomain == RigLiveDomain.none) return null;
+    final mapW = gridCols.toDouble();
+    final mapD = gridRows.toDouble();
+    switch (_liveDomain) {
+      case RigLiveDomain.airflow:
+        final snap = _liveCache.airflow;
+        if (snap == null) return null;
+        return IgnorePointer(
+          child: AnimatedBuilder(
+            animation: _liveParticleTicker,
+            builder: (context, _) => CustomPaint(
+              size: canvasSize,
+              painter: AirflowVoxelPainter(
+                snapshot: snap,
+                furniture: furniture,
+                vizMode: AirflowVizMode.orbit3D,
+                yaw: _cameraYawRad,
+                pitch: _cameraPitchRad,
+                distance: _cameraDistance,
+                lookAtX: _lookAtX,
+                lookAtZ: _lookAtZ,
+                time: _liveParticleTimeMs,
+                gridCols: snap.field.roomWidth.round(),
+                gridRows: snap.field.roomDepth.round(),
+                paintScene: false,
+                overlayRoomWidth: mapW,
+                overlayRoomDepth: mapD,
+              ),
+            ),
+          ),
+        );
+      case RigLiveDomain.lighting:
+        final snap = _liveCache.lighting;
+        if (snap == null) return null;
+        return IgnorePointer(
+          child: CustomPaint(
+            size: canvasSize,
+            painter: LightingFieldPainter(
+              snapshot: snap,
+              furniture: furniture,
+              vizMode: LightingVizMode.orbit3D,
+              yaw: _cameraYawRad,
+              pitch: _cameraPitchRad,
+              distance: _cameraDistance,
+              lookAtX: _lookAtX,
+              lookAtZ: _lookAtZ,
+              paintScene: false,
+              overlayRoomWidth: mapW,
+              overlayRoomDepth: mapD,
+            ),
+          ),
+        );
+      case RigLiveDomain.ergonomics:
+        final snap = _liveCache.ergonomics;
+        if (snap == null) return null;
+        return IgnorePointer(
+          child: CustomPaint(
+            size: canvasSize,
+            painter: ErgonomicsFieldPainter(
+              snapshot: snap,
+              vizMode: ErgonomicsVizMode.orbit3D,
+              yaw: _cameraYawRad,
+              pitch: _cameraPitchRad,
+              distance: _cameraDistance,
+              lookAtX: _lookAtX,
+              lookAtZ: _lookAtZ,
+              paintScene: false,
+              overlayRoomWidth: mapW,
+              overlayRoomDepth: mapD,
+            ),
+          ),
+        );
+      case RigLiveDomain.none:
+        return null;
+    }
   }
 
   void _maybeCloseSupportingSheet() {
@@ -1418,7 +1653,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     _drag2dGestureStarted = false;
     _dragPointerLocal = null;
     if (_liveDomain != RigLiveDomain.none) {
-      setState(() => _refreshLiveField(state));
+      _liveDebounceTimer?.cancel();
+      setState(() => _refreshLiveFieldNow(state));
     }
   }
 
@@ -1728,19 +1964,21 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                             ],
                           ),
                         ),
-                        if (_liveDomain != RigLiveDomain.none)
-                          CustomPaint(
-                            size: canvasSize,
-                            painter: RigLiveFieldPainter(
-                              roomRect: roomRect,
-                              gridCols: gridCols,
-                              gridRows: gridRows,
-                              domain: _liveDomain,
-                              airflow: _liveCache.airflow,
-                              lighting: _liveCache.lighting,
-                              ergonomics: _liveCache.ergonomics,
-                            ),
+                        if (_liveDomain != RigLiveDomain.none) ...[
+                          Builder(
+                            builder: (_) {
+                              _scheduleLiveFieldRefresh(state);
+                              return _liveBenchOverlay2D(
+                                    canvasSize: canvasSize,
+                                    roomRect: roomRect,
+                                    gridCols: gridCols,
+                                    gridRows: gridRows,
+                                    furniture: state.committedFurniture,
+                                  ) ??
+                                  const SizedBox.shrink();
+                            },
                           ),
+                        ],
                         ...visible.map((item) {
                           final isSelected = state.selectedItemId == item.id && !state.selectedIsScanObject;
                           final mount = mounts[item.id]!;
@@ -2073,6 +2311,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                       child: Builder(
                         builder: (context) {
                           Widget buildScene() {
+                            _scheduleLiveFieldRefresh(state);
+                            // Bench field overlay paints voxels/particles; skip cell wash.
                             return CustomPaint(
                               size: Size(w, h),
                               painter: RoomOrbit3DPainter(
@@ -2087,7 +2327,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                                 lookAtX: _lookAtX,
                                 lookAtZ: _lookAtZ,
                                 items: renderItems,
-                                liveFieldCells: _liveFieldCells(state),
+                                liveFieldCells: const [],
                               ),
                             );
                           }
@@ -2095,6 +2335,16 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                           return Stack(
                             children: [
                               buildScene(),
+                              if (_liveDomain != RigLiveDomain.none)
+                                Positioned.fill(
+                                  child: _liveBenchOverlayOrbit(
+                                        canvasSize: Size(w, h),
+                                        gridCols: gridCols,
+                                        gridRows: gridRows,
+                                        furniture: state.committedFurniture,
+                                      ) ??
+                                      const SizedBox.shrink(),
+                                ),
                               if (_dragItemId != null && _dragPointerLocal != null)
                                 Builder(
                                   builder: (context) {
@@ -2364,7 +2614,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     _pointerDownPos = null;
     _dragPointerLocal = null;
     if (_liveDomain != RigLiveDomain.none) {
-      setState(() => _refreshLiveField(state));
+      _liveDebounceTimer?.cancel();
+      setState(() => _refreshLiveFieldNow(state));
     }
   }
 
