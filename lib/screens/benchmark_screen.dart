@@ -344,8 +344,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   }
 
   Widget _buildMobileHeader(AppState state) {
-    // Domain View/Tools/Inspect live on BenchPanelScaffold only — do not
-    // duplicate Tools/Inspect triggers here.
+    // Domain View/Inspect + compact score live on BenchPanelScaffold chrome.
+    // Keep header thin: title, room chip, mode picker only.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -364,11 +364,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           child: ActiveRoomChip(),
         ),
         const SizedBox(height: 8),
-        RoomStatusStrip(compact: true),
-        const SizedBox(height: 8),
         _buildModeSelector(state, compact: true),
-        const SizedBox(height: 8),
-        _buildModeScoreHero(state, expand: true),
       ],
     );
   }

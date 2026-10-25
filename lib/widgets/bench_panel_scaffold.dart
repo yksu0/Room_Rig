@@ -2,6 +2,8 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/app_state.dart';
 import '../models/room_model.dart';
 import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
@@ -270,6 +272,78 @@ class BenchScoreHero extends StatelessWidget {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tiny score badge for the mobile View/Inspect chrome row (~44px tall).
+class BenchChromeScore extends StatelessWidget {
+  const BenchChromeScore({super.key, required this.accentColor});
+
+  final Color accentColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final (label, score, prev) = switch (state.benchmarkMode) {
+      'lighting' => (
+          'Light',
+          state.lightingScore,
+          state.baselineLightingScore,
+        ),
+      'ergonomics' => (
+          'Ergo',
+          state.ergonomicsScore,
+          state.baselineErgonomicsScore,
+        ),
+      'spatial' => ('Space', state.spatialScore, null),
+      _ => ('Air', state.airflowScore, state.baselineAirflowScore),
+    };
+    final showDelta = prev != null && (score - prev).abs() >= 0.5;
+    final delta = showDelta ? score - prev : null;
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 44),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: accentColor.withValues(alpha: 0.55)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: accentColor,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            score.round().toString(),
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              height: 1,
+            ),
+          ),
+          if (delta != null) ...[
+            const SizedBox(width: 4),
+            Text(
+              delta >= 0 ? '+${delta.round()}' : '${delta.round()}',
+              style: TextStyle(
+                color: delta >= 0 ? AppColors.green : AppColors.amber,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1187,6 +1261,10 @@ class BenchPanelScaffold extends StatelessWidget {
   final Widget? desktopViewport;
   final Widget? desktopInspect;
 
+  /// When true (default), mobile chrome shows a compact domain score opposite
+  /// the View / Inspect chips instead of a full-width hero.
+  final bool showChromeScore;
+
   const BenchPanelScaffold({
     super.key,
     required this.accentColor,
@@ -1210,6 +1288,7 @@ class BenchPanelScaffold extends StatelessWidget {
     this.desktopControls,
     this.desktopViewport,
     this.desktopInspect,
+    this.showChromeScore = true,
   });
 
   bool get _hasShellSlots =>
@@ -1260,12 +1339,20 @@ class BenchPanelScaffold extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AdaptivePanelTriggers(
-          controller: controller,
-          accent: accentColor,
-          visible: const [
-            ChromeRegion.view,
-            ChromeRegion.inspect,
+        Row(
+          children: [
+            AdaptivePanelTriggers(
+              controller: controller,
+              accent: accentColor,
+              visible: const [
+                ChromeRegion.view,
+                ChromeRegion.inspect,
+              ],
+            ),
+            if (showChromeScore) ...[
+              const Spacer(),
+              BenchChromeScore(accentColor: accentColor),
+            ],
           ],
         ),
         const SizedBox(height: 10),
