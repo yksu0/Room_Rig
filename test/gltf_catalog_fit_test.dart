@@ -37,12 +37,13 @@ void main() {
     expect(GltfCatalog.profileFor('wardrobe').localYawBiasDegrees, 180);
     expect(GltfCatalog.profileFor('shelf').localYawBiasDegrees, 180);
     expect(GltfCatalog.profileFor('bookshelf').localYawBiasDegrees, 180);
-    // Bed pillows already on -Z; screens / heater / fan already +Z.
+    // Bed pillows already on -Z; screens / heater already +Z.
     expect(GltfCatalog.profileFor('bed').localYawBiasDegrees, 0);
     expect(GltfCatalog.profileFor('monitor').localYawBiasDegrees, 0);
     expect(GltfCatalog.profileFor('tv').localYawBiasDegrees, 0);
     expect(GltfCatalog.profileFor('heater').localYawBiasDegrees, 0);
-    expect(GltfCatalog.profileFor('fan').localYawBiasDegrees, 0);
+    // Sketchfab fan.glb cage is authored ~45° off +Z.
+    expect(GltfCatalog.profileFor('fan').localYawBiasDegrees, 45);
   });
 
   test('portable AC is a floor profile, not wall-AC niche', () {

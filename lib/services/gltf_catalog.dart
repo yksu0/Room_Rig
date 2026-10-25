@@ -331,8 +331,8 @@ class GltfCatalog {
       fitMode: MeshFitMode.height,
       targetWidthMeters: 0.42,
       targetDepthMeters: 0.42,
-      // Outlet / cage toward +Z matches Orbit throw and airflow yawAim.
-      localYawBiasDegrees: 0,
+      // Sketchfab authoring aims the cage ~45° off +Z; bias so yaw 0 = Orbit/airflow +Z.
+      localYawBiasDegrees: 45,
     ),
     'purifier': const MeshProfile(
       iconName: 'purifier',
