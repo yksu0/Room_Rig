@@ -10,6 +10,7 @@ import '../models/app_state.dart';
 import '../models/rig_catalog.dart';
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
+import '../models/sim_room_bounds.dart';
 import '../models/surface_mount.dart';
 import '../services/autorug_ranker.dart';
 import '../services/bench_layouts.dart';
@@ -591,11 +592,15 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     return parts.join('|');
   }
 
+  SimRoomBounds _boundsFor(AppState state) =>
+      SimRoomBounds.fromRoomData(state.currentRoomData);
+
   void _refreshLiveFieldNow(AppState state) {
     _liveCache.refresh(
       domain: _liveDomain,
       furniture: state.committedFurniture,
       fingerprint: _liveFurnitureFingerprint(state),
+      bounds: _boundsFor(state),
     );
     _syncLiveParticleTicker();
   }
@@ -603,7 +608,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
   /// Debounce sim rebuild while arranging; keep last snapshot visible.
   void _scheduleLiveFieldRefresh(AppState state) {
     if (_liveDomain == RigLiveDomain.none) return;
-    final fp = _liveFurnitureFingerprint(state);
+    final bounds = _boundsFor(state);
+    final fp =
+        '${_liveFurnitureFingerprint(state)}|${bounds.width}x${bounds.depth}x${bounds.height}';
     if (_liveCache.domain == _liveDomain && _liveCache.fingerprint == fp) {
       _liveCache.isStale = false;
       return;
@@ -628,8 +635,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     required List<FurnitureItem> furniture,
   }) {
     if (_liveDomain == RigLiveDomain.none) return null;
-    final mapW = gridCols.toDouble();
-    final mapD = gridRows.toDouble();
+    // Field is solved at room size — map 1:1 (no stretch).
     switch (_liveDomain) {
       case RigLiveDomain.airflow:
         final snap = _liveCache.airflow;
@@ -646,12 +652,12 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
               pitch: 0.5,
               distance: 12,
               time: _liveParticleTimeMs,
-              gridCols: snap.field.roomWidth.round(),
-              gridRows: snap.field.roomDepth.round(),
+              gridCols: gridCols,
+              gridRows: gridRows,
               paintScene: false,
               overlayRect: roomRect,
-              overlayRoomWidth: mapW,
-              overlayRoomDepth: mapD,
+              overlayRoomWidth: snap.field.roomWidth,
+              overlayRoomDepth: snap.field.roomDepth,
             ),
           ),
         );
@@ -669,8 +675,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
             distance: 12,
             paintScene: false,
             overlayRect: roomRect,
-            overlayRoomWidth: mapW,
-            overlayRoomDepth: mapD,
+            overlayRoomWidth: snap.roomWidth,
+            overlayRoomDepth: snap.roomDepth,
           ),
         );
       case RigLiveDomain.ergonomics:
@@ -686,8 +692,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
             distance: 12,
             paintScene: false,
             overlayRect: roomRect,
-            overlayRoomWidth: mapW,
-            overlayRoomDepth: mapD,
+            overlayRoomWidth: snap.roomWidth,
+            overlayRoomDepth: snap.roomDepth,
           ),
         );
       case RigLiveDomain.none:
@@ -702,8 +708,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     required List<FurnitureItem> furniture,
   }) {
     if (_liveDomain == RigLiveDomain.none) return null;
-    final mapW = gridCols.toDouble();
-    final mapD = gridRows.toDouble();
     switch (_liveDomain) {
       case RigLiveDomain.airflow:
         final snap = _liveCache.airflow;
@@ -723,11 +727,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                 lookAtX: _lookAtX,
                 lookAtZ: _lookAtZ,
                 time: _liveParticleTimeMs,
-                gridCols: snap.field.roomWidth.round(),
-                gridRows: snap.field.roomDepth.round(),
+                gridCols: gridCols,
+                gridRows: gridRows,
                 paintScene: false,
-                overlayRoomWidth: mapW,
-                overlayRoomDepth: mapD,
+                overlayRoomWidth: snap.field.roomWidth,
+                overlayRoomDepth: snap.field.roomDepth,
               ),
             ),
           ),
@@ -748,8 +752,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
               lookAtX: _lookAtX,
               lookAtZ: _lookAtZ,
               paintScene: false,
-              overlayRoomWidth: mapW,
-              overlayRoomDepth: mapD,
+              overlayRoomWidth: snap.roomWidth,
+              overlayRoomDepth: snap.roomDepth,
             ),
           ),
         );
@@ -768,8 +772,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
               lookAtX: _lookAtX,
               lookAtZ: _lookAtZ,
               paintScene: false,
-              overlayRoomWidth: mapW,
-              overlayRoomDepth: mapD,
+              overlayRoomWidth: snap.roomWidth,
+              overlayRoomDepth: snap.roomDepth,
             ),
           ),
         );

@@ -1,6 +1,7 @@
 // lib/services/ergonomics_optimizer.dart
 // Auto-Rig ergonomics: pull-back, reach, clear paths, door view, bed privacy.
 import '../models/room_model.dart';
+import '../models/sim_room_bounds.dart';
 import '../models/surface_mount.dart';
 import 'ergonomics_simulator.dart';
 import 'layout_collision.dart';
@@ -23,17 +24,30 @@ class ErgonomicsOptimizeResult {
 class ErgonomicsOptimizer {
   ErgonomicsOptimizer._();
 
-  static ErgonomicsMetrics evaluate(List<FurnitureItem> furniture) {
-    return ErgonomicsSimulator.build(furniture: furniture, optimized: false).metrics;
+  static ErgonomicsMetrics evaluate(
+    List<FurnitureItem> furniture, {
+    SimRoomBounds bounds = SimRoomBounds.fallback,
+  }) {
+    return ErgonomicsSimulator.build(
+      furniture: furniture,
+      optimized: false,
+      bounds: bounds,
+    ).metrics;
   }
 
   static ErgonomicsOptimizeResult optimize({
     required List<FurnitureItem> furniture,
     required int gridCols,
     required int gridRows,
+    double? heightMeters,
   }) {
-    final cols = gridCols.toDouble();
-    final rows = gridRows.toDouble();
+    final bounds = SimRoomBounds.fromGrid(
+      gridCols: gridCols,
+      gridRows: gridRows,
+      heightMeters: heightMeters,
+    );
+    final cols = bounds.width;
+    final rows = bounds.depth;
     final reasons = <String>[];
     final targets = <String, ({double x, double y})>{};
 
@@ -105,8 +119,8 @@ class ErgonomicsOptimizer {
       gridRows: gridRows,
     );
     LayoutOptimizerCommon.noteOrientation(reasons, before, next);
-    final beforeMetrics = evaluate(before);
-    final metrics = evaluate(next);
+    final beforeMetrics = evaluate(before, bounds: bounds);
+    final metrics = evaluate(next, bounds: bounds);
     if (metrics.comfortScore + 0.5 < beforeMetrics.comfortScore) {
       return ErgonomicsOptimizeResult(
         furniture: before,

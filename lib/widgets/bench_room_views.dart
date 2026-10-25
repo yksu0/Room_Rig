@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../models/door_swing.dart';
 import '../models/room_model.dart';
+import '../models/room_scale.dart';
 import '../models/surface_mount.dart';
 import '../services/furniture_sprites.dart';
 import 'room_orbit_projection.dart';
@@ -1050,6 +1051,7 @@ class BenchOrbitShell extends StatefulWidget {
   final double initialLookAtZ;
   final double roomWidth;
   final double roomDepth;
+  final double roomHeight;
   final double minDistance;
   final double maxDistance;
   final int resetNonce;
@@ -1074,6 +1076,7 @@ class BenchOrbitShell extends StatefulWidget {
     this.initialLookAtZ = 4,
     this.roomWidth = 6,
     this.roomDepth = 8,
+    this.roomHeight = RoomScale.defaultHeightMeters,
     this.onChanged,
     this.onDoubleTap,
     this.onDragChanged,
@@ -1140,7 +1143,7 @@ class _BenchOrbitShellState extends State<BenchOrbitShell> {
   CameraPose _pose(double distance) => CameraPose(
         roomWidth: widget.roomWidth,
         roomDepth: widget.roomDepth,
-        roomHeight: 2.8,
+        roomHeight: widget.roomHeight,
         yaw: _yaw,
         pitch: _pitch,
         distance: distance,

@@ -2,6 +2,8 @@
 // Coarse illuminance grid for lighting Bench / Auto-Rig scoring.
 import 'dart:math';
 import '../models/room_model.dart';
+import '../models/room_scale.dart';
+import '../models/sim_room_bounds.dart';
 import 'comfort_heuristics.dart';
 import 'gltf_catalog.dart';
 
@@ -83,6 +85,7 @@ class LightingSimSnapshot {
   final int nz;
   final double roomWidth;
   final double roomDepth;
+  final double roomHeight;
   final List<double> lux; // row-major nx * nz
   final List<LightingSample> samples;
   final List<LightingLight> lights;
@@ -95,6 +98,7 @@ class LightingSimSnapshot {
     required this.nz,
     required this.roomWidth,
     required this.roomDepth,
+    this.roomHeight = RoomScale.defaultHeightMeters,
     required this.lux,
     required this.samples,
     required this.lights,
@@ -107,11 +111,13 @@ class LightingSimSnapshot {
 }
 
 class LightingSimulator {
-  static const roomWidth = 6.0;
-  static const roomDepth = 8.0;
-  static const roomHeight = 2.8;
-  static const nx = 24;
-  static const nz = 32;
+  static SimRoomBounds _bounds = SimRoomBounds.fallback;
+
+  static double get roomWidth => _bounds.width;
+  static double get roomDepth => _bounds.depth;
+  static double get roomHeight => _bounds.height;
+  static int get nx => _bounds.lightingNx;
+  static int get nz => _bounds.lightingNz;
 
   /// Where the overhead fixture hangs, as a fraction of the room. The Rig views
   /// draw the fixture from these so the plan agrees with what is being lit.
@@ -123,51 +129,59 @@ class LightingSimulator {
   static LightingSimSnapshot build({
     required List<FurnitureItem> furniture,
     required bool optimized,
+    SimRoomBounds bounds = SimRoomBounds.fallback,
   }) {
-    final lights = _buildLights(furniture);
-    final occluders = _buildOccluders(furniture);
-    final lux = List<double>.filled(nx * nz, 0);
-    final samples = <LightingSample>[];
+    final prev = _bounds;
+    _bounds = bounds;
+    try {
+      final lights = _buildLights(furniture);
+      final occluders = _buildOccluders(furniture);
+      final lux = List<double>.filled(nx * nz, 0);
+      final samples = <LightingSample>[];
 
-    for (int z = 0; z < nz; z++) {
-      for (int x = 0; x < nx; x++) {
-        final wx = (x + 0.5) * roomWidth / nx;
-        final wz = (z + 0.5) * roomDepth / nz;
-        if (_solidFloorBlocker(occluders, wx, wz)) {
-          lux[x + nx * z] = 0;
-          continue;
-        }
+      for (int z = 0; z < nz; z++) {
+        for (int x = 0; x < nx; x++) {
+          final wx = (x + 0.5) * roomWidth / nx;
+          final wz = (z + 0.5) * roomDepth / nz;
+          if (_solidFloorBlocker(occluders, wx, wz)) {
+            lux[x + nx * z] = 0;
+            continue;
+          }
 
-        var value = 0.0;
-        for (final light in lights) {
-          value += _contribution(light, wx, wz, occluders);
+          var value = 0.0;
+          for (final light in lights) {
+            value += _contribution(light, wx, wz, occluders);
+          }
+          value = value.clamp(0.0, 1.35);
+          lux[x + nx * z] = value;
+          samples.add(
+            LightingSample(
+              x: wx,
+              z: wz,
+              lux: value.clamp(0.0, 1.0),
+              shadowed: value < 0.18,
+            ),
+          );
         }
-        value = value.clamp(0.0, 1.35);
-        lux[x + nx * z] = value;
-        samples.add(
-          LightingSample(
-            x: wx,
-            z: wz,
-            lux: value.clamp(0.0, 1.0),
-            shadowed: value < 0.18,
-          ),
-        );
       }
-    }
 
-    final metrics = _computeMetrics(furniture, lux, lights, occluders);
-    return LightingSimSnapshot(
-      nx: nx,
-      nz: nz,
-      roomWidth: roomWidth,
-      roomDepth: roomDepth,
-      lux: lux,
-      samples: samples,
-      lights: lights,
-      occluders: occluders,
-      metrics: metrics,
-      optimized: optimized,
-    );
+      final metrics = _computeMetrics(furniture, lux, lights, occluders);
+      return LightingSimSnapshot(
+        nx: nx,
+        nz: nz,
+        roomWidth: roomWidth,
+        roomDepth: roomDepth,
+        roomHeight: roomHeight,
+        lux: lux,
+        samples: samples,
+        lights: lights,
+        occluders: occluders,
+        metrics: metrics,
+        optimized: optimized,
+      );
+    } finally {
+      _bounds = prev;
+    }
   }
 
   static List<LightingLight> _buildLights(List<FurnitureItem> furniture) {

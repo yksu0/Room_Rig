@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
+import '../models/room_scale.dart';
+import '../models/sim_room_bounds.dart';
 import '../services/bench_layouts.dart';
 import '../services/layout_share_image.dart';
 import '../services/lighting_simulator.dart';
@@ -89,9 +91,10 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       alternateIndex: state.benchAlternateCursor,
     );
     _layouts = layouts;
-    _myRoomSim = LightingSimulator.build(furniture: layouts.myRoom, optimized: false);
-    _improvedSim = LightingSimulator.build(furniture: layouts.improved, optimized: true);
-    _sampleSim = LightingSimulator.build(furniture: layouts.sample, optimized: false);
+    final bounds = SimRoomBounds.fromRoomData(room);
+    _myRoomSim = LightingSimulator.build(furniture: layouts.myRoom, optimized: false, bounds: bounds);
+    _improvedSim = LightingSimulator.build(furniture: layouts.improved, optimized: true, bounds: bounds);
+    _sampleSim = LightingSimulator.build(furniture: layouts.sample, optimized: false, bounds: bounds);
     _ready = true;
     if (resetStep) {
       _step = _LightStep.layout;
@@ -643,11 +646,12 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
               lookAtZ: room.gridRows * 0.5,
               roomWidth: room.gridCols.toDouble(),
               roomDepth: room.gridRows.toDouble(),
+              roomHeight: room.heightMeters,
               builder: (cam) => CustomPaint(
                 painter: BenchRoom3DPainter(
                   roomWidth: room.gridCols.toDouble(),
                   roomDepth: room.gridRows.toDouble(),
-                  roomHeight: 2.8,
+                  roomHeight: room.heightMeters,
                   gridCols: room.gridCols,
                   gridRows: room.gridRows,
                   yaw: cam.yaw,
@@ -691,6 +695,11 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
               HapticFeedback.lightImpact();
               setState(() => _simOrbitResetNonce++);
             },
+            lookAtX: sim.roomWidth * 0.5,
+            lookAtZ: sim.roomDepth * 0.5,
+            roomWidth: sim.roomWidth,
+            roomDepth: sim.roomDepth,
+            roomHeight: sim.roomHeight,
             builder: (cam) => AnimatedBuilder(
               animation: _pulse,
               builder: (context, child) => CustomPaint(
@@ -868,11 +877,12 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                                   lookAtZ: room.gridRows * 0.5,
                                   roomWidth: room.gridCols.toDouble(),
                                   roomDepth: room.gridRows.toDouble(),
+                                  roomHeight: room.heightMeters,
                                   builder: (cam) => CustomPaint(
                                     painter: BenchRoom3DPainter(
                                       roomWidth: room.gridCols.toDouble(),
                                       roomDepth: room.gridRows.toDouble(),
-                                      roomHeight: 2.8,
+                                      roomHeight: room.heightMeters,
                                       gridCols: room.gridCols,
                                       gridRows: room.gridRows,
                                       yaw: cam.yaw,
@@ -1048,6 +1058,11 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                     HapticFeedback.lightImpact();
                     setState(() => _simOrbitResetNonce++);
                   },
+                  lookAtX: sim.roomWidth * 0.5,
+                  lookAtZ: sim.roomDepth * 0.5,
+                  roomWidth: sim.roomWidth,
+                  roomDepth: sim.roomDepth,
+                  roomHeight: sim.roomHeight,
                   builder: (cam) => AnimatedBuilder(
                     animation: _pulse,
                     builder: (context, child) => CustomPaint(
@@ -1125,6 +1140,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     double lookAtZ = 4,
     double roomWidth = 6,
     double roomDepth = 8,
+    double roomHeight = RoomScale.defaultHeightMeters,
   }) {
     return BenchOrbitShell(
       key: key,
@@ -1135,6 +1151,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
       initialLookAtZ: lookAtZ,
       roomWidth: roomWidth,
       roomDepth: roomDepth,
+      roomHeight: roomHeight,
       resetNonce: resetNonce,
       onDoubleTap: onDoubleTap,
       onDragChanged: (dragging) {

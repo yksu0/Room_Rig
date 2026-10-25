@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
+import '../models/room_scale.dart';
+import '../models/sim_room_bounds.dart';
 import '../services/bench_layouts.dart';
 import '../services/ergonomics_simulator.dart';
 import '../services/layout_share_image.dart';
@@ -90,9 +92,10 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       alternateIndex: state.benchAlternateCursor,
     );
     _layouts = layouts;
-    _myRoomSim = ErgonomicsSimulator.build(furniture: layouts.myRoom, optimized: false);
-    _improvedSim = ErgonomicsSimulator.build(furniture: layouts.improved, optimized: true);
-    _sampleSim = ErgonomicsSimulator.build(furniture: layouts.sample, optimized: false);
+    final bounds = SimRoomBounds.fromRoomData(room);
+    _myRoomSim = ErgonomicsSimulator.build(furniture: layouts.myRoom, optimized: false, bounds: bounds);
+    _improvedSim = ErgonomicsSimulator.build(furniture: layouts.improved, optimized: true, bounds: bounds);
+    _sampleSim = ErgonomicsSimulator.build(furniture: layouts.sample, optimized: false, bounds: bounds);
     _ready = true;
     if (resetStep) {
       _step = _ErgoStep.layout;
@@ -719,11 +722,12 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
               lookAtZ: room.gridRows * 0.5,
               roomWidth: room.gridCols.toDouble(),
               roomDepth: room.gridRows.toDouble(),
+              roomHeight: room.heightMeters,
               builder: (cam) => CustomPaint(
                 painter: BenchRoom3DPainter(
                   roomWidth: room.gridCols.toDouble(),
                   roomDepth: room.gridRows.toDouble(),
-                  roomHeight: 2.8,
+                  roomHeight: room.heightMeters,
                   gridCols: room.gridCols,
                   gridRows: room.gridRows,
                   yaw: cam.yaw,
@@ -767,6 +771,11 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
               HapticFeedback.lightImpact();
               setState(() => _simOrbitResetNonce++);
             },
+            lookAtX: sim.roomWidth * 0.5,
+            lookAtZ: sim.roomDepth * 0.5,
+            roomWidth: sim.roomWidth,
+            roomDepth: sim.roomDepth,
+            roomHeight: sim.roomHeight,
             builder: (cam) => AnimatedBuilder(
               animation: _pulse,
               builder: (context, child) => CustomPaint(
@@ -933,12 +942,12 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
                                   lookAtZ: room.gridRows * 0.5,
                                   roomWidth: room.gridCols.toDouble(),
                                   roomDepth: room.gridRows.toDouble(),
+                                  roomHeight: room.heightMeters,
                                   builder: (cam) => CustomPaint(
                                     painter: BenchRoom3DPainter(
                                       roomWidth: room.gridCols.toDouble(),
                                       roomDepth: room.gridRows.toDouble(),
-                                      roomHeight: 2.8,
-                                      gridCols: room.gridCols,
+                                      roomHeight: room.heightMeters,                                      gridCols: room.gridCols,
                                       gridRows: room.gridRows,
                                       yaw: cam.yaw,
                                       pitch: cam.pitch,
@@ -1120,6 +1129,11 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
                     HapticFeedback.lightImpact();
                     setState(() => _simOrbitResetNonce++);
                   },
+                  lookAtX: sim.roomWidth * 0.5,
+                  lookAtZ: sim.roomDepth * 0.5,
+                  roomWidth: sim.roomWidth,
+                  roomDepth: sim.roomDepth,
+                  roomHeight: sim.roomHeight,
                   builder: (cam) => AnimatedBuilder(
                     animation: _pulse,
                     builder: (context, child) => CustomPaint(
@@ -1197,6 +1211,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     double lookAtZ = 4,
     double roomWidth = 6,
     double roomDepth = 8,
+    double roomHeight = RoomScale.defaultHeightMeters,
   }) {
     return BenchOrbitShell(
       key: key,
@@ -1207,6 +1222,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
       initialLookAtZ: lookAtZ,
       roomWidth: roomWidth,
       roomDepth: roomDepth,
+      roomHeight: roomHeight,
       resetNonce: resetNonce,
       onDoubleTap: onDoubleTap,
       onDragChanged: (dragging) {

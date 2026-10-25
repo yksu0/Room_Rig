@@ -2,6 +2,8 @@
 // Comfort metrics + frequent walk paths for Bench / Auto-Rig.
 import 'dart:math';
 import '../models/room_model.dart';
+import '../models/room_scale.dart';
+import '../models/sim_room_bounds.dart';
 import '../models/surface_mount.dart';
 import 'comfort_heuristics.dart';
 import 'gltf_catalog.dart';
@@ -109,6 +111,7 @@ class ErgonomicsPath {
 class ErgonomicsSimSnapshot {
   final double roomWidth;
   final double roomDepth;
+  final double roomHeight;
   final List<FurnitureItem> furniture;
   final List<ErgonomicsZone> zones;
   final List<ErgonomicsLink> links;
@@ -120,6 +123,7 @@ class ErgonomicsSimSnapshot {
   const ErgonomicsSimSnapshot({
     required this.roomWidth,
     required this.roomDepth,
+    this.roomHeight = RoomScale.defaultHeightMeters,
     required this.furniture,
     required this.zones,
     required this.links,
@@ -131,9 +135,10 @@ class ErgonomicsSimSnapshot {
 }
 
 class ErgonomicsSimulator {
-  /// Default gaming-preset footprint (cells). Prefer caller room size when known.
-  static const roomWidth = 6.0;
-  static const roomDepth = 8.0;
+  static SimRoomBounds _bounds = SimRoomBounds.fallback;
+
+  static double get roomWidth => _bounds.width;
+  static double get roomDepth => _bounds.depth;
 
   /// Ideal chair offset behind desk front (grid cells).
   static const idealChairGap = ComfortHeuristics.chairPullbackCells;
@@ -144,12 +149,26 @@ class ErgonomicsSimulator {
   /// Seated reach radius (grid cells).
   static const reachRadius = 1.35;
 
-  static const _pathGridCols = 24;
-  static const _pathGridRows = 32;
+  static int get _pathGridCols => _bounds.ergoPathCols;
+  static int get _pathGridRows => _bounds.ergoPathRows;
 
   /// [optimized] only styles the painter ramps; every metric comes from
   /// [furniture] alone.
   static ErgonomicsSimSnapshot build({
+    required List<FurnitureItem> furniture,
+    required bool optimized,
+    SimRoomBounds bounds = SimRoomBounds.fallback,
+  }) {
+    final prev = _bounds;
+    _bounds = bounds;
+    try {
+      return _buildInner(furniture: furniture, optimized: optimized);
+    } finally {
+      _bounds = prev;
+    }
+  }
+
+  static ErgonomicsSimSnapshot _buildInner({
     required List<FurnitureItem> furniture,
     required bool optimized,
   }) {
@@ -425,6 +444,7 @@ class ErgonomicsSimulator {
     return ErgonomicsSimSnapshot(
       roomWidth: roomWidth,
       roomDepth: roomDepth,
+      roomHeight: _bounds.height,
       furniture: List.unmodifiable(furniture),
       zones: zones,
       links: links,
@@ -608,7 +628,7 @@ class ErgonomicsSimulator {
     final prev = List<int>.filled(soft.length, -1);
     final q = <int>[startIdx];
     prev[startIdx] = startIdx;
-    const dirs = [-1, 1, -_pathGridCols, _pathGridCols];
+    final dirs = [-1, 1, -_pathGridCols, _pathGridCols];
 
     while (q.isNotEmpty) {
       final cur = q.removeAt(0);

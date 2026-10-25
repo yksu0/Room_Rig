@@ -1,6 +1,7 @@
 // lib/services/airflow_optimizer.dart
 // Auto-Rig airflow arrange: HVAC clearance + cooled work zone, then voxel score.
 import '../models/room_model.dart';
+import '../models/sim_room_bounds.dart';
 import '../models/surface_mount.dart';
 import 'airflow_simulator.dart';
 import 'layout_collision.dart';
@@ -24,10 +25,14 @@ class AirflowOptimizeResult {
 class AirflowOptimizer {
   AirflowOptimizer._();
 
-  static AirflowMetrics evaluate(List<FurnitureItem> furniture) {
+  static AirflowMetrics evaluate(
+    List<FurnitureItem> furniture, {
+    SimRoomBounds bounds = SimRoomBounds.fallback,
+  }) {
     return AirflowSimulator.build(
       furniture: furniture,
       optimized: false,
+      bounds: bounds,
       particleCount: 0,
       ambientCount: 0,
     ).metrics;
@@ -37,9 +42,15 @@ class AirflowOptimizer {
     required List<FurnitureItem> furniture,
     required int gridCols,
     required int gridRows,
+    double? heightMeters,
   }) {
-    final cols = gridCols.toDouble();
-    final rows = gridRows.toDouble();
+    final bounds = SimRoomBounds.fromGrid(
+      gridCols: gridCols,
+      gridRows: gridRows,
+      heightMeters: heightMeters,
+    );
+    final cols = bounds.width;
+    final rows = bounds.depth;
     final reasons = <String>[];
     final targets = <String, ({double x, double y})>{};
 
@@ -165,8 +176,8 @@ class AirflowOptimizer {
     }).toList(growable: false);
     LayoutOptimizerCommon.noteOrientation(reasons, before, next);
 
-    final beforeMetrics = evaluate(before);
-    final metrics = evaluate(next);
+    final beforeMetrics = evaluate(before, bounds: bounds);
+    final metrics = evaluate(next, bounds: bounds);
     final humanBetter = metrics.deadZoneRatio + 0.004 < beforeMetrics.deadZoneRatio ||
         metrics.exitChannelScore > beforeMetrics.exitChannelScore + 1.5 ||
         metrics.workZoneCooling > beforeMetrics.workZoneCooling + 1.5 ||

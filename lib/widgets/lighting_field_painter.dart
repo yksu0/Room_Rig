@@ -135,7 +135,7 @@ class LightingFieldPainter extends CustomPainter {
   void _paint3D(Canvas canvas, Size size) {
     final gridCols = snapshot.roomWidth.round().clamp(1, 64);
     final gridRows = snapshot.roomDepth.round().clamp(1, 64);
-    const roomHeight = 2.8;
+    final roomHeight = snapshot.roomHeight;
 
     if (paintScene) {
       BenchFurnitureRenderer.paint3DScene(

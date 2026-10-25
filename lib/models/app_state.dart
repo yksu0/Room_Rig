@@ -9,6 +9,7 @@ import 'item_detection.dart';
 import 'rig_catalog.dart';
 import 'room_model.dart';
 import 'room_scale.dart';
+import 'sim_room_bounds.dart';
 import 'saved_room.dart';
 import 'surface_mount.dart';
 import 'scan_layout_model.dart';
@@ -33,6 +34,7 @@ import '../services/spatial_analyzer.dart';
 import '../services/supabase_bootstrap.dart';
 
 class AppState extends ChangeNotifier {
+  SimRoomBounds get simBounds => SimRoomBounds.fromRoomData(currentRoomData);
   static const _persistedLayoutKey = 'room_rig.persisted_layout';
   static const _persistedScanSessionKey = 'room_rig.last_successful_scan';
   static const _onboardingSeenKey = 'room_rig.onboarding_seen';
@@ -2145,11 +2147,11 @@ class AppState extends ChangeNotifier {
     }
     _geometryScoreFp = fp;
     _geometryAir =
-        AirflowOptimizer.evaluate(committedFurniture).circulationScore.clamp(0, 100);
+        AirflowOptimizer.evaluate(committedFurniture, bounds: simBounds).circulationScore.clamp(0, 100);
     _geometryLight =
-        LightingOptimizer.evaluate(committedFurniture).exposureScore.clamp(0, 100);
+        LightingOptimizer.evaluate(committedFurniture, bounds: simBounds).exposureScore.clamp(0, 100);
     _geometryErgo =
-        ErgonomicsOptimizer.evaluate(committedFurniture).comfortScore.clamp(0, 100);
+        ErgonomicsOptimizer.evaluate(committedFurniture, bounds: simBounds).comfortScore.clamp(0, 100);
   }
 
   /// Locked Bench/Auto-Rig sim when clean; otherwise live geometry (not impact tags).
@@ -2249,15 +2251,15 @@ class AppState extends ChangeNotifier {
   }
 
   void _captureAirflowBaselineIfNeeded() {
-    _preOptimizeAirflowMetrics ??= AirflowOptimizer.evaluate(committedFurniture);
+    _preOptimizeAirflowMetrics ??= AirflowOptimizer.evaluate(committedFurniture, bounds: simBounds);
   }
 
   void _captureLightingBaselineIfNeeded() {
-    _preOptimizeLightingMetrics ??= LightingOptimizer.evaluate(committedFurniture);
+    _preOptimizeLightingMetrics ??= LightingOptimizer.evaluate(committedFurniture, bounds: simBounds);
   }
 
   void _captureErgonomicsBaselineIfNeeded() {
-    _preOptimizeErgonomicsMetrics ??= ErgonomicsOptimizer.evaluate(committedFurniture);
+    _preOptimizeErgonomicsMetrics ??= ErgonomicsOptimizer.evaluate(committedFurniture, bounds: simBounds);
   }
 
   void _setAirflowMetrics(AirflowMetrics metrics, {bool markClean = true}) {
@@ -2278,9 +2280,9 @@ class AppState extends ChangeNotifier {
   void _captureOriginalIfNeeded() {
     if (_originalFurniture != null) return;
     final scored = committedFurniture;
-    final air = AirflowOptimizer.evaluate(scored).circulationScore.clamp(0.0, 100.0).toDouble();
-    final light = LightingOptimizer.evaluate(scored).exposureScore.clamp(0.0, 100.0).toDouble();
-    final ergo = ErgonomicsOptimizer.evaluate(scored).comfortScore.clamp(0.0, 100.0).toDouble();
+    final air = AirflowOptimizer.evaluate(scored, bounds: simBounds).circulationScore.clamp(0.0, 100.0).toDouble();
+    final light = LightingOptimizer.evaluate(scored, bounds: simBounds).exposureScore.clamp(0.0, 100.0).toDouble();
+    final ergo = ErgonomicsOptimizer.evaluate(scored, bounds: simBounds).comfortScore.clamp(0.0, 100.0).toDouble();
     final spatial = SpatialAnalyzer.evaluate(
       furniture: scored,
       gridCols: currentRoomData.gridCols,
@@ -2463,9 +2465,9 @@ class AppState extends ChangeNotifier {
     }
 
     // Snapshot BEFORE swap so Hub Score Delta compares sim-to-sim, not estimate-to-sim.
-    final beforeAir = markOptimized ? AirflowOptimizer.evaluate(committedFurniture) : null;
-    final beforeLight = markOptimized ? LightingOptimizer.evaluate(committedFurniture) : null;
-    final beforeErgo = markOptimized ? ErgonomicsOptimizer.evaluate(committedFurniture) : null;
+    final beforeAir = markOptimized ? AirflowOptimizer.evaluate(committedFurniture, bounds: simBounds) : null;
+    final beforeLight = markOptimized ? LightingOptimizer.evaluate(committedFurniture, bounds: simBounds) : null;
+    final beforeErgo = markOptimized ? ErgonomicsOptimizer.evaluate(committedFurniture, bounds: simBounds) : null;
     if (markOptimized) _captureOriginalIfNeeded();
 
     final room = currentRoomData;
@@ -2482,9 +2484,9 @@ class AppState extends ChangeNotifier {
     );
     _rememberFurniture();
     _isOptimized = markOptimized;
-    final air = AirflowOptimizer.evaluate(_furniture);
-    final light = LightingOptimizer.evaluate(_furniture);
-    final ergo = ErgonomicsOptimizer.evaluate(_furniture);
+    final air = AirflowOptimizer.evaluate(_furniture, bounds: simBounds);
+    final light = LightingOptimizer.evaluate(_furniture, bounds: simBounds);
+    final ergo = ErgonomicsOptimizer.evaluate(_furniture, bounds: simBounds);
     if (markOptimized) {
       _preOptimizeAirflowMetrics ??= beforeAir;
       _preOptimizeLightingMetrics ??= beforeLight;
@@ -2743,9 +2745,9 @@ class AppState extends ChangeNotifier {
 
   void _refreshLayoutScores({bool markClean = true}) {
     final scored = committedFurniture;
-    _setAirflowMetrics(AirflowOptimizer.evaluate(scored), markClean: markClean);
-    _setLightingMetrics(LightingOptimizer.evaluate(scored), markClean: markClean);
-    _setErgonomicsMetrics(ErgonomicsOptimizer.evaluate(scored), markClean: markClean);
+    _setAirflowMetrics(AirflowOptimizer.evaluate(scored, bounds: simBounds), markClean: markClean);
+    _setLightingMetrics(LightingOptimizer.evaluate(scored, bounds: simBounds), markClean: markClean);
+    _setErgonomicsMetrics(ErgonomicsOptimizer.evaluate(scored, bounds: simBounds), markClean: markClean);
   }
 
   void _recalcUpgrades() {

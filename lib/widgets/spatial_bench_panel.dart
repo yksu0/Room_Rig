@@ -641,7 +641,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
           painter: BenchRoom3DPainter(
             roomWidth: room.gridCols.toDouble(),
             roomDepth: room.gridRows.toDouble(),
-            roomHeight: 2.8,
+            roomHeight: room.heightMeters,
             gridCols: room.gridCols,
             gridRows: room.gridRows,
             yaw: cam.yaw,
@@ -806,7 +806,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
                           painter: BenchRoom3DPainter(
                             roomWidth: room.gridCols.toDouble(),
                             roomDepth: room.gridRows.toDouble(),
-                            roomHeight: 2.8,
+                            roomHeight: room.heightMeters,
                             gridCols: room.gridCols,
                             gridRows: room.gridRows,
                             yaw: cam.yaw,

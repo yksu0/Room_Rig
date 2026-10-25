@@ -8,6 +8,7 @@
 import 'dart:math' as math;
 import '../services/gltf_catalog.dart';
 import 'room_model.dart';
+import 'room_scale.dart';
 
 enum MountSurface { floor, wall, ceiling, desk }
 
@@ -335,7 +336,7 @@ class SurfaceMounts {
     FurnitureItem f, {
     required int gridCols,
     required int gridRows,
-    double roomHeight = 2.8,
+    double roomHeight = RoomScale.defaultHeightMeters,
     List<FurnitureItem>? furniture,
   }) {
     if (isCeilingFixture(f)) {

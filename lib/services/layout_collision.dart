@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import '../models/door_swing.dart';
 import '../models/room_model.dart';
+import '../models/sim_room_bounds.dart';
 import '../models/surface_mount.dart';
 
 enum LayoutConflictKind { overlap, blockedOpening, tightClearance }
@@ -96,7 +97,7 @@ class LayoutCollision {
       );
 
   static int _inferCols(List<FurnitureItem> furniture) {
-    var max = 6.0;
+    var max = SimRoomBounds.fallback.width;
     for (final f in furniture) {
       max = math.max(max, f.gridX + f.width);
     }
@@ -104,7 +105,7 @@ class LayoutCollision {
   }
 
   static int _inferRows(List<FurnitureItem> furniture) {
-    var max = 8.0;
+    var max = SimRoomBounds.fallback.depth;
     for (final f in furniture) {
       max = math.max(max, f.gridY + f.height);
     }

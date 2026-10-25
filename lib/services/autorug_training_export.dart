@@ -3,6 +3,7 @@
 import 'dart:math';
 
 import '../models/room_model.dart';
+import '../models/sim_room_bounds.dart';
 import 'airflow_optimizer.dart';
 import 'benchmark_validator.dart';
 import 'ergonomics_optimizer.dart';
@@ -191,12 +192,13 @@ class AutoRigTrainingExport {
     required String split,
   }) {
     final w = weights.normalized();
+    final bounds = SimRoomBounds.fromGrid(gridCols: gridCols, gridRows: gridRows);
     final air =
-        AirflowOptimizer.evaluate(furniture).circulationScore.clamp(0.0, 100.0);
+        AirflowOptimizer.evaluate(furniture, bounds: bounds).circulationScore.clamp(0.0, 100.0);
     final light =
-        LightingOptimizer.evaluate(furniture).exposureScore.clamp(0.0, 100.0);
+        LightingOptimizer.evaluate(furniture, bounds: bounds).exposureScore.clamp(0.0, 100.0);
     final ergo =
-        ErgonomicsOptimizer.evaluate(furniture).comfortScore.clamp(0.0, 100.0);
+        ErgonomicsOptimizer.evaluate(furniture, bounds: bounds).comfortScore.clamp(0.0, 100.0);
     final space = SpatialAnalyzer.evaluate(
       furniture: furniture,
       gridCols: gridCols,

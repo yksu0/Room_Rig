@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../models/room_model.dart';
+import '../models/sim_room_bounds.dart';
 import '../services/airflow_simulator.dart';
 import '../services/ergonomics_simulator.dart';
 import '../services/lighting_simulator.dart';
@@ -40,24 +41,26 @@ class RigLiveFieldCache {
     required RigLiveDomain domain,
     required List<FurnitureItem> furniture,
     required String fingerprint,
+    SimRoomBounds bounds = SimRoomBounds.fallback,
   }) {
     if (domain == RigLiveDomain.none) {
       clear();
       return;
     }
-    if (this.domain == domain && this.fingerprint == fingerprint) {
+    final fp = '$fingerprint|${bounds.width}x${bounds.depth}x${bounds.height}';
+    if (this.domain == domain && this.fingerprint == fp) {
       isStale = false;
       return;
     }
     this.domain = domain;
-    this.fingerprint = fingerprint;
+    this.fingerprint = fp;
     isStale = false;
     switch (domain) {
       case RigLiveDomain.airflow:
-        // Bench My Room field + particles for LIVE overlay animation.
         airflow = AirflowSimulator.build(
           furniture: furniture,
           optimized: false,
+          bounds: bounds,
           particleCount: 80,
           ambientCount: 100,
         );
@@ -71,6 +74,7 @@ class RigLiveFieldCache {
         lighting = LightingSimulator.build(
           furniture: furniture,
           optimized: false,
+          bounds: bounds,
         );
         airflow = null;
         ergonomics = null;
@@ -80,6 +84,7 @@ class RigLiveFieldCache {
         ergonomics = ErgonomicsSimulator.build(
           furniture: furniture,
           optimized: false,
+          bounds: bounds,
         );
         airflow = null;
         lighting = null;

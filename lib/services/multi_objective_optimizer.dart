@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import '../models/room_model.dart';
+import '../models/sim_room_bounds.dart';
 import 'airflow_optimizer.dart';
 import 'airflow_simulator.dart';
 import 'benchmark_validator.dart';
@@ -136,11 +137,17 @@ class MultiObjectiveOptimizer {
     required int gridCols,
     required int gridRows,
     required MultiObjectiveWeights weights,
+    double? heightMeters,
   }) {
+    final bounds = SimRoomBounds.fromGrid(
+      gridCols: gridCols,
+      gridRows: gridRows,
+      heightMeters: heightMeters,
+    );
     final w = weights.normalized();
-    final air = AirflowOptimizer.evaluate(furniture).circulationScore.clamp(0.0, 100.0);
-    final light = LightingOptimizer.evaluate(furniture).exposureScore.clamp(0.0, 100.0);
-    final ergo = ErgonomicsOptimizer.evaluate(furniture).comfortScore.clamp(0.0, 100.0);
+    final air = AirflowOptimizer.evaluate(furniture, bounds: bounds).circulationScore.clamp(0.0, 100.0);
+    final light = LightingOptimizer.evaluate(furniture, bounds: bounds).exposureScore.clamp(0.0, 100.0);
+    final ergo = ErgonomicsOptimizer.evaluate(furniture, bounds: bounds).comfortScore.clamp(0.0, 100.0);
     final space = SpatialAnalyzer.evaluate(
       furniture: furniture,
       gridCols: gridCols,
@@ -543,9 +550,10 @@ class MultiObjectiveOptimizer {
       gridCols: gridCols,
       gridRows: gridRows,
     );
-    final air = AirflowOptimizer.evaluate(mounted);
-    final light = LightingOptimizer.evaluate(mounted);
-    final ergo = ErgonomicsOptimizer.evaluate(mounted);
+    final bounds = SimRoomBounds.fromGrid(gridCols: gridCols, gridRows: gridRows);
+    final air = AirflowOptimizer.evaluate(mounted, bounds: bounds);
+    final light = LightingOptimizer.evaluate(mounted, bounds: bounds);
+    final ergo = ErgonomicsOptimizer.evaluate(mounted, bounds: bounds);
     final score = scoreLayout(
       furniture: mounted,
       gridCols: gridCols,

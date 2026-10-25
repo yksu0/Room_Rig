@@ -2,6 +2,7 @@
 // Geometry-based pass/fail checks against the live layout (not slider guesses).
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
+import '../models/sim_room_bounds.dart';
 import 'airflow_optimizer.dart';
 import 'comfort_heuristics.dart';
 import 'ergonomics_optimizer.dart';
@@ -99,9 +100,10 @@ class BenchmarkValidator {
       );
     }
 
-    final air = AirflowOptimizer.evaluate(furniture);
-    final light = LightingOptimizer.evaluate(furniture);
-    final ergo = ErgonomicsOptimizer.evaluate(furniture);
+    final bounds = SimRoomBounds.fromGrid(gridCols: gridCols, gridRows: gridRows);
+    final air = AirflowOptimizer.evaluate(furniture, bounds: bounds);
+    final light = LightingOptimizer.evaluate(furniture, bounds: bounds);
+    final ergo = ErgonomicsOptimizer.evaluate(furniture, bounds: bounds);
     final spatial = mode == 'spatial'
         ? SpatialAnalyzer.evaluate(
             furniture: furniture,

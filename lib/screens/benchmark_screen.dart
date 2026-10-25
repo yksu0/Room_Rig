@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../models/room_model.dart';
+import '../models/sim_room_bounds.dart';
 import '../services/airflow_simulator.dart';
 import '../services/bench_layouts.dart';
 import '../services/benchmark_validator.dart';
@@ -124,9 +125,22 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       alternateIndex: state.benchAlternateCursor,
     );
     _layouts = layouts;
-    _myRoomSim = AirflowSimulator.build(furniture: layouts.myRoom, optimized: false);
-    _improvedSim = AirflowSimulator.build(furniture: layouts.improved, optimized: true);
-    _sampleSim = AirflowSimulator.build(furniture: layouts.sample, optimized: false);
+    final bounds = SimRoomBounds.fromRoomData(room);
+    _myRoomSim = AirflowSimulator.build(
+      furniture: layouts.myRoom,
+      optimized: false,
+      bounds: bounds,
+    );
+    _improvedSim = AirflowSimulator.build(
+      furniture: layouts.improved,
+      optimized: true,
+      bounds: bounds,
+    );
+    _sampleSim = AirflowSimulator.build(
+      furniture: layouts.sample,
+      optimized: false,
+      bounds: bounds,
+    );
     _prototypeReady = true;
     if (resetStep) {
       _airflowStep = _AirflowStep.layout;
@@ -633,6 +647,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                   initialLookAtZ: room.gridRows * 0.5,
                   roomWidth: room.gridCols.toDouble(),
                   roomDepth: room.gridRows.toDouble(),
+                  roomHeight: room.heightMeters,
                   resetNonce: _layoutOrbitResetNonce,
                   onDoubleTap: () {
                     HapticFeedback.lightImpact();
@@ -643,7 +658,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                     painter: BenchRoom3DPainter(
                       roomWidth: room.gridCols.toDouble(),
                       roomDepth: room.gridRows.toDouble(),
-                      roomHeight: 2.8,
+                      roomHeight: room.heightMeters,
                       gridCols: room.gridCols,
                       gridRows: room.gridRows,
                       yaw: cam.yaw,
@@ -673,6 +688,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       orbitEnabled: _simVizMode == AirflowVizMode.orbit3D,
       roomWidth: sim.field.roomWidth,
       roomDepth: sim.field.roomDepth,
+      roomHeight: sim.field.roomHeight,
       gridCols: sim.field.roomWidth.round(),
       gridRows: sim.field.roomDepth.round(),
       lookAtX: sim.field.roomWidth * 0.5,
@@ -1271,6 +1287,7 @@ class _AirflowSimCanvas extends StatefulWidget {
   final bool orbitEnabled;
   final double roomWidth;
   final double roomDepth;
+  final double roomHeight;
   final int gridCols;
   final int gridRows;
   final double lookAtX;
@@ -1289,6 +1306,7 @@ class _AirflowSimCanvas extends StatefulWidget {
     required this.orbitEnabled,
     required this.roomWidth,
     required this.roomDepth,
+    required this.roomHeight,
     required this.gridCols,
     required this.gridRows,
     required this.lookAtX,
@@ -1402,6 +1420,7 @@ class _AirflowSimCanvasState extends State<_AirflowSimCanvas>
         initialLookAtZ: widget.lookAtZ,
         roomWidth: widget.roomWidth,
         roomDepth: widget.roomDepth,
+        roomHeight: widget.roomHeight,
         resetNonce: widget.resetNonce,
         onDoubleTap: widget.onDoubleTap,
         onDragChanged: widget.onDragChanged,

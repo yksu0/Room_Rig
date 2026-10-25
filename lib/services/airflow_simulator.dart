@@ -2,6 +2,7 @@
 // Coarse voxel airflow + interactive particle advection for Bench prototype.
 import 'dart:math';
 import '../models/room_model.dart';
+import '../models/sim_room_bounds.dart';
 import '../models/surface_mount.dart';
 import 'comfort_heuristics.dart';
 import 'gltf_catalog.dart';
@@ -281,13 +282,16 @@ class AirflowSimSnapshot {
 
 /// Builds a coarse voxel velocity/temperature field and seeds particles.
 class AirflowSimulator {
-  static const roomWidth = 6.0;
-  static const roomDepth = 8.0;
-  static const roomHeight = 2.8;
+  /// Active solve bounds (set for the duration of [build]). Prefer field dims
+  /// on snapshots when stepping particles.
+  static SimRoomBounds _bounds = SimRoomBounds.fallback;
 
-  static const nx = 18;
-  static const ny = 10;
-  static const nz = 24;
+  static double get roomWidth => _bounds.width;
+  static double get roomDepth => _bounds.depth;
+  static double get roomHeight => _bounds.height;
+  static int get nx => _bounds.airflowNx;
+  static int get ny => _bounds.airflowNy;
+  static int get nz => _bounds.airflowNz;
 
   static const _trailLength = 14;
   static const _collisionPad = 0.06;
@@ -303,26 +307,33 @@ class AirflowSimulator {
   static AirflowSimSnapshot build({
     required List<FurnitureItem> furniture,
     required bool optimized,
+    SimRoomBounds bounds = SimRoomBounds.fallback,
     int particleCount = 120,
     int ambientCount = 220,
   }) {
-    final boxes = _buildBoxes(furniture);
-    final field = _solveField(boxes);
-    final metrics = _computeMetrics(field, boxes, furniture);
-    final particles = _seedParticles(
-      field,
-      boxes,
-      optimized: optimized,
-      count: particleCount,
-      ambientCount: ambientCount,
-    );
-    return AirflowSimSnapshot(
-      field: field,
-      boxes: boxes,
-      particles: particles,
-      metrics: metrics,
-      optimized: optimized,
-    );
+    final prev = _bounds;
+    _bounds = bounds;
+    try {
+      final boxes = _buildBoxes(furniture);
+      final field = _solveField(boxes);
+      final metrics = _computeMetrics(field, boxes, furniture);
+      final particles = _seedParticles(
+        field,
+        boxes,
+        optimized: optimized,
+        count: particleCount,
+        ambientCount: ambientCount,
+      );
+      return AirflowSimSnapshot(
+        field: field,
+        boxes: boxes,
+        particles: particles,
+        metrics: metrics,
+        optimized: optimized,
+      );
+    } finally {
+      _bounds = prev;
+    }
   }
 
   /// Supply / extract / passive leak without running the full voxel solve.

@@ -1,6 +1,7 @@
 // lib/services/lighting_optimizer.dart
 // Auto-Rig lighting arrange: side daylight + glare control + task lamp (OSHA).
 import '../models/room_model.dart';
+import '../models/sim_room_bounds.dart';
 import '../models/surface_mount.dart';
 import 'layout_collision.dart';
 import 'layout_optimizer_common.dart';
@@ -23,17 +24,30 @@ class LightingOptimizeResult {
 class LightingOptimizer {
   LightingOptimizer._();
 
-  static LightingMetrics evaluate(List<FurnitureItem> furniture) {
-    return LightingSimulator.build(furniture: furniture, optimized: false).metrics;
+  static LightingMetrics evaluate(
+    List<FurnitureItem> furniture, {
+    SimRoomBounds bounds = SimRoomBounds.fallback,
+  }) {
+    return LightingSimulator.build(
+      furniture: furniture,
+      optimized: false,
+      bounds: bounds,
+    ).metrics;
   }
 
   static LightingOptimizeResult optimize({
     required List<FurnitureItem> furniture,
     required int gridCols,
     required int gridRows,
+    double? heightMeters,
   }) {
-    final cols = gridCols.toDouble();
-    final rows = gridRows.toDouble();
+    final bounds = SimRoomBounds.fromGrid(
+      gridCols: gridCols,
+      gridRows: gridRows,
+      heightMeters: heightMeters,
+    );
+    final cols = bounds.width;
+    final rows = bounds.depth;
     final reasons = <String>[];
     final targets = <String, ({double x, double y})>{};
 
@@ -106,8 +120,8 @@ class LightingOptimizer {
       gridRows: gridRows,
     );
     LayoutOptimizerCommon.noteOrientation(reasons, before, next);
-    final beforeMetrics = evaluate(before);
-    final metrics = evaluate(next);
+    final beforeMetrics = evaluate(before, bounds: bounds);
+    final metrics = evaluate(next, bounds: bounds);
     if (metrics.exposureScore + 0.5 < beforeMetrics.exposureScore) {
       // Still seat task lamps on the desk so "near the desk" holds even when
       // we keep the user's floor plan.
@@ -118,7 +132,7 @@ class LightingOptimizer {
       );
       return LightingOptimizeResult(
         furniture: kept,
-        metrics: evaluate(kept),
+        metrics: evaluate(kept, bounds: bounds),
         reasons: [
           ...reasons,
           'Kept your layout — auto-arrange would not improve lighting',
