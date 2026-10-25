@@ -277,14 +277,24 @@ class AppState extends ChangeNotifier {
   /// overwrite in-memory Place ghosts / demo work.
   int _hydrateEpoch = 0;
 
+  /// Completes when the first device prefs hydrate finishes (success or fail).
+  /// Sign-in must await this so it cannot persist an empty lot over My Rooms.
+  Future<void>? _deviceHydrateFuture;
+
   bool _sharedPhoneLock = false;
   bool get sharedPhoneLock => _sharedPhoneLock;
 
   AppState() {
     _bootstrapEmptyLot();
     final epoch = _hydrateEpoch;
-    unawaited(_hydrateDevicePrivacy(expectedEpoch: epoch));
+    _deviceHydrateFuture = _hydrateDevicePrivacy(expectedEpoch: epoch);
+    unawaited(_deviceHydrateFuture);
     unawaited(_restoreOnboardingFlag());
+  }
+
+  Future<void> ensureDeviceHydrated() async {
+    final f = _deviceHydrateFuture;
+    if (f != null) await f;
   }
 
   Future<void> setSharedPhoneLock(bool enabled) async {
@@ -329,6 +339,10 @@ class AppState extends ChangeNotifier {
 
   /// Account-tagged rooms left on disk without a session (e.g. process kill).
   Future<void> _scrubOrphanOwnedRoomsIfGuest() async {
+    if (isSignedIn) return;
+    // Supabase session is usually ready after initialize(), but avoid wiping
+    // My Rooms if auth notifies one tick after prefs hydrate.
+    await Future<void>.delayed(Duration.zero);
     if (isSignedIn) return;
     final orphans = _rooms.where((r) => !r.isGuestOwned).toList(growable: false);
     if (orphans.isEmpty) return;
@@ -1290,8 +1304,13 @@ class AppState extends ChangeNotifier {
   Future<void> handleSignedIn() async {
     final uid = signedInUserId;
     if (uid == null) return;
+    // Wait for prefs restore first — otherwise we snapshot the constructor's
+    // empty lot, persist it, and wipe My Rooms / history on every cold start.
+    await ensureDeviceHydrated();
+    if (signedInUserId != uid) return;
     // Snapshot true guest lots BEFORE stash tags the active room with this uid.
-    final guestSnapshot = _rooms.where((r) => r.isGuestOwned).toList(growable: false);
+    final guestSnapshot =
+        _rooms.where((r) => r.isGuestOwned).toList(growable: false);
     _stashActiveRoom();
     await _roomRepo.ensureProfile(userId: uid, displayName: signedInEmail);
     var cloudLoaded = false;
@@ -1309,15 +1328,21 @@ class AppState extends ChangeNotifier {
     }
 
     if (!cloudLoaded) {
-      // Drop any leftover account-owned lots; keep only true guest drafts.
+      // Keep this account's on-device rooms + guest drafts. Do not wipe a
+      // hydrated lot just because the cloud list is empty (offline upsert,
+      // fetch failure, or cold-start before the first successful sync).
+      final keep = _rooms
+          .where((r) => r.ownerUserId == uid || r.isGuestOwned)
+          .toList(growable: false);
       _rooms
         ..clear()
-        ..addAll(guestSnapshot);
+        ..addAll(keep);
       if (_rooms.isEmpty) {
         _bootstrapEmptyLot();
         _stashActiveRoom();
       } else {
-        _applySavedRoom(_rooms.first);
+        final match = _rooms.where((r) => r.id == _activeRoomId);
+        _applySavedRoom(match.isNotEmpty ? match.first : _rooms.first);
       }
     }
 
