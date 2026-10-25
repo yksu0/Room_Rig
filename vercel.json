@@ -1,9 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "echo \"Flutter build runs in GitHub Actions; Vercel serves static output.\"",
-  "buildCommand": "echo \"No Vercel build — deploy prebuilt build/web from CI.\"",
-  "outputDirectory": "build/web",
   "rewrites": [
     { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ],

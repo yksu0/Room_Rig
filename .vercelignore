@@ -1,0 +1,6 @@
+# Only ship the Flutter web build — keep uploads under Vercel’s file limit.
+*
+!build/
+!build/web/
+!build/web/**
+!vercel.json
