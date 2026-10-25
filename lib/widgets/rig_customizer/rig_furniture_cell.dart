@@ -126,15 +126,16 @@ class _SpritePlanCell extends StatelessWidget {
     final borderColor = hasConflict
         ? AppColors.red
         : (selected ? AppColors.cyan : color.withValues(alpha: 0.7));
+    // Fill the hitbox — contain + padded SVGs left empty gaps between beds etc.
     final sprite = usePng
         ? Image.asset(
             FurnitureSprites.pngPath(iconName),
-            fit: BoxFit.contain,
+            fit: BoxFit.fill,
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           )
         : SvgPicture.asset(
             FurnitureSprites.svgPath(iconName),
-            fit: BoxFit.contain,
+            fit: BoxFit.fill,
             colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
           );
 
@@ -143,12 +144,9 @@ class _SpritePlanCell extends StatelessWidget {
         border: Border.all(color: borderColor, width: selected || hasConflict ? 2 : 1.2),
         color: color.withValues(alpha: selected ? 0.18 : 0.08),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(2),
-        child: Transform.rotate(
-          angle: yawDegrees * math.pi / 180.0,
-          child: sprite,
-        ),
+      child: Transform.rotate(
+        angle: yawDegrees * math.pi / 180.0,
+        child: sprite,
       ),
     );
   }

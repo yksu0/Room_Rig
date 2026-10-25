@@ -1952,14 +1952,12 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                             );
                           }
                           final itemRect = RoomPlanGeometry.itemRect(item, roomRect, gridCols, gridRows);
-                          final cellWidth = itemRect.width * 0.9;
-                          final cellHeight = itemRect.height * 0.9;
                           return Positioned(
                             key: ValueKey('rig2d_${item.id}'),
-                            left: itemRect.left + itemRect.width * 0.05,
-                            top: itemRect.top + itemRect.height * 0.05,
-                            width: cellWidth,
-                            height: cellHeight,
+                            left: itemRect.left,
+                            top: itemRect.top,
+                            width: itemRect.width,
+                            height: itemRect.height,
                             child: IgnorePointer(
                               child: Opacity(
                                 opacity: state.isPendingPlacement(item.id)
@@ -3371,49 +3369,26 @@ class _WallFittingCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = hasConflict ? AppColors.red : _wallFittingColor(style);
-    return CustomPaint(
-      painter: _WallFittingPainter(
-        wall: wall,
-        style: style,
-        color: color,
-        selected: isSelected,
-      ),
-      child: Stack(
-        children: [
-          Align(
-            alignment: _iconAlignment,
-            child: Padding(
-              padding: const EdgeInsets.all(3),
-              child: SvgIcon(
-                furnitureSvgFor(item.iconName),
-                size: isSelected ? 18 : 15,
-                color: isSelected || hasConflict ? color : AppColors.textSecondary,
-              ),
-            ),
-          ),
-          if (fixedMount)
-            const Positioned(
-              right: 2,
-              top: 2,
-              child: Icon(Icons.lock_rounded, size: 11, color: AppColors.amber),
-            ),
-        ],
+    return Semantics(
+      label: item.name,
+      child: CustomPaint(
+        painter: _WallFittingPainter(
+          wall: wall,
+          style: style,
+          color: color,
+          selected: isSelected,
+        ),
+        child: fixedMount
+            ? const Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: EdgeInsets.all(2),
+                  child: Icon(Icons.lock_rounded, size: 11, color: AppColors.amber),
+                ),
+              )
+            : null,
       ),
     );
-  }
-
-  /// Keeps the glyph on the room side of the band so it never sits on the wall.
-  Alignment get _iconAlignment {
-    switch (wall) {
-      case RoomWall.north:
-        return Alignment.bottomCenter;
-      case RoomWall.south:
-        return Alignment.topCenter;
-      case RoomWall.west:
-        return Alignment.centerRight;
-      case RoomWall.east:
-        return Alignment.centerLeft;
-    }
   }
 }
 
@@ -3531,26 +3506,45 @@ class _WallFittingPainter extends CustomPainter {
       ..strokeWidth = selected ? 3.4 : 2.6
       ..strokeCap = StrokeCap.square;
 
+    // Fill the hitbox band so openings read at their true span width.
+    final bandFill = Paint()..color = color.withValues(alpha: selected ? 0.32 : 0.18);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+        const Radius.circular(4),
+      ),
+      bandFill,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0.5, 0.5, size.width - 1, size.height - 1),
+        const Radius.circular(4),
+      ),
+      Paint()
+        ..color = color.withValues(alpha: selected ? 0.95 : 0.65)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = selected ? 2.2 : 1.4,
+    );
+
     switch (style) {
       case MountStyle.window:
-        // Plan symbol: the wall face, the glazing line, and end jambs.
+        // Glazing fills the opening; mullions mark panes.
+        final pane = Paint()..color = color.withValues(alpha: selected ? 0.28 : 0.16);
+        final a = _p(size, 0.04, 4);
+        final b = _p(size, 0.96, math.min(size.shortestSide * 0.72, 28));
+        canvas.drawRect(Rect.fromPoints(a, b), pane);
         _line(canvas, size, 0, 2, 1, 2, wallFace);
-        _line(
-          canvas,
-          size,
-          0,
-          8,
-          1,
-          8,
-          Paint()
-            ..color = color.withValues(alpha: selected ? 0.8 : 0.45)
-            ..strokeWidth = 1.4,
-        );
+        final mullion = Paint()
+          ..color = color.withValues(alpha: selected ? 0.9 : 0.65)
+          ..strokeWidth = 1.4;
+        _line(canvas, size, 0.5, 4, 0.5, math.min(size.shortestSide * 0.72, 28), mullion);
+        final mid = math.min(size.shortestSide * 0.38, 16.0);
+        _line(canvas, size, 0.04, mid, 0.96, mid, mullion);
         final jamb = Paint()
-          ..color = color.withValues(alpha: 0.7)
+          ..color = color.withValues(alpha: 0.75)
           ..strokeWidth = 2;
-        _line(canvas, size, 0, 1, 0, 10, jamb);
-        _line(canvas, size, 1, 1, 1, 10, jamb);
+        _line(canvas, size, 0.04, 2, 0.04, math.min(size.shortestSide * 0.72, 28), jamb);
+        _line(canvas, size, 0.96, 2, 0.96, math.min(size.shortestSide * 0.72, 28), jamb);
       case MountStyle.door:
         // Opening break + solid 90° swing; dashed other half → semicircle cue.
         _line(canvas, size, 0, 2, 0.06, 2, wallFace);

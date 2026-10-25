@@ -150,7 +150,7 @@ class FurnitureSprites {
         ..strokeWidth = selected || hasConflict ? 2.0 : 1.2,
     );
 
-    final inner = cell.deflate(2);
+    final inner = cell.deflate(1);
     if (inner.width <= 2 || inner.height <= 2) return true;
 
     canvas.save();
@@ -166,7 +166,7 @@ class FurnitureSprites {
       canvas: canvas,
       rect: dst,
       image: image,
-      fit: BoxFit.contain,
+      fit: BoxFit.fill,
       colorFilter: tintSvg ? ColorFilter.mode(color, BlendMode.srcIn) : null,
       filterQuality: FilterQuality.medium,
     );

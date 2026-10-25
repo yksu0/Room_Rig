@@ -424,11 +424,12 @@ class BenchFurnitureRenderer {
       final w = item.width * cellW;
       final h = item.height * cellH;
       final color = categoryColor(item.category);
+      // Match Rig: glyph fills the collision footprint (tiny inset for stroke only).
       final cell = Rect.fromLTWH(
-        x + 3,
-        y + 3,
-        (w - 6).clamp(8, roomRect.width),
-        (h - 6).clamp(8, roomRect.height),
+        x + 1,
+        y + 1,
+        (w - 2).clamp(4, roomRect.width),
+        (h - 2).clamp(4, roomRect.height),
       );
       if (selected) {
         canvas.drawRRect(
@@ -728,21 +729,10 @@ class BenchFurnitureRenderer {
         ..strokeWidth = selected ? 2.0 : 1.4,
     );
 
-    // Prefer the same sprite glyph Rig uses for door / window / AC.
-    final glyphSize = math.min(28.0, math.max(band.shortestSide + 10, 18.0));
-    final glyph = Rect.fromCenter(center: band.center, width: glyphSize, height: glyphSize);
-    final usedSprite = FurnitureSprites.paintPlanSprite(
-      canvas,
-      glyph,
-      iconName: item.iconName,
-      color: color,
-      selected: selected,
-    );
-    if (usedSprite) return;
-
+    // Draw cues across the full span — do not shrink to a fixed icon size.
     final stroke = Paint()
-      ..color = color.withValues(alpha: 0.75)
-      ..strokeWidth = 1.1;
+      ..color = color.withValues(alpha: 0.85)
+      ..strokeWidth = 1.2;
     if (mount.style == MountStyle.window) {
       canvas.drawLine(
         Offset(band.center.dx, band.top + 2),
@@ -760,6 +750,20 @@ class BenchFurnitureRenderer {
         band.top + span.inwardZ.abs() * band.height * 0.15 + (1 - span.inwardZ.abs()) * 2,
       );
       canvas.drawCircle(hinge, 2.2, Paint()..color = color);
+      // Leaf cue along the opening so width matches the hitbox.
+      if (band.width >= band.height) {
+        canvas.drawLine(
+          Offset(band.left + 3, band.center.dy),
+          Offset(band.right - 3, band.center.dy),
+          stroke,
+        );
+      } else {
+        canvas.drawLine(
+          Offset(band.center.dx, band.top + 3),
+          Offset(band.center.dx, band.bottom - 3),
+          stroke,
+        );
+      }
     } else if (mount.style == MountStyle.vent ||
         mount.style == MountStyle.intake ||
         mount.style == MountStyle.exhaust) {
@@ -774,17 +778,6 @@ class BenchFurnitureRenderer {
         }
       }
     }
-
-    final label = shortFurnitureLabel(item);
-    final tp = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 0.3),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout(maxWidth: math.max(band.width, band.height));
-    tp.paint(canvas, Offset(band.center.dx - tp.width / 2, band.center.dy - tp.height / 2));
   }
 
   static void _paintCeilingFixture2D(

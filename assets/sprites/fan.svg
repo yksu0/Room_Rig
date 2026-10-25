@@ -1,9 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <!-- Top-down stand fan: hub + blades -->
-  <circle cx="32" cy="32" r="22" stroke="currentColor" stroke-width="2.5" fill="currentColor" fill-opacity="0.08"/>
-  <path d="M32 32 L32 12 A8 8 0 0 1 40 20 Z" fill="currentColor" fill-opacity="0.55"/>
-  <path d="M32 32 L52 32 A8 8 0 0 1 44 40 Z" fill="currentColor" fill-opacity="0.55"/>
-  <path d="M32 32 L32 52 A8 8 0 0 1 24 44 Z" fill="currentColor" fill-opacity="0.55"/>
-  <path d="M32 32 L12 32 A8 8 0 0 1 20 24 Z" fill="currentColor" fill-opacity="0.55"/>
-  <circle cx="32" cy="32" r="5" fill="currentColor"/>
+  <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="2.5" fill="currentColor" fill-opacity="0.1"/>
+  <path d="M32 32 L32 4 A12 12 0 0 1 46 16 Z" fill="currentColor" fill-opacity="0.55"/>
+  <path d="M32 32 L60 32 A12 12 0 0 1 48 46 Z" fill="currentColor" fill-opacity="0.55"/>
+  <path d="M32 32 L32 60 A12 12 0 0 1 18 48 Z" fill="currentColor" fill-opacity="0.55"/>
+  <path d="M32 32 L4 32 A12 12 0 0 1 16 18 Z" fill="currentColor" fill-opacity="0.55"/>
+  <circle cx="32" cy="32" r="6" fill="currentColor"/>
 </svg>
