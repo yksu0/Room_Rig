@@ -164,7 +164,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
 
   String get _layoutHint => _layouts?.fellBackToSample ?? false
       ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-      : 'Clearance + walk-path heuristic (not motion capture) on your Rig, then compares a rule-based rearrange.';
+      : 'Clearance + walk-path on your Rig, then Improved preview via the same Auto-Rig as Rig (Apply to keep it).';
 
   ErgonomicsSimSnapshot? get _activeSim {
     switch (_simVariant) {

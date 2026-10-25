@@ -163,7 +163,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
 
   String get _layoutHint => _layouts?.fellBackToSample ?? false
       ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-      : '2D lux proxy (not radiosity) on your Rig furniture, then compares a rule-based rearrange of the same room.';
+      : '2D lux proxy on your Rig, then Improved preview via the same Auto-Rig as Rig (Apply to keep it).';
 
   LightingSimSnapshot? get _activeSim {
     switch (_simVariant) {

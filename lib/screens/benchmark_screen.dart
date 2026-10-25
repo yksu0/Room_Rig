@@ -432,7 +432,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           onRun: _runBenchmark,
           hint: _layouts?.fellBackToSample ?? false
               ? 'Rig is empty — My Room / Improved use the reference sample.'
-              : 'Coarse voxel airflow on your Rig furniture, then Improved under your weight mix.',
+              : 'Sims your Rig (My Room), then previews Improved via the same Auto-Rig as Rig — Apply to write it back.',
         ),
         middleRunAction: BenchRunAction(
           buttonLabel: 'SEE RESULTS',
@@ -548,7 +548,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             Text(
               _layouts?.fellBackToSample ?? false
                   ? 'Rig is empty — My Room / Improved use the reference sample.'
-                  : 'Coarse voxel airflow (not CFD) on your Rig furniture.',
+                  : 'Sims My Room, then previews Improved with the same Auto-Rig as Rig (Apply to keep it).',
               style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 12,
@@ -947,9 +947,16 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         ];
       case BenchLayoutKind.improved:
         final reasons = _layouts?.improvedReasons ?? const <String>[];
-        return reasons.isEmpty
-            ? const ['No rearrange found that scores better than your current room']
-            : reasons;
+        final head = <String>[
+          'Preview only — same Auto-Rig engine as Rig. Your Rig is unchanged until Apply.',
+        ];
+        if (reasons.isEmpty) {
+          return [
+            ...head,
+            'No rearrange scored better than your current room',
+          ];
+        }
+        return [...head, ...reasons];
       case BenchLayoutKind.sample:
         return const [
           'Reference room used to sanity-check the simulator',

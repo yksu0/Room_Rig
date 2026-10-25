@@ -150,7 +150,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
 
   String get _layoutHint => _layouts?.fellBackToSample ?? false
       ? 'Your Rig is empty, so this runs on the reference room. Add furniture in Rig to bench your own space.'
-      : 'Rule-based floor-use estimate from Rig furniture (not measured area), then compares an optimized rearrange of the same room.';
+      : 'Floor-use estimate from your Rig, then Improved preview via the same Auto-Rig as Rig (Apply to keep it).';
 
   List<String> _notesFor(BenchLayoutKind kind) {
     switch (kind) {

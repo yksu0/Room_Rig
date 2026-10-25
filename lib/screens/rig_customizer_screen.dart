@@ -1174,7 +1174,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   Navigator.of(ctx).maybePop();
                   _runAutoRig(context, state);
                 },
-                child: const Text('Rearrange my inventory'),
+                child: const Text('Auto-Rig'),
               ),
             ),
           ],
@@ -1342,11 +1342,11 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
       barrierDismissible: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text('Rearrange my inventory?', style: TextStyle(color: AppColors.textPrimary)),
+        title: const Text('Run Auto-Rig?', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'Auto-Rig rearranges the items already on this Rig — it does not add '
+          'Auto-Rig rearranges items already on this Rig — it does not add '
           'catalog pieces. Run best picks the top layout; Try alternate cycles '
-          'other ranked layouts for the same inventory.',
+          'other ranked layouts for the same set.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
