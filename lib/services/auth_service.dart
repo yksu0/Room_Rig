@@ -78,6 +78,27 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Google OAuth (Supabase Free tier). Web uses redirect; mobile uses same PKCE flow.
+  Future<String?> signInWithGoogle() async {
+    final client = SupabaseBootstrap.clientOrNull;
+    if (client == null) return 'Cloud auth is not configured on this build.';
+    try {
+      final launched = await client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: kIsWeb ? Uri.base.origin : null,
+        authScreenLaunchMode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
+      );
+      if (!launched) return 'Could not open Google sign-in.';
+      return null;
+    } on AuthException catch (e) {
+      return e.message;
+    } catch (e) {
+      return '$e';
+    }
+  }
+
   Future<String?> resetPassword(String email) async {
     final client = SupabaseBootstrap.clientOrNull;
     if (client == null) return 'Cloud auth is not configured on this build.';

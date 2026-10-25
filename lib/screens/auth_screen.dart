@@ -67,6 +67,46 @@ class _AuthScreenState extends State<AuthScreen> {
                 : 'Cloud auth is not configured on this build. You can keep using guest mode.',
             style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
+          if (cloud) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () async {
+                      setState(() {
+                        _busy = true;
+                        _error = null;
+                      });
+                      final err = await auth.signInWithGoogle();
+                      if (!mounted) return;
+                      setState(() {
+                        _busy = false;
+                        _error = err;
+                      });
+                      // OAuth continues in browser; session arrives via onAuthStateChange.
+                      if (err == null && auth.isSignedIn) {
+                        if (!mounted) return;
+                        Navigator.of(context).maybePop(true);
+                      }
+                    },
+              icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
+              label: const Text('Continue with Google'),
+            ),
+            const SizedBox(height: 12),
+            const Row(
+              children: [
+                Expanded(child: Divider(color: AppColors.border)),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Text(
+                    'or email',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+                  ),
+                ),
+                Expanded(child: Divider(color: AppColors.border)),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           TextField(
             controller: _email,

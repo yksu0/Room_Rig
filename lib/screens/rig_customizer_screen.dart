@@ -34,6 +34,7 @@ import '../widgets/rig_customizer/room_grid_painter.dart';
 import '../widgets/rig_customizer/room_orbit_3d_painter.dart';
 import '../widgets/room_model_scene.dart';
 import '../widgets/chrome/adaptive_panel.dart';
+import '../widgets/rig_live_field_overlay.dart';
 
 enum _RigViewMode { twoD, threeD, model3D }
 enum _OptimizeGoal { balanced, airflow, lighting, ergonomics, spatial }
@@ -101,6 +102,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
   Offset? _drag2dPointerDown;
   bool _drag2dGestureStarted = false;
   static const _drag2dSlop = 10.0;
+
+  RigLiveDomain _liveDomain = RigLiveDomain.none;
+  final _liveCache = RigLiveFieldCache();
 
   /// Adaptive supporting panes (compact sheet; expanded rails later).
   CameraPreset? _pendingPreset;
@@ -450,10 +454,55 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     ChromeRegion.inspect,
                   ],
                 ),
+                const SizedBox(height: AppSpace.xs),
+                RigLiveDomainBar(
+                  domain: _liveDomain,
+                  score: _liveCache.score,
+                  onChanged: (d) {
+                    setState(() {
+                      _liveDomain = d;
+                      _refreshLiveField(state);
+                    });
+                  },
+                ),
               ],
             ),
+          if (desktop) ...[
+            const SizedBox(height: AppSpace.xs),
+            RigLiveDomainBar(
+              domain: _liveDomain,
+              score: _liveCache.score,
+              onChanged: (d) {
+                setState(() {
+                  _liveDomain = d;
+                  _refreshLiveField(state);
+                });
+              },
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  String _liveFurnitureFingerprint(AppState state) {
+    final parts = state.committedFurniture
+        .map(
+          (f) =>
+              '${f.id}:${f.gridX.toStringAsFixed(2)},${f.gridY.toStringAsFixed(2)},'
+              '${f.width.toStringAsFixed(2)},${f.height.toStringAsFixed(2)},'
+              '${f.yawDegrees.toStringAsFixed(0)}',
+        )
+        .toList()
+      ..sort();
+    return parts.join('|');
+  }
+
+  void _refreshLiveField(AppState state) {
+    _liveCache.refresh(
+      domain: _liveDomain,
+      furniture: state.committedFurniture,
+      fingerprint: _liveFurnitureFingerprint(state),
     );
   }
 
@@ -1335,6 +1384,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     _drag2dPointerDown = null;
     _drag2dGestureStarted = false;
     _dragPointerLocal = null;
+    if (_liveDomain != RigLiveDomain.none) {
+      setState(() => _refreshLiveField(state));
+    }
   }
 
   void _finishPointer2D(
@@ -1634,6 +1686,19 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                             ],
                           ),
                         ),
+                        if (_liveDomain != RigLiveDomain.none)
+                          CustomPaint(
+                            size: canvasSize,
+                            painter: RigLiveFieldPainter(
+                              roomRect: roomRect,
+                              gridCols: gridCols,
+                              gridRows: gridRows,
+                              domain: _liveDomain,
+                              airflow: _liveCache.airflow,
+                              lighting: _liveCache.lighting,
+                              ergonomics: _liveCache.ergonomics,
+                            ),
+                          ),
                         ...visible.map((item) {
                           final isSelected = state.selectedItemId == item.id && !state.selectedIsScanObject;
                           final mount = mounts[item.id]!;
@@ -2248,6 +2313,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     _dragGrabOffset = null;
     _pointerDownPos = null;
     _dragPointerLocal = null;
+    if (_liveDomain != RigLiveDomain.none) {
+      setState(() => _refreshLiveField(state));
+    }
   }
 
   CameraPose _cameraFor(AppState state) => CameraPose(
@@ -2561,8 +2629,9 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
 
   Future<void> _addCustomObject(BuildContext sheetContext) async {
     final nameCtrl = TextEditingController(text: 'Custom');
-    var cellsW = 1.0;
-    var cellsH = 1.0;
+    final widthMCtrl = TextEditingController(text: '0.6');
+    final depthMCtrl = TextEditingController(text: '0.6');
+    String? sizeError;
     final host = context;
     final messenger = ScaffoldMessenger.of(host);
     final state = host.read<AppState>();
@@ -2570,12 +2639,12 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     final ok = await showDialog<bool>(
       context: sheetContext,
       builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: const Text('Custom object', style: TextStyle(color: AppColors.textPrimary)),
-          content: StatefulBuilder(
-            builder: (ctx, setLocal) {
-              return Column(
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return AlertDialog(
+              backgroundColor: AppColors.surface,
+              title: const Text('Custom object', style: TextStyle(color: AppColors.textPrimary)),
+              content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   TextField(
@@ -2583,44 +2652,71 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                     style: const TextStyle(color: AppColors.textPrimary),
                     decoration: const InputDecoration(labelText: 'Name'),
                   ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: widthMCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(color: AppColors.textPrimary),
+                    decoration: const InputDecoration(
+                      labelText: 'Width (m)',
+                      labelStyle: TextStyle(color: AppColors.textMuted),
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text(
-                    'Size ${RoomScale.formatCellsAsMeters(cellsW)} × ${RoomScale.formatCellsAsMeters(cellsH)}',
-                    style: const TextStyle(color: AppColors.textSecondary),
+                  TextField(
+                    controller: depthMCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(color: AppColors.textPrimary),
+                    decoration: const InputDecoration(
+                      labelText: 'Depth (m)',
+                      labelStyle: TextStyle(color: AppColors.textMuted),
+                    ),
                   ),
-                  Slider(
-                    value: cellsW,
-                    min: 0.5,
-                    max: 4,
-                    divisions: 7,
-                    onChanged: (v) => setLocal(() => cellsW = v),
-                  ),
-                  Slider(
-                    value: cellsH,
-                    min: 0.5,
-                    max: 4,
-                    divisions: 7,
-                    onChanged: (v) => setLocal(() => cellsH = v),
-                  ),
+                  if (sizeError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      sizeError!,
+                      style: const TextStyle(color: AppColors.amber, fontSize: 12),
+                    ),
+                  ],
                 ],
-              );
-            },
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Add')),
-          ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                TextButton(
+                  onPressed: () {
+                    final wM = double.tryParse(widthMCtrl.text.trim());
+                    final dM = double.tryParse(depthMCtrl.text.trim());
+                    if (wM == null || dM == null || wM < 0.3 || dM < 0.3 || wM > 4.0 || dM > 4.0) {
+                      setLocal(() => sizeError = 'Enter width/depth between 0.3 m and 4.0 m.');
+                      return;
+                    }
+                    Navigator.pop(ctx, true);
+                  },
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
     if (ok != true) {
       nameCtrl.dispose();
+      widthMCtrl.dispose();
+      depthMCtrl.dispose();
       return;
     }
     if (!mounted) {
       nameCtrl.dispose();
+      widthMCtrl.dispose();
+      depthMCtrl.dispose();
       return;
     }
+    final wM = double.tryParse(widthMCtrl.text.trim()) ?? 0.6;
+    final dM = double.tryParse(depthMCtrl.text.trim()) ?? 0.6;
+    final cellsW = RoomScale.cellsFromPhysicalMeters(wM).clamp(0.5, 4.0);
+    final cellsH = RoomScale.cellsFromPhysicalMeters(dM).clamp(0.5, 4.0);
     final id = state.addCustomFurniture(
       name: nameCtrl.text,
       width: cellsW,
@@ -2629,6 +2725,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
     );
     final label = nameCtrl.text;
     nameCtrl.dispose();
+    widthMCtrl.dispose();
+    depthMCtrl.dispose();
     sheetNav.pop();
     if (id == null) {
       messenger.showSnackBar(

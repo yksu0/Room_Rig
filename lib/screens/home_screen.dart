@@ -190,6 +190,8 @@ class _HomeScreenState extends State<HomeScreen> {
           MediaQuery.sizeOf(context).width >= AppLayout.desktopMinWidth;
       return Scaffold(
         backgroundColor: AppColors.bg,
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        floatingActionButton: _buildCreateRoomFab(context, state),
         body: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -299,6 +301,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: _buildCreateRoomFab(context, state),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(
@@ -335,6 +339,17 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCreateRoomFab(BuildContext context, AppState state) {
+    return FloatingActionButton(
+      heroTag: 'hub_create_room_fab',
+      backgroundColor: AppColors.cyan,
+      foregroundColor: AppColors.bg,
+      tooltip: 'New room',
+      onPressed: () => _showCreateRoomSheet(context, state),
+      child: const Icon(Icons.add_rounded),
     );
   }
 
@@ -1250,10 +1265,10 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!ok || !context.mounted) return;
     }
     final nameCtrl = TextEditingController(text: 'My Room');
-    // Fixed starter size — dimensions are edited in Rig after create.
-    const length = 3.6;
-    const width = 4.8;
-    const height = 2.7;
+    final lengthCtrl = TextEditingController(text: '3.6');
+    final widthCtrl = TextEditingController(text: '4.8');
+    final heightCtrl = TextEditingController(text: '2.7');
+    String? dimError;
     final created = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -1262,57 +1277,134 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'CREATE ROOM',
-                style: TextStyle(
-                  color: AppColors.cyan,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2,
-                ),
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                16,
+                20,
+                20 + MediaQuery.of(ctx).viewInsets.bottom,
               ),
-              const SizedBox(height: 6),
-              const Text(
-                'Fallback when you skip camera measure. Empty rectangle plus a door and window.',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'CREATE ROOM',
+                    style: TextStyle(
+                      color: AppColors.cyan,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Empty rectangle plus a door and window. Enter size in metres.',
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: nameCtrl,
+                    style: const TextStyle(color: AppColors.textPrimary),
+                    decoration: const InputDecoration(
+                      labelText: 'Name',
+                      labelStyle: TextStyle(color: AppColors.textMuted),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: lengthCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          style: const TextStyle(color: AppColors.textPrimary),
+                          decoration: const InputDecoration(
+                            labelText: 'Length (m)',
+                            labelStyle: TextStyle(color: AppColors.textMuted),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: widthCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          style: const TextStyle(color: AppColors.textPrimary),
+                          decoration: const InputDecoration(
+                            labelText: 'Width (m)',
+                            labelStyle: TextStyle(color: AppColors.textMuted),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextField(
+                          controller: heightCtrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          style: const TextStyle(color: AppColors.textPrimary),
+                          decoration: const InputDecoration(
+                            labelText: 'Height (m)',
+                            labelStyle: TextStyle(color: AppColors.textMuted),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (dimError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      dimError!,
+                      style: const TextStyle(color: AppColors.amber, fontSize: 12),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () {
+                        final length = double.tryParse(lengthCtrl.text.trim());
+                        final width = double.tryParse(widthCtrl.text.trim());
+                        final height = double.tryParse(heightCtrl.text.trim());
+                        if (length == null ||
+                            width == null ||
+                            height == null ||
+                            length < RoomScale.minMeters ||
+                            width < RoomScale.minMeters ||
+                            height < 2.0 ||
+                            length > RoomScale.maxMeters ||
+                            width > RoomScale.maxMeters ||
+                            height > 4.5) {
+                          setLocal(() {
+                            dimError =
+                                'Enter L/W ${RoomScale.minMeters}–${RoomScale.maxMeters} m and height 2.0–4.5 m.';
+                          });
+                          return;
+                        }
+                        state.createManualRoom(
+                          name: nameCtrl.text,
+                          lengthMeters: length,
+                          widthMeters: width,
+                          heightMeters: height,
+                        );
+                        Navigator.pop(ctx, true);
+                      },
+                      child: const Text('Create empty room'),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: nameCtrl,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  labelStyle: TextStyle(color: AppColors.textMuted),
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () {
-                    state.createManualRoom(
-                      name: nameCtrl.text,
-                      lengthMeters: length,
-                      widthMeters: width,
-                      heightMeters: height,
-                    );
-                    Navigator.pop(ctx, true);
-                  },
-                  child: const Text('Create empty room'),
-                ),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
     nameCtrl.dispose();
+    lengthCtrl.dispose();
+    widthCtrl.dispose();
+    heightCtrl.dispose();
     if (created == true && context.mounted) {
       state.setTab(2);
       ScaffoldMessenger.of(context).showSnackBar(
