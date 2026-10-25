@@ -26,11 +26,12 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: bash scripts/build_web.sh
 
+      # Deploy only the built site (not the whole monorepo — hits Vercel file limits).
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
-          working-directory: .
+          working-directory: build/web
+          vercel-args: '--prod --archive=tgz'
