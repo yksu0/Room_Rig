@@ -1218,60 +1218,31 @@ class BenchPanelScaffold extends StatelessWidget {
   bool _useDesktopShell(BuildContext context) =>
       AppLayout.isDesktop(context) && _hasShellSlots;
 
-  /// Rig-style View / Tools / Inspect sheets; canvas stays in the page body.
+  /// Appends [layoutRunAction] / [middleRunAction] once so panels do not embed RUN
+  /// in [desktopControls] (that duplicated body RUN on mobile View sheets).
+  Widget _controlsWithRun(Widget controls) {
+    final run = step == benchStepLayout
+        ? layoutRunAction
+        : (step == benchStepMiddle ? middleRunAction : null);
+    if (run == null) return controls;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        controls,
+        const SizedBox(height: 16),
+        run,
+      ],
+    );
+  }
+
+  /// Rig-style View / Inspect sheets; canvas + step/RUN stay in the page body
+  /// (Tools used to re-host the same tabs/RUN and looked like duplicate actions).
   Widget _mobileShellChrome(BuildContext context) {
     final controller = AdaptivePanelController([
       AdaptivePanelSpec(
         region: ChromeRegion.view,
         preferTall: true,
         builder: (ctx) => SingleChildScrollView(child: desktopControls!),
-      ),
-      AdaptivePanelSpec(
-        region: ChromeRegion.tools,
-        preferTall: true,
-        builder: (ctx) => SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'STEP',
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.6,
-                ),
-              ),
-              const SizedBox(height: 8),
-              BenchStepTabs(
-                accentColor: accentColor,
-                step: step,
-                labels: stepLabels,
-                resultsEnabled: resultsEnabled || running,
-                onStepChanged: (i) {
-                  Navigator.of(ctx).maybePop();
-                  onStepChanged(i);
-                },
-              ),
-              if (step == benchStepLayout && layoutRunAction != null) ...[
-                const SizedBox(height: 16),
-                layoutRunAction!,
-              ],
-              if (step == benchStepMiddle && middleRunAction != null) ...[
-                const SizedBox(height: 16),
-                middleRunAction!,
-              ],
-              if (step == benchStepResults && onApply != null && onRefresh != null) ...[
-                const SizedBox(height: 16),
-                BenchApplyRow(
-                  onApply: applyEnabled ? onApply : null,
-                  onRefresh: onRefresh!,
-                  blockedReason: applyEnabled ? null : applyBlockedReason,
-                ),
-              ],
-            ],
-          ),
-        ),
       ),
       AdaptivePanelSpec(
         region: ChromeRegion.inspect,
@@ -1294,7 +1265,6 @@ class BenchPanelScaffold extends StatelessWidget {
           accent: accentColor,
           visible: const [
             ChromeRegion.view,
-            ChromeRegion.tools,
             ChromeRegion.inspect,
           ],
         ),
@@ -1384,7 +1354,7 @@ class BenchPanelScaffold extends StatelessWidget {
           Expanded(
             child: BenchDesktopShell(
               accentColor: accentColor,
-              controls: desktopControls!,
+              controls: _controlsWithRun(desktopControls!),
               viewport: desktopViewport!,
               inspect: desktopInspect!,
             ),

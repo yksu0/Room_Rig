@@ -378,13 +378,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
                 });
               },
             ),
-            const SizedBox(height: 16),
-            BenchRunAction(
-              buttonLabel: 'RUN ERGONOMICS BENCH',
-              icon: RoomSvg.scan,
-              onRun: _runBench,
-              hint: _layoutHint,
-            ),
           ],
         );
       case _ErgoStep.simulate:

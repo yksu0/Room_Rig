@@ -530,12 +530,14 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                 });
               },
             ),
-            const SizedBox(height: 16),
-            _buildPrimaryButton(
-              label: 'RUN VOXEL AIRFLOW BENCH',
-              icon: RoomSvg.scan,
-              onTap: _runBenchmark,
-            ),
+            if (AppLayout.isDesktop(context)) ...[
+              const SizedBox(height: 16),
+              _buildPrimaryButton(
+                label: 'RUN VOXEL AIRFLOW BENCH',
+                icon: RoomSvg.scan,
+                onTap: _runBenchmark,
+              ),
+            ],
             const SizedBox(height: 8),
             Text(
               _layouts?.fellBackToSample ?? false
@@ -595,7 +597,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             ),
             const SizedBox(height: 8),
             const BenchLegend(caption: 'Airflow field'),
-            if (_airflowStep == _AirflowStep.simulate) ...[
+            if (_airflowStep == _AirflowStep.simulate &&
+                AppLayout.isDesktop(context)) ...[
               const SizedBox(height: 16),
               _buildPrimaryButton(
                 label: 'SEE RESULTS',

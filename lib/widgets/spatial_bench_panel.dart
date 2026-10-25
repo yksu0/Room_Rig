@@ -385,12 +385,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
                 });
               },
             ),
-            const SizedBox(height: 16),
-            BenchRunAction(
-              buttonLabel: 'RUN SPATIAL ANALYSIS',
-              icon: RoomSvg.scan,
-              onRun: _runAnalysis,
-            ),
             const SizedBox(height: 12),
             Text(
               _layoutHint,
@@ -418,12 +412,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
             ),
             const SizedBox(height: 8),
             const BenchLegend(caption: 'Floor use'),
-            const SizedBox(height: 16),
-            BenchRunAction(
-              buttonLabel: 'RUN SPATIAL ANALYSIS',
-              icon: RoomSvg.scan,
-              onRun: _runAnalysis,
-            ),
           ],
         );
       case _SpatialStep.results:

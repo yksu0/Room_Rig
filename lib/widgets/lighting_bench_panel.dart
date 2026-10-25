@@ -366,13 +366,6 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                 });
               },
             ),
-            const SizedBox(height: 16),
-            BenchRunAction(
-              buttonLabel: 'RUN LIGHTING BENCH',
-              icon: RoomSvg.scan,
-              onRun: _runBench,
-              hint: _layoutHint,
-            ),
           ],
         );
       case _LightStep.simulate:
