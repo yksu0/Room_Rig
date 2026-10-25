@@ -95,5 +95,8 @@ AGENTS.local.md
 
 # Supabase secrets (copy from supabase.local.json.example)
 /supabase.local.json
+
+# Vercel CLI link metadata (org/project ids — keep local; CI uses GitHub secrets)
+.vercel
 .env
 .env.*

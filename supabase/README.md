@@ -23,3 +23,12 @@ flutter run -d web-server --web-port 7357 `
 ```
 
 Without keys the app runs **guest-only** (local My Rooms).
+
+## Production (Vercel)
+
+Localhost is for you only. Shared access uses a Vercel URL (`*.vercel.app` or custom domain).
+
+1. `vercel login` (CLI) → create/link project (see repo `vercel.json`).
+2. GitHub Actions [`.github/workflows/deploy-web.yml`](../.github/workflows/deploy-web.yml) builds Flutter web and deploys `build/web`.
+3. Repo secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
+4. After first deploy, add the production origin to Supabase Auth URL allow list **and** Google OAuth JS origins (keep localhost too).
