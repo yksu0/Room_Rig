@@ -531,16 +531,155 @@ class RigLiveDomainBar extends StatelessWidget {
   final ValueChanged<RigLiveDomain> onChanged;
   final String detail;
 
+  /// Full Off/Air/Light/Ergo row (desktop). Mobile uses [RigLiveDomainMenuChip].
+  final bool compactMenu;
+
   const RigLiveDomainBar({
     super.key,
     required this.domain,
     required this.score,
     required this.onChanged,
     this.detail = '',
+    this.compactMenu = false,
   });
+
+  static String labelFor(RigLiveDomain d) => switch (d) {
+        RigLiveDomain.none => 'Live',
+        RigLiveDomain.airflow => 'Air',
+        RigLiveDomain.lighting => 'Light',
+        RigLiveDomain.ergonomics => 'Ergo',
+      };
+
+  static Color colorFor(RigLiveDomain d) => switch (d) {
+        RigLiveDomain.none => AppColors.textMuted,
+        RigLiveDomain.airflow => AppColors.airflowColor,
+        RigLiveDomain.lighting => AppColors.lightingColor,
+        RigLiveDomain.ergonomics => AppColors.ergonomicsColor,
+      };
+
+  static IconData iconFor(RigLiveDomain d) => switch (d) {
+        RigLiveDomain.none => Icons.layers_outlined,
+        RigLiveDomain.airflow => Icons.air_rounded,
+        RigLiveDomain.lighting => Icons.lightbulb_outline_rounded,
+        RigLiveDomain.ergonomics => Icons.accessibility_new_rounded,
+      };
+
+  Future<void> _openPicker(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        Widget row(RigLiveDomain d, String title, String subtitle) {
+          final on = domain == d;
+          final color = colorFor(d);
+          return ListTile(
+            leading: Icon(iconFor(d), color: on ? color : AppColors.textMuted),
+            title: Text(
+              title,
+              style: TextStyle(
+                color: on ? color : AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            subtitle: Text(
+              subtitle,
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+            trailing: on
+                ? Icon(Icons.check_rounded, color: color, size: 20)
+                : null,
+            onTap: () {
+              onChanged(d);
+              Navigator.pop(ctx);
+            },
+          );
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 10, 8, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
+                  child: Text(
+                    'LIVE FIELD',
+                    style: TextStyle(
+                      color: AppColors.cyan,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                ),
+                row(RigLiveDomain.none, 'Off', 'No live overlay on the canvas'),
+                row(RigLiveDomain.airflow, 'Air', 'Circulation field (My Room estimate)'),
+                row(RigLiveDomain.lighting, 'Light', 'Lux / shadow field (My Room estimate)'),
+                row(RigLiveDomain.ergonomics, 'Ergo', 'Reach / comfort field (My Room estimate)'),
+                if (domain != RigLiveDomain.none && detail.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                    child: Text(
+                      'LIVE · $detail — not Bench Improved',
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (compactMenu) {
+      final color = colorFor(domain);
+      final active = domain != RigLiveDomain.none;
+      return Material(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: InkWell(
+          onTap: () => _openPicker(context),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              border: Border.all(
+                color: active ? color : AppColors.border,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(iconFor(domain), size: 18, color: color),
+                const SizedBox(width: 6),
+                Text(
+                  labelFor(domain),
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     Widget chip(RigLiveDomain d, String label, Color color) {
       final on = domain == d;
       return Expanded(

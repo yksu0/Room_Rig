@@ -432,8 +432,12 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                       sizeLabel,
                       style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
-                    const SizedBox(height: 8),
-                    const RoomStatusStrip(compact: true),
+                    // Scores / ROUGH EST. live on Hub + Bench — omit strip here so
+                    // mobile Rig header stays short.
+                    if (desktop) ...[
+                      const SizedBox(height: 8),
+                      const RoomStatusStrip(compact: true),
+                    ],
                   ],
                 ),
               ),
@@ -478,31 +482,44 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   child: _buildCompactViewChips(),
                 ),
                 const SizedBox(height: AppSpace.xs),
-                AdaptivePanelTriggers(
-                  controller: _adaptivePanelControllerFor(state),
-                  visible: const [
-                    ChromeRegion.view,
-                    ChromeRegion.tools,
-                    ChromeRegion.inspect,
+                Row(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            AdaptivePanelTriggers(
+                              controller: _adaptivePanelControllerFor(state),
+                              visible: const [
+                                ChromeRegion.view,
+                                ChromeRegion.tools,
+                                ChromeRegion.inspect,
+                              ],
+                              regionLabels: const {
+                                ChromeRegion.inspect: 'Items',
+                              },
+                              regionActions: {
+                                ChromeRegion.inspect: () {
+                                  _scaffoldKey.currentState?.openEndDrawer();
+                                },
+                              },
+                            ),
+                            const SizedBox(width: 6),
+                            RigLiveDomainBar(
+                              compactMenu: true,
+                              domain: _liveDomain,
+                              score: _liveCache.score,
+                              detail: _liveCache.isStale
+                                  ? '${_liveCache.detail} · updating…'
+                                  : _liveCache.detail,
+                              onChanged: (d) => _setLiveDomain(state, d),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
-                  regionLabels: const {
-                    ChromeRegion.inspect: 'Items',
-                  },
-                  regionActions: {
-                    // Skip Inspect sheet → open Room items drawer in one tap.
-                    ChromeRegion.inspect: () {
-                      _scaffoldKey.currentState?.openEndDrawer();
-                    },
-                  },
-                ),
-                const SizedBox(height: AppSpace.xs),
-                RigLiveDomainBar(
-                  domain: _liveDomain,
-                  score: _liveCache.score,
-                  detail: _liveCache.isStale
-                      ? '${_liveCache.detail} · updating…'
-                      : _liveCache.detail,
-                  onChanged: (d) => _setLiveDomain(state, d),
                 ),
               ],
             ),
@@ -1769,8 +1786,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   ),
                 ),
               ),
-              // Honesty chip lives in the header RoomStatusStrip — avoid a
-              // second ROUGH EST. badge stacking on the Model scene HUD.
+              // Honesty / scores live on Hub + Bench — no ROUGH EST. badge here.
               if (canMoveSelected || _rigMoveMode || state.hasPendingPlacement)
                 Positioned(
                   top: 8,
