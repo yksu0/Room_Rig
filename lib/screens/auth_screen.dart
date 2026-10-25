@@ -59,9 +59,21 @@ class _AuthScreenState extends State<AuthScreen> {
       _busy = false;
       _error = err;
     });
-    if (err == null && mounted) {
-      Navigator.of(context).maybePop(true);
+    if (err != null || !mounted) return;
+    if (_signUp && !auth.isSignedIn) {
+      // Confirm-email enabled: link should open the app via deep link on Android.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            kIsWeb
+                ? 'Check your email to confirm, then sign in.'
+                : 'Check your email to confirm. Open the link on this phone so Room Rig opens (not Chrome alone).',
+          ),
+        ),
+      );
+      return;
     }
+    Navigator.of(context).maybePop(true);
   }
 
   @override

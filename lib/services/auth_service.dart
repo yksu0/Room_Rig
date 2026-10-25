@@ -63,7 +63,12 @@ class AuthService extends ChangeNotifier {
     final client = SupabaseBootstrap.clientOrNull;
     if (client == null) return 'Cloud auth is not configured on this build.';
     try {
-      await client.auth.signUp(email: email.trim(), password: password);
+      // Mobile confirm links must deep-link back into the app (not Site URL / Chrome).
+      await client.auth.signUp(
+        email: email.trim(),
+        password: password,
+        emailRedirectTo: _authRedirectTo,
+      );
       notifyListeners();
       return null;
     } on AuthException catch (e) {
@@ -116,9 +121,11 @@ class AuthService extends ChangeNotifier {
       final launched = await client.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: _authRedirectTo,
+        // Custom Tabs / in-app browser returns to the app more reliably than
+        // a full external Chrome tab (avoids “stay in browser” confusion).
         authScreenLaunchMode: kIsWeb
             ? LaunchMode.platformDefault
-            : LaunchMode.externalApplication,
+            : LaunchMode.inAppBrowserView,
       );
       if (!launched) return 'Could not open Google sign-in.';
       return null;
