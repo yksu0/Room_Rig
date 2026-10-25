@@ -32,6 +32,7 @@ import '../services/scan_layout_converter.dart';
 import '../services/scan_pipeline.dart';
 import '../services/spatial_analyzer.dart';
 import '../services/supabase_bootstrap.dart';
+import '../utils/scan_export_cleanup.dart';
 
 class AppState extends ChangeNotifier {
   SimRoomBounds get simBounds => SimRoomBounds.fromRoomData(currentRoomData);
@@ -39,6 +40,9 @@ class AppState extends ChangeNotifier {
   static const _persistedScanSessionKey = 'room_rig.last_successful_scan';
   static const _onboardingSeenKey = 'room_rig.onboarding_seen';
   static const _guestImportDoneKey = 'room_rig.guest_import_done_users';
+  static const _privacyDeviceV2Key = 'room_rig.privacy_device_v2';
+  static const _sharedPhoneLockKey = 'room_rig.shared_phone_lock';
+  static const sharedPhoneLockIdle = Duration(minutes: 15);
 
   final RoomRepository _roomRepo = RoomRepository();
 
@@ -264,11 +268,68 @@ class AppState extends ChangeNotifier {
   /// overwrite in-memory Place ghosts / demo work.
   int _hydrateEpoch = 0;
 
+  bool _sharedPhoneLock = false;
+  bool get sharedPhoneLock => _sharedPhoneLock;
+
   AppState() {
     _bootstrapEmptyLot();
     final epoch = _hydrateEpoch;
-    unawaited(_restorePersistedLayout(expectedEpoch: epoch));
+    unawaited(_hydrateDevicePrivacy(expectedEpoch: epoch));
     unawaited(_restoreOnboardingFlag());
+  }
+
+  Future<void> setSharedPhoneLock(bool enabled) async {
+    if (_sharedPhoneLock == enabled) return;
+    _sharedPhoneLock = enabled;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_sharedPhoneLockKey, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> _hydrateDevicePrivacy({required int expectedEpoch}) async {
+    unawaited(clearRoomRigExportTemps());
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _sharedPhoneLock = prefs.getBool(_sharedPhoneLockKey) ?? false;
+      final migrated = prefs.getBool(_privacyDeviceV2Key) ?? false;
+      if (!migrated) {
+        final hasLayout = (prefs.getString(_persistedLayoutKey) ?? '').isNotEmpty;
+        final hasScan = (prefs.getString(_persistedScanSessionKey) ?? '').isNotEmpty;
+        if (hasLayout || hasScan) {
+          await prefs.remove(_persistedLayoutKey);
+          await prefs.remove(_persistedScanSessionKey);
+        }
+        await prefs.setBool(_privacyDeviceV2Key, true);
+        if (expectedEpoch != _hydrateEpoch) return;
+        // Fresh guest after one-shot legacy wipe.
+        _rooms.clear();
+        _bootstrapEmptyLot();
+        _stashActiveRoom();
+        await _persistActiveRoomLayout();
+        notifyListeners();
+        return;
+      }
+    } catch (_) {}
+    if (expectedEpoch != _hydrateEpoch) return;
+    await _restorePersistedLayout(expectedEpoch: expectedEpoch);
+    if (expectedEpoch != _hydrateEpoch) return;
+    await _scrubOrphanOwnedRoomsIfGuest();
+  }
+
+  /// Account-tagged rooms left on disk without a session (e.g. process kill).
+  Future<void> _scrubOrphanOwnedRoomsIfGuest() async {
+    if (isSignedIn) return;
+    final orphans = _rooms.where((r) => !r.isGuestOwned).toList(growable: false);
+    if (orphans.isEmpty) return;
+    _abandonInFlightHydrate();
+    await _clearDeviceRoomCache();
+    _rooms.clear();
+    _bootstrapEmptyLot();
+    _stashActiveRoom();
+    await _persistActiveRoomLayout();
+    notifyListeners();
   }
 
   void _abandonInFlightHydrate() => _hydrateEpoch++;
@@ -1338,6 +1399,7 @@ class AppState extends ChangeNotifier {
     _guestRoomsPendingImport = const [];
     // Wipe personal rooms from this device; cloud copy stays on the server.
     await _clearDeviceRoomCache();
+    unawaited(clearRoomRigExportTemps());
     _rooms.clear();
     _bootstrapEmptyLot();
     _stashActiveRoom();

@@ -10,6 +10,24 @@ import 'scan_pipeline.dart';
 // Tracking providers live in scan_tracking.dart (Composite + visual odometry).
 export 'scan_tracking.dart';
 
+/// Always-acceptable quality for pose-only measure (no luma texture checks).
+class MeasureModeQualityAnalyzer implements FrameQualityAnalyzer {
+  const MeasureModeQualityAnalyzer();
+
+  @override
+  Future<ScanQualityReport> analyze(ScanFrameInput frame) async {
+    return const ScanQualityReport(acceptable: true, issues: []);
+  }
+}
+
+/// Skips object detection during measure-only room sizing.
+class NoOpObjectDetector implements ObjectDetector {
+  const NoOpObjectDetector();
+
+  @override
+  Future<List<Detection2D>> detect(ScanFrameInput frame) async => const [];
+}
+
 class BasicFrameQualityAnalyzer implements FrameQualityAnalyzer {
   @override
   Future<ScanQualityReport> analyze(ScanFrameInput frame) async {

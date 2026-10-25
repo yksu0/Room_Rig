@@ -227,8 +227,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
               onCategoryChanged: (cat) => setState(() => _sidebarCategory = cat),
               onMinConfidenceChanged: (v) =>
                   setState(() => _sidebarMinConfidence = v),
-              onReplaceScanObject: (obj) => _showScanReplacePicker(state, obj),
-              onDeleteScanObject: (obj) => _deleteScanObjectWithUndo(state, obj),
             ),
       body: SafeArea(
         child: Column(
@@ -294,10 +292,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                                       setState(() => _sidebarCategory = cat),
                                   onMinConfidenceChanged: (v) =>
                                       setState(() => _sidebarMinConfidence = v),
-                                  onReplaceScanObject: (obj) =>
-                                      _showScanReplacePicker(state, obj),
-                                  onDeleteScanObject: (obj) =>
-                                      _deleteScanObjectWithUndo(state, obj),
                                 ),
                               ),
                             ),
@@ -1413,58 +1407,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     return state.currentRoomData.heightMeters;
   }
 
-  ({double gridX, double gridY, double width, double depth}) _scanObjectGridFootprint(
-    AppState state,
-    ScanObject obj,
-  ) {
-    final gridCols = state.currentRoomData.gridCols;
-    final gridRows = state.currentRoomData.gridRows;
-    final roomLayout = state.activeRoomLayout;
-    final roomLengthMeters = roomLayout?.dimensions.lengthMeters ?? gridCols.toDouble();
-    final roomWidthMeters = roomLayout?.dimensions.widthMeters ?? gridRows.toDouble();
-    final metersPerGridX = roomLengthMeters <= 0 ? 1.0 : roomLengthMeters / gridCols;
-    final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / gridRows;
-    return (
-      gridX: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
-          .clamp(0.0, gridCols.toDouble()),
-      gridY: ((obj.center.z - obj.sizeMeters.z * 0.5) / metersPerGridZ)
-          .clamp(0.0, gridRows.toDouble()),
-      width: (obj.sizeMeters.x / metersPerGridX).clamp(0.35, gridCols.toDouble()),
-      depth: (obj.sizeMeters.z / metersPerGridZ).clamp(0.35, gridRows.toDouble()),
-    );
-  }
-
-  Rect _scanObjectPlanRect(ScanObject obj, Rect roomRect, AppState state) {
-    final gridCols = state.currentRoomData.gridCols;
-    final gridRows = state.currentRoomData.gridRows;
-    final fp = _scanObjectGridFootprint(state, obj);
-    final cw = RoomPlanGeometry.cellW(roomRect, gridCols);
-    final ch = RoomPlanGeometry.cellH(roomRect, gridRows);
-    return Rect.fromLTWH(
-      roomRect.left + fp.gridX * cw,
-      roomRect.top + fp.gridY * ch,
-      fp.width * cw,
-      fp.depth * ch,
-    );
-  }
-
-  ScanObject? _hitScanObject2D(Offset local, Rect roomRect, AppState state) {
-    if (!roomRect.contains(local)) return null;
-    final furnitureIds = state.furniture.map((f) => f.id).toSet();
-    final orphans = state.detectedScanObjects
-        .where((obj) => !furnitureIds.contains(obj.id) && !obj.hidden)
-        .toList()
-      ..sort(
-        (a, b) => (a.sizeMeters.x * a.sizeMeters.z).compareTo(b.sizeMeters.x * b.sizeMeters.z),
-      );
-    for (final obj in orphans) {
-      if (_scanObjectPlanRect(obj, roomRect, state).inflate(4).contains(local)) {
-        return obj;
-      }
-    }
-    return null;
-  }
-
   void _toast(String message, {bool ok = true}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1704,12 +1646,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
         _showStructuralLockedHint(context);
       }
     } else {
-      final scanHit = _hitScanObject2D(local, roomRect, state);
-      if (scanHit != null) {
-        state.selectScanObject(scanHit.id, toggle: true);
-      } else {
-        state.clearSelection();
-      }
+      state.clearSelection();
     }
   }
 
@@ -2027,39 +1964,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                             ),
                           );
                         }),
-                        ...() {
-                          final furnitureIds = state.furniture.map((f) => f.id).toSet();
-                          return state.detectedScanObjects
-                              .where((obj) => !furnitureIds.contains(obj.id) && !obj.hidden)
-                              .map((obj) {
-                            final fp = _scanObjectGridFootprint(state, obj);
-                            final itemRect = Rect.fromLTWH(
-                              roomRect.left + fp.gridX * cellW,
-                              roomRect.top + fp.gridY * cellH,
-                              fp.width * cellW,
-                              fp.depth * cellH,
-                            );
-                            final isSelected =
-                                state.selectedItemId == obj.id && state.selectedIsScanObject;
-                            return Positioned(
-                              key: ValueKey('rig2d_scan_${obj.id}'),
-                              left: itemRect.left,
-                              top: itemRect.top,
-                              width: itemRect.width,
-                              height: itemRect.height,
-                              child: IgnorePointer(
-                                child: Opacity(
-                                  opacity: obj.locked ? 0.85 : 1,
-                                  child: RigScanObject2DCell(
-                                    color: _categoryColor(obj.category),
-                                    isSelected: isSelected,
-                                    label: obj.label,
-                                  ),
-                                ),
-                              ),
-                            );
-                          });
-                        }(),
                         if (state.activeSnapGuides.isNotEmpty)
                           CustomPaint(
                             size: canvasSize,
@@ -2137,15 +2041,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
             final gridRows = state.currentRoomData.gridRows;
             final w = constraints.maxWidth;
             final h = constraints.maxHeight;
-            final roomLayout = state.activeRoomLayout;
-            final roomLengthMeters = roomLayout?.dimensions.lengthMeters ?? gridCols.toDouble();
-            final roomWidthMeters = roomLayout?.dimensions.widthMeters ?? gridRows.toDouble();
-            final metersPerGridX = roomLengthMeters <= 0 ? 1.0 : roomLengthMeters / gridCols;
-            final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / gridRows;
 
             final roomHeight = _roomHeightMeters(state);
 
-            final presetItems = state.furniture
+            final renderItems = state.furniture
                 .where((item) => !item.hidden)
                 .map(
                   (item) => furnitureRenderItem(
@@ -2159,30 +2058,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   ),
                 )
                 .toList();
-
-            // Orphan scan detections only (avoid duplicating committed furniture).
-            final furnitureIds = state.furniture.map((f) => f.id).toSet();
-            final detectedItems = state.detectedScanObjects
-                .where((obj) => !furnitureIds.contains(obj.id) && !obj.hidden)
-                .map(
-                  (obj) => RoomRenderItem(
-                    id: 'scan_${obj.id}',
-                    x: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
-                        .clamp(0.0, gridCols.toDouble()),
-                    z: ((obj.center.z - obj.sizeMeters.z * 0.5) / metersPerGridZ)
-                        .clamp(0.0, gridRows.toDouble()),
-                    width: (obj.sizeMeters.x / metersPerGridX).clamp(0.35, gridCols.toDouble()),
-                    depth: (obj.sizeMeters.z / metersPerGridZ).clamp(0.35, gridRows.toDouble()),
-                    color: _categoryColor(obj.category).withValues(alpha: 0.72),
-                    selected: state.selectedItemId == obj.id && state.selectedIsScanObject,
-                    isScanObject: true,
-                    label: obj.label,
-                    heightY: obj.sizeMeters.y.clamp(0.4, 2.2),
-                  ),
-                )
-                .toList();
-
-            final renderItems = <RoomRenderItem>[...presetItems, ...detectedItems];
 
             final showMove = state.selectedFurniture != null &&
                 !state.selectedIsScanObject &&
@@ -2644,13 +2519,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     PickedEntity? best;
     double bestDepth = double.infinity;
 
-    final roomLayout = state.activeRoomLayout;
-    final roomLengthMeters = roomLayout?.dimensions.lengthMeters ?? state.currentRoomData.gridCols.toDouble();
-    final roomWidthMeters = roomLayout?.dimensions.widthMeters ?? state.currentRoomData.gridRows.toDouble();
-    final metersPerGridX = roomLengthMeters <= 0 ? 1.0 : roomLengthMeters / state.currentRoomData.gridCols;
-    final metersPerGridZ = roomWidthMeters <= 0 ? 1.0 : roomWidthMeters / state.currentRoomData.gridRows;
-
-    final furnitureIds = state.furniture.map((f) => f.id).toSet();
     final pickItems = <RoomRenderItem>[
       ...state.furniture.where((item) => !item.hidden).map(
         (item) => furnitureRenderItem(
@@ -2660,24 +2528,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
           furniture: state.furniture,
           color: Colors.white,
           selected: false,
-        ),
-      ),
-      ...state.detectedScanObjects
-          .where((obj) => !furnitureIds.contains(obj.id) && !obj.hidden)
-          .map(
-        (obj) => RoomRenderItem(
-          id: obj.id,
-          x: ((obj.center.x - obj.sizeMeters.x * 0.5) / metersPerGridX)
-              .clamp(0.0, state.currentRoomData.gridCols.toDouble()),
-          z: ((obj.center.z - obj.sizeMeters.z * 0.5) / metersPerGridZ)
-              .clamp(0.0, state.currentRoomData.gridRows.toDouble()),
-          width: (obj.sizeMeters.x / metersPerGridX).clamp(0.35, state.currentRoomData.gridCols.toDouble()),
-          depth: (obj.sizeMeters.z / metersPerGridZ).clamp(0.35, state.currentRoomData.gridRows.toDouble()),
-          heightY: obj.sizeMeters.y.clamp(0.4, 2.2),
-          color: Colors.white,
-          selected: false,
-          isScanObject: true,
-          label: obj.label,
         ),
       ),
     ];

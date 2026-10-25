@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/app_state.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import 'set_password_screen.dart';
@@ -147,6 +148,24 @@ class _AccountScreenState extends State<AccountScreen> {
             onTap: _busy ? null : () => _changeOrSetPassword(auth),
           ),
           const Divider(color: AppColors.border),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.phonelink_lock, color: AppColors.cyan),
+            title: const Text(
+              'Sign out after 15 minutes unused (shared phone)',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
+            ),
+            subtitle: const Text(
+              'Off by default. Turn on only if others may use this device.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+            value: context.watch<AppState>().sharedPhoneLock,
+            activeThumbColor: AppColors.cyan,
+            onChanged: _busy
+                ? null
+                : (v) => context.read<AppState>().setSharedPhoneLock(v),
+          ),
+          const Divider(color: AppColors.border),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.delete_outline, color: AppColors.red),
@@ -168,6 +187,15 @@ class _AccountScreenState extends State<AccountScreen> {
                     await auth.signOut();
                     if (!context.mounted) return;
                     Navigator.of(context).popUntil((r) => r.isFirst);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Signed out. Rooms left this device but stay in your account. '
+                          'Shared photos or files are not removed from the phone; '
+                          'delete those yourself if needed.',
+                        ),
+                      ),
+                    );
                   },
             child: const Text('Sign out'),
           ),

@@ -22,6 +22,7 @@ import '../services/remote_object_detector.dart';
 import '../services/scan_guidance.dart';
 import '../services/scan_setup.dart';
 import '../theme/app_theme.dart';
+import '../utils/scan_export_cleanup.dart';
 import '../widgets/scan_guidance_banner.dart';
 import '../widgets/scan_luma_preview.dart';
 import '../widgets/scan_minimap.dart';
@@ -891,6 +892,14 @@ class _ScannerScreenState extends State<ScannerScreen>
         await controller.dispose();
       } catch (_) {}
     }
+  }
+
+  /// Native ARCore preview surface for measure-only (no Flutter camera).
+  Future<void> setArMeasurePreviewVisible(bool visible) async {
+    try {
+      await const MethodChannel('room_rig/arcore')
+          .invokeMethod<void>('setMeasurePreviewVisible', {'visible': visible});
+    } catch (_) {}
   }
 
   Future<void> _stopInputProvider() async {
@@ -2231,11 +2240,12 @@ class _ScannerScreenState extends State<ScannerScreen>
       return;
     }
 
+    Directory? exportDir;
     try {
       final tempDir = await getTemporaryDirectory();
       final stamp = DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
       final roomToken = _normalizeFileToken(layout.roomName);
-      final exportDir = Directory('${tempDir.path}/room_rig_export_${roomToken}_$stamp');
+      exportDir = Directory('${tempDir.path}/room_rig_export_${roomToken}_$stamp');
       await exportDir.create(recursive: true);
 
       final detectedObjects = layout.objects
@@ -2299,7 +2309,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       );
 
       setState(() {
-        _lastExportFolder = exportDir.path;
+        _lastExportFolder = exportDir!.path;
       });
 
       await Share.shareXFiles(
@@ -2325,6 +2335,10 @@ class _ScannerScreenState extends State<ScannerScreen>
         key: 'export-failed',
         minInterval: const Duration(seconds: 2),
       );
+    } finally {
+      if (exportDir != null) {
+        await clearRoomRigExportTemps(only: exportDir);
+      }
     }
   }
 

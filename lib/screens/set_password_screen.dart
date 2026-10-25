@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/clear_auth_url.dart';
 import '../utils/password_manager_save.dart';
 import '../utils/password_strength.dart';
 import '../widgets/password_form_fields.dart';
@@ -84,6 +85,9 @@ class _SetPasswordScreenState extends State<SetPasswordScreen> {
     }
 
     if (!mounted) return;
+    if (widget.mode == SetPasswordMode.recovery) {
+      clearAuthUrlResidue();
+    }
     setState(() => _busy = false);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

@@ -90,7 +90,7 @@ class _MainShell extends StatefulWidget {
   State<_MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<_MainShell> {
+class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
   static const _screens = [
     HomeScreen(),
     ScannerScreen(),
@@ -103,6 +103,47 @@ class _MainShellState extends State<_MainShell> {
   bool _authHooked = false;
   bool _importDialogOpen = false;
   bool _recoveryRouteOpen = false;
+  DateTime? _pausedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _pausedAt ??= DateTime.now();
+      return;
+    }
+    if (state != AppLifecycleState.resumed) return;
+    final pausedAt = _pausedAt;
+    _pausedAt = null;
+    if (pausedAt == null || !mounted) return;
+    final app = context.read<AppState>();
+    final auth = context.read<AuthService>();
+    if (!app.sharedPhoneLock || !auth.isSignedIn) return;
+    if (DateTime.now().difference(pausedAt) < AppState.sharedPhoneLockIdle) {
+      return;
+    }
+    unawaited(auth.signOut());
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Signed out after idle (shared phone lock). '
+          'Shared photos or files are not removed from the phone; delete those yourself if needed.',
+        ),
+      ),
+    );
+  }
 
   void _consumeTabNotice(AppState state) {
     final notice = state.takeTabNotice();
@@ -171,7 +212,9 @@ class _MainShellState extends State<_MainShell> {
           style: TextStyle(color: AppColors.textPrimary),
         ),
         content: Text(
-          'Upload $n guest room(s) from this device to your account?',
+          'Upload $n room(s) made on this device while signed out? '
+          'They may belong to someone else who used this phone. '
+          'Choose Not now to discard them from this device.',
           style: const TextStyle(color: AppColors.textSecondary),
         ),
         actions: [

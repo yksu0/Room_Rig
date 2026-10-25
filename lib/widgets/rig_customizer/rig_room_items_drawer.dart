@@ -2,10 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/app_state.dart';
-import '../../models/scan_layout_model.dart';
 import '../../models/surface_mount.dart';
 import '../../theme/app_theme.dart';
-import '../empty_state.dart';
 import '../room_icons.dart';
 import '../confirm_dialogs.dart';
 import 'rig_scan_action_button.dart';
@@ -23,7 +21,7 @@ Color _categoryColor(String cat) {
   }
 }
 
-/// End drawer listing layout items and scan-detected objects with filters.
+/// End drawer listing layout furniture with filters.
 class RigRoomItemsDrawer extends StatelessWidget {
   final String sidebarQuery;
   final String? sidebarCategory;
@@ -31,8 +29,6 @@ class RigRoomItemsDrawer extends StatelessWidget {
   final ValueChanged<String> onQueryChanged;
   final ValueChanged<String?> onCategoryChanged;
   final ValueChanged<double> onMinConfidenceChanged;
-  final Future<void> Function(ScanObject obj) onReplaceScanObject;
-  final void Function(ScanObject obj) onDeleteScanObject;
   /// When true, render as a panel body (desktop rail) instead of a [Drawer].
   final bool embedded;
 
@@ -44,15 +40,12 @@ class RigRoomItemsDrawer extends StatelessWidget {
     required this.onQueryChanged,
     required this.onCategoryChanged,
     required this.onMinConfidenceChanged,
-    required this.onReplaceScanObject,
-    required this.onDeleteScanObject,
     this.embedded = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final scanObjects = state.detectedScanObjects;
     final q = sidebarQuery.trim().toLowerCase();
     bool matchesQuery(String name, String category, String id) {
       if (q.isEmpty) return true;
@@ -74,12 +67,6 @@ class RigRoomItemsDrawer extends StatelessWidget {
       return conf >= sidebarMinConfidence;
     }).toList(growable: false);
 
-    final filteredScan = scanObjects.where((obj) {
-      if (!matchesQuery(obj.label, obj.category, obj.id)) return false;
-      if (!matchesCategory(obj.category)) return false;
-      return obj.confidence >= sidebarMinConfidence;
-    }).toList(growable: false);
-
     final body = Column(
           children: [
             Padding(
@@ -92,7 +79,7 @@ class RigRoomItemsDrawer extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    '${layoutItems.length + filteredScan.length}/${state.furniture.length + scanObjects.length}',
+                    '${layoutItems.length}/${state.furniture.length}',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
                   ),
                 ],
@@ -304,185 +291,6 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                       },
                                     ),
                                   ],
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                  const SizedBox(height: 6),
-                  Text(
-                    'SCAN OBJECTS',
-                    style: TextStyle(color: AppColors.textMuted, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.5),
-                  ),
-                  const SizedBox(height: 8),
-                  if (filteredScan.isEmpty)
-                    EmptyState(
-                      iconSvg: RoomSvg.scan,
-                      title: scanObjects.isEmpty ? 'No scan objects yet' : 'No matches',
-                      message: scanObjects.isEmpty
-                          ? 'Run a room scan to detect furniture with confidence scores. Layout items stay available above.'
-                          : 'Try a different filter.',
-                      actionLabel: scanObjects.isEmpty ? 'Go to Scan' : null,
-                      onAction: scanObjects.isEmpty
-                          ? () {
-                              Navigator.of(context).pop();
-                              state.setTab(1);
-                            }
-                          : null,
-                    )
-                  else
-                    ...filteredScan.map((obj) {
-                      final isSelected = state.selectedItemId == obj.id && state.selectedIsScanObject;
-                      final catColor = _categoryColor(obj.category);
-                      final status = [
-                        if (obj.hidden) 'Hidden',
-                        if (obj.locked) 'Locked',
-                        if (!obj.hidden && !obj.locked) 'Active',
-                      ].join(' · ');
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: isSelected ? catColor.withValues(alpha: 0.12) : AppColors.card,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isSelected ? catColor : catColor.withValues(alpha: 0.55),
-                              width: isSelected ? 1.4 : 1,
-                            ),
-                          ),
-                          child: Column(
-                            children: [
-                              GestureDetector(
-                                onTap: () {
-                                  state.selectScanObject(obj.id, toggle: true);
-                                  Navigator.of(context).pop();
-                                },
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 36,
-                                      height: 36,
-                                      decoration: BoxDecoration(
-                                        color: catColor.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Center(
-                                        child: Opacity(
-                                          opacity: obj.hidden ? 0.35 : 1,
-                                          child: Icon(Icons.view_in_ar_rounded, size: 18, color: catColor),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(obj.label, style: const TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 13)),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            '${obj.category.toUpperCase()}  •  $status',
-                                            style: TextStyle(color: AppColors.textSecondary, fontSize: 10),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.green.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        '${(obj.confidence * 100).round()}%',
-                                        style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.w700),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  RigScanActionButton(
-                                    icon: obj.hidden ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                                    label: obj.hidden ? 'Show' : 'Hide',
-                                    color: AppColors.textSecondary,
-                                    onTap: () => state.toggleDetectedScanObjectHidden(obj.id),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  RigScanActionButton(
-                                    icon: obj.locked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                                    label: obj.locked ? 'Unlock' : 'Lock',
-                                    color: obj.locked ? AppColors.amber : AppColors.textSecondary,
-                                    onTap: () => state.toggleDetectedScanObjectLock(obj.id),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  RigScanActionButton(
-                                    icon: Icons.copy_rounded,
-                                    label: 'Dup',
-                                    color: AppColors.cyan,
-                                    onTap: () {
-                                      if (obj.locked) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Unlock to duplicate')),
-                                        );
-                                        return;
-                                      }
-                                      if (!state.duplicateDetectedScanObject(obj.id)) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Could not duplicate')),
-                                        );
-                                        return;
-                                      }
-                                      Navigator.of(context).pop();
-                                    },
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  RigScanActionButton(
-                                    icon: Icons.swap_horiz_rounded,
-                                    label: 'Replace',
-                                    color: AppColors.cyan,
-                                    onTap: () {
-                                      if (obj.locked) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Unlock to replace')),
-                                        );
-                                        return;
-                                      }
-                                      onReplaceScanObject(obj);
-                                    },
-                                  ),
-                                  const SizedBox(width: 6),
-                                  RigScanActionButton(
-                                    icon: Icons.delete_outline_rounded,
-                                    label: 'Del',
-                                    color: AppColors.red,
-                                    onTap: () async {
-                                      if (obj.locked) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Unlock to delete')),
-                                        );
-                                        return;
-                                      }
-                                      final ok = await confirmAction(
-                                        context,
-                                        title: 'Delete ${obj.label}?',
-                                        body: 'You can undo from the snackbar after delete.',
-                                        confirmLabel: 'Delete',
-                                        danger: true,
-                                      );
-                                      if (!ok || !context.mounted) return;
-                                      onDeleteScanObject(obj);
-                                    },
-                                  ),
                                 ],
                               ),
                             ],

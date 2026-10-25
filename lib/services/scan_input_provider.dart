@@ -172,6 +172,8 @@ class RelayScanInputProvider implements ScanInputProvider {
 class ArCoreOwnedScanInputProvider implements ScanInputProvider {
   final MethodChannel channel;
   final Duration interval;
+  /// When true, native path prioritizes pose/hits over detection frames.
+  final bool poseOnlyMeasure;
 
   Timer? _timer;
   void Function(ScanFrameInput frame)? _onFrame;
@@ -182,6 +184,7 @@ class ArCoreOwnedScanInputProvider implements ScanInputProvider {
   ArCoreOwnedScanInputProvider({
     MethodChannel? channel,
     this.interval = const Duration(milliseconds: 200),
+    this.poseOnlyMeasure = false,
   }) : channel = channel ?? const MethodChannel('room_rig/arcore');
 
   @override

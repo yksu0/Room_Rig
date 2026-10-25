@@ -145,8 +145,8 @@ class ScanSetupController {
     }
   }
 
-  /// Drop a floor mark (world XZ). Returns false if not accepting marks.
-  bool addMark(Vec3 point) {
+  /// Drop a floor/ceiling mark (world). [kind] is informational (`floor`/`ceiling`).
+  bool addMark(Vec3 point, {String? kind}) {
     if (phase != ScanSessionPhase.markFootprint) return false;
     if (_marks.length >= maxMarks) return false;
     _marks.add(point);
@@ -154,6 +154,28 @@ class ScanSetupController {
       roomSizeSource = 'measured';
     }
     return true;
+  }
+
+  /// Short coach line after each mark.
+  String get markProgressHint {
+    if (markCount < minMarks) {
+      return '${minMarks - markCount} more for a size estimate';
+    }
+    if (markCount < recommendedMarks) {
+      return '${recommendedMarks - markCount} more for a full box';
+    }
+    return 'footprint ready';
+  }
+
+  /// True when we have enough marks for a rectangular estimate.
+  bool get hasValidRectangularBox => markCount >= recommendedMarks;
+
+  /// Marks alias for overlay consumers.
+  List<Vec3> get cornerMarks => marks;
+
+  /// Optional furniture pass (not used on the default measure path).
+  void advanceToCapture() {
+    phase = ScanSessionPhase.capture;
   }
 
   bool undoMark() {
