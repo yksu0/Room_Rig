@@ -27,7 +27,7 @@ class OnboardingSheet extends StatelessWidget {
       (
         RoomSvg.tune,
         'Arrange in Rig',
-        'Edit · Orbit · Check. Tools and Inspect open as adaptive panels so the canvas stays clear.',
+        '2D · Orbit · Check. Tools and Inspect open as adaptive panels so the canvas stays clear.',
         AppColors.cyan,
         2,
       ),

@@ -10,6 +10,7 @@ import '../services/furniture_sprites.dart';
 import 'room_orbit_projection.dart';
 import 'room_plan_geometry.dart';
 import '../theme/app_theme.dart';
+import 'dash_path.dart';
 import 'furniture_shapes.dart';
 import 'rig_customizer/room_orbit_3d_painter.dart';
 
@@ -878,6 +879,15 @@ class BenchFurnitureRenderer {
         }
         arc.add(proj.$1);
       }
+      final dashed = <Offset>[];
+      for (final p in swing.dashedArcPoints(steps: 28)) {
+        final proj = _project(_V3(p.$1, 0.02, p.$2), size, cam);
+        if (proj == null) {
+          dashed.clear();
+          break;
+        }
+        dashed.add(proj.$1);
+      }
       final handle = _project(_alongWall(span, 0.82, mount.topY * 0.45, inset + 0.04), size, cam);
       overlays.add(_BenchOverlay(face.depth - 0.01, (c) {
         if (hinge != null && closedP != null && openP != null && arc.length >= 2) {
@@ -903,6 +913,16 @@ class BenchFurnitureRenderer {
           c.drawPath(arcPath, stroke);
           c.drawLine(hinge.$1, closedP.$1, stroke);
           c.drawLine(hinge.$1, openP.$1, stroke);
+          if (dashed.length > 1) {
+            drawDashedPolyline(
+              c,
+              dashed,
+              Paint()
+                ..color = color.withValues(alpha: 0.35)
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 1.1,
+            );
+          }
         }
         if (handle != null) {
           c.drawCircle(handle.$1, 2.4, Paint()..color = AppColors.amber);

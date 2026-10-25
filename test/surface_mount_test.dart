@@ -391,7 +391,7 @@ void main() {
 
     testWidgets('wall fittings render against their wall, not as floor cells', (tester) async {
       await pumpRig(tester);
-      await tester.tap(find.text('Edit').first);
+      await tester.tap(find.text('2D').first);
       await tester.pumpAndSettle();
 
       final plan = tester.getRect(find.byKey(const ValueKey('rig2d_bed')));

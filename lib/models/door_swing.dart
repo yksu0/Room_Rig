@@ -1,12 +1,13 @@
 // lib/models/door_swing.dart
-// Quarter-circle door leaf swing in grid space (architectural plan symbol).
+// Door leaf swing in grid space: solid 90° clearance + dashed 180° cue.
 import 'dart:math' as math;
 
 import 'room_model.dart';
 import 'surface_mount.dart';
 
 /// Inward door swing: hinge at one jamb, leaf sweeps 90° from the wall into
-/// the room. Used for Orbit/Bench overlays and layout collision.
+/// the room (collision). Painters also draw a dashed continuation to 180° so
+/// the plan reads as a semicircle path with the unused half broken.
 class DoorSwingGeometry {
   final double hingeX;
   final double hingeZ;
@@ -66,7 +67,11 @@ class DoorSwingGeometry {
 
   /// Point on the circular arc at [t] in 0..1 (θ = 0 closed … π/2 open).
   (double x, double z) pointAt(double t) {
-    final angle = t.clamp(0.0, 1.0) * (math.pi / 2);
+    return pointAtRadians(t.clamp(0.0, 1.0) * (math.pi / 2));
+  }
+
+  /// Angle 0 = closed (along wall), π/2 = open (inward), π = opposite wall.
+  (double x, double z) pointAtRadians(double angle) {
     final c = math.cos(angle);
     final s = math.sin(angle);
     return (
@@ -75,11 +80,26 @@ class DoorSwingGeometry {
     );
   }
 
-  /// Dense samples along the true quarter-circle in grid XZ.
-  List<(double x, double z)> arcPoints({int steps = 24}) {
+  /// Dense samples along [startRad]…[endRad] in grid XZ.
+  List<(double x, double z)> arcPointsBetween(
+    double startRad,
+    double endRad, {
+    int steps = 24,
+  }) {
     final n = steps < 2 ? 2 : steps;
-    return [for (var i = 0; i <= n; i++) pointAt(i / n)];
+    return [
+      for (var i = 0; i <= n; i++)
+        pointAtRadians(startRad + (endRad - startRad) * (i / n)),
+    ];
   }
+
+  /// Solid clearance arc (0 → π/2).
+  List<(double x, double z)> arcPoints({int steps = 24}) =>
+      arcPointsBetween(0, math.pi / 2, steps: steps);
+
+  /// Dashed “other half” of the semicircle (π/2 → π) — visual only.
+  List<(double x, double z)> dashedArcPoints({int steps = 24}) =>
+      arcPointsBetween(math.pi / 2, math.pi, steps: steps);
 
   /// Axis-aligned bounds of the quarter-disk (conservative collision volume).
   ({double minX, double minZ, double maxX, double maxZ}) get bounds {

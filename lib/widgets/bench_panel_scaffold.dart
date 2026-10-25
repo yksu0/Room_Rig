@@ -22,7 +22,7 @@ const int benchStepLayout = 0;
 const int benchStepMiddle = 1;
 const int benchStepResults = 2;
 
-/// Layout / Simulate|Analyze / Results tab row.
+/// Layout / Simulate|Analyze / Results — inset sliding-pill track (style D).
 class BenchStepTabs extends StatelessWidget {
   final Color accentColor;
   final int step;
@@ -41,45 +41,27 @@ class BenchStepTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: List.generate(labels.length, (i) {
-        final selected = step == i;
-        final isLast = i == labels.length - 1;
-        return Expanded(
-          child: Opacity(
+    return BenchSegmentBar(
+      children: [
+        for (var i = 0; i < labels.length; i++)
+          Opacity(
             opacity: (i == benchStepResults && !resultsEnabled) ? 0.45 : 1,
-            child: GestureDetector(
+            child: BenchChip(
+              label: labels[i],
+              selected: step == i,
+              color: accentColor,
               onTap: () {
                 if (i == benchStepResults && !resultsEnabled) return;
                 onStepChanged(i);
               },
-              child: Container(
-                margin: EdgeInsets.only(right: isLast ? 0 : AppSpace.xs),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: selected ? accentColor.withValues(alpha: 0.12) : AppColors.card,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  border: Border.all(color: selected ? accentColor : AppColors.border),
-                ),
-                child: Text(
-                  labels[i],
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: selected ? accentColor : AppColors.textMuted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
             ),
           ),
-        );
-      }),
+      ],
     );
   }
 }
 
-/// Equal-width segment row for Workspace controls (Rig Edit|Orbit|Check language).
+/// Equal-width inset track for mutually exclusive Workspace controls.
 class BenchSegmentBar extends StatelessWidget {
   final List<Widget> children;
   final double gap;
@@ -87,24 +69,32 @@ class BenchSegmentBar extends StatelessWidget {
   const BenchSegmentBar({
     super.key,
     required this.children,
-    this.gap = 6,
+    this.gap = 2,
   });
 
   @override
   Widget build(BuildContext context) {
     if (children.isEmpty) return const SizedBox.shrink();
-    return Row(
-      children: [
-        for (var i = 0; i < children.length; i++) ...[
-          if (i > 0) SizedBox(width: gap),
-          Expanded(child: children[i]),
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.borderSubtle),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) SizedBox(width: gap),
+            Expanded(child: children[i]),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
 
-/// Single selectable chip used for variants, 2D/3D toggles, etc.
+/// Segment thumb inside [BenchSegmentBar] — solid selected fill, no neon glow.
 class BenchChip extends StatelessWidget {
   final String label;
   final bool selected;
@@ -127,6 +117,7 @@ class BenchChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
         width: double.infinity,
         alignment: Alignment.center,
         padding: EdgeInsets.symmetric(
@@ -134,15 +125,8 @@ class BenchChip extends StatelessWidget {
           vertical: compact ? 9 : 10,
         ),
         decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.18) : AppColors.card,
+          color: selected ? color.withValues(alpha: 0.28) : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(
-            color: selected ? color : AppColors.border,
-            width: selected ? 1.5 : 1,
-          ),
-          boxShadow: selected
-              ? AppColors.activeGlow(color, blur: 14, alpha: 0.28)
-              : null,
         ),
         child: Text(
           label,
@@ -152,7 +136,7 @@ class BenchChip extends StatelessWidget {
           style: TextStyle(
             color: selected ? color : AppColors.textMuted,
             fontSize: compact ? 11 : 12,
-            fontWeight: FontWeight.w800,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
           ),
         ),
       ),

@@ -5,6 +5,7 @@ import '../../models/door_swing.dart';
 import '../../models/room_model.dart';
 import '../../models/surface_mount.dart';
 import '../../theme/app_theme.dart';
+import '../dash_path.dart';
 import '../furniture_shapes.dart';
 import '../rig_live_field_overlay.dart';
 import '../room_orbit_projection.dart';
@@ -457,7 +458,7 @@ class RoomOrbit3DPainter extends CustomPainter {
     );
     if (face == null) return;
 
-    // True quarter-circle swing on the floor (hinge → closed leaf → open leaf).
+    // Solid 90° clearance + dashed other half → semicircle path cue.
     final swing = DoorSwingGeometry.fromSpan(span);
     final hingeP = RoomProjection.project(
       OrbitVec3(swing.hingeX, 0.02, swing.hingeZ),
@@ -484,6 +485,15 @@ class RoomOrbit3DPainter extends CustomPainter {
         break;
       }
       arc.add(proj.offset);
+    }
+    final dashed = <Offset>[];
+    for (final p in swing.dashedArcPoints(steps: 28)) {
+      final proj = RoomProjection.project(OrbitVec3(p.$1, 0.02, p.$2), size, cam);
+      if (proj == null) {
+        dashed.clear();
+        break;
+      }
+      dashed.add(proj.offset);
     }
 
     final handle = _projectAlongWall(span, 0.82, mount.topY * 0.45, 0.05, size, cam);
@@ -523,6 +533,16 @@ class RoomOrbit3DPainter extends CustomPainter {
         canvas.drawPath(arcPath, stroke);
         canvas.drawLine(hingeP.offset, closedP.offset, stroke);
         canvas.drawLine(hingeP.offset, openP.offset, stroke);
+        if (dashed.length > 1) {
+          drawDashedPolyline(
+            canvas,
+            dashed,
+            Paint()
+              ..color = AppColors.textSecondary.withValues(alpha: item.selected ? 0.45 : 0.28)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.15,
+          );
+        }
       }
 
       if (handle != null) {

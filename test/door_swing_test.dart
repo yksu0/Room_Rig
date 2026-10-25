@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/door_swing.dart';
 import 'package:room_rig/models/room_model.dart';
@@ -5,7 +7,7 @@ import 'package:room_rig/models/surface_mount.dart';
 import 'package:room_rig/services/layout_collision.dart';
 
 void main() {
-  test('door swing arc is a quarter-circle in grid space', () {
+  test('door swing solid arc is a quarter-circle; dashed half completes semicircle', () {
     const span = WallSpan(
       wall: RoomWall.north,
       x0: 2,
@@ -32,6 +34,15 @@ void main() {
     final dx = mid.$1 - swing.hingeX;
     final dz = mid.$2 - swing.hingeZ;
     expect(dx * dx + dz * dz, closeTo(swing.radius * swing.radius, 1e-6));
+
+    final opposite = swing.pointAtRadians(math.pi);
+    expect(opposite.$1, closeTo(0, 1e-9));
+    expect(opposite.$2, closeTo(0, 1e-9));
+    final dashed = swing.dashedArcPoints(steps: 8);
+    expect(dashed.first.$1, closeTo(open.$1, 1e-9));
+    expect(dashed.first.$2, closeTo(open.$2, 1e-9));
+    expect(dashed.last.$1, closeTo(opposite.$1, 1e-9));
+    expect(dashed.last.$2, closeTo(opposite.$2, 1e-9));
   });
 
   test('furniture in door swing is blocked by collision', () {

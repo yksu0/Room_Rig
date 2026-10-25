@@ -293,18 +293,18 @@ class _PanelTriggerChip extends StatelessWidget {
   }
 }
 
-/// Shared explore modes (Edit · Orbit · Check).
+/// Shared explore modes (2D plan · Orbit · Check/Model).
 enum ChromeViewMode { edit, orbit, check }
 
 extension ChromeViewModeLabel on ChromeViewMode {
   String get label => switch (this) {
-        ChromeViewMode.edit => 'Edit',
+        ChromeViewMode.edit => '2D',
         ChromeViewMode.orbit => 'Orbit',
         ChromeViewMode.check => 'Check',
       };
 
   String get purpose => switch (this) {
-        ChromeViewMode.edit => 'Arrange furniture on the plan',
+        ChromeViewMode.edit => '2D floor plan — arrange furniture',
         ChromeViewMode.orbit => 'Orbit the 3D room',
         ChromeViewMode.check => 'High-fidelity Model review',
       };
@@ -329,43 +329,52 @@ class ChromeViewModeChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final m in modes)
-              Material(
-                key: ValueKey('chrome_view_${m.name}'),
-                color: selected == m
-                    ? AppColors.cyan.withValues(alpha: 0.15)
-                    : AppColors.card,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                child: InkWell(
-                  onTap: () => onChanged(m),
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  child: Container(
-                    constraints: const BoxConstraints(minHeight: 44),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
+        Container(
+          key: const ValueKey('chrome_view_mode_bar'),
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceAlt,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: AppColors.borderSubtle),
+          ),
+          child: Row(
+            children: [
+              for (var i = 0; i < modes.length; i++) ...[
+                if (i > 0) const SizedBox(width: 2),
+                Expanded(
+                  child: Material(
+                    key: ValueKey('chrome_view_${modes[i].name}'),
+                    color: selected == modes[i]
+                        ? AppColors.cyan.withValues(alpha: 0.28)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    child: InkWell(
+                      onTap: () => onChanged(modes[i]),
                       borderRadius: BorderRadius.circular(AppRadius.sm),
-                      border: Border.all(
-                        color: selected == m ? AppColors.cyan : AppColors.border,
-                      ),
-                    ),
-                    child: Text(
-                      m.label,
-                      style: TextStyle(
-                        color: selected == m ? AppColors.cyan : AppColors.textMuted,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                      child: Container(
+                        alignment: Alignment.center,
+                        constraints: const BoxConstraints(minHeight: 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                        child: Text(
+                          modes[i].label,
+                          style: TextStyle(
+                            color: selected == modes[i]
+                                ? AppColors.cyan
+                                : AppColors.textMuted,
+                            fontSize: 13,
+                            fontWeight:
+                                selected == modes[i] ? FontWeight.w800 : FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+              ],
+            ],
+          ),
         ),
         const SizedBox(height: 8),
         Text(
