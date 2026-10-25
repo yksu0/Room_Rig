@@ -33,5 +33,7 @@ jobs:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          # build/web alone stays under Vercel file limits; CLI in this action
+          # is too old for --archive.
           working-directory: build/web
-          vercel-args: '--prod --archive=tgz'
+          vercel-args: '--prod'
