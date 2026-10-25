@@ -459,6 +459,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
                 RigLiveDomainBar(
                   domain: _liveDomain,
                   score: _liveCache.score,
+                  detail: _liveCache.detail,
                   onChanged: (d) => _setLiveDomain(state, d),
                 ),
               ],
@@ -468,6 +469,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen> {
             RigLiveDomainBar(
               domain: _liveDomain,
               score: _liveCache.score,
+              detail: _liveCache.detail,
               onChanged: (d) => _setLiveDomain(state, d),
             ),
           ],

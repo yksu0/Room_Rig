@@ -1,4 +1,5 @@
-// Lightweight live Air / Light / Ergo overlay for Rig Edit (ROUGH EST.).
+// Live Air / Light / Ergo overlay for Rig — same simulators + field ramps as
+// Bench "My Room" (not the Bench "Improved" candidate).
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -11,7 +12,7 @@ import '../theme/app_theme.dart';
 
 enum RigLiveDomain { none, airflow, lighting, ergonomics }
 
-/// Cached sim snapshots so drag-end refresh stays responsive.
+/// Cached sim snapshots so arrange refresh stays responsive.
 class RigLiveFieldCache {
   RigLiveDomain domain = RigLiveDomain.none;
   String fingerprint = '';
@@ -19,6 +20,7 @@ class RigLiveFieldCache {
   LightingSimSnapshot? lighting;
   ErgonomicsSimSnapshot? ergonomics;
   double score = 0;
+  String detail = '';
 
   void refresh({
     required RigLiveDomain domain,
@@ -32,6 +34,7 @@ class RigLiveFieldCache {
       lighting = null;
       ergonomics = null;
       score = 0;
+      detail = '';
       return;
     }
     if (this.domain == domain && this.fingerprint == fingerprint) return;
@@ -39,6 +42,7 @@ class RigLiveFieldCache {
     this.fingerprint = fingerprint;
     switch (domain) {
       case RigLiveDomain.airflow:
+        // Same build as Bench My Room / AirflowOptimizer.evaluate (no particles).
         airflow = AirflowSimulator.build(
           furniture: furniture,
           optimized: false,
@@ -47,7 +51,10 @@ class RigLiveFieldCache {
         );
         lighting = null;
         ergonomics = null;
-        score = airflow!.metrics.circulationScore.clamp(0, 100);
+        final m = airflow!.metrics;
+        score = m.circulationScore.clamp(0, 100);
+        detail =
+            'Circ ${score.round()} · dead ${m.deadVoxelCount} · heat ${m.heatVoxelCount}';
       case RigLiveDomain.lighting:
         lighting = LightingSimulator.build(
           furniture: furniture,
@@ -56,6 +63,7 @@ class RigLiveFieldCache {
         airflow = null;
         ergonomics = null;
         score = lighting!.metrics.exposureScore.clamp(0, 100);
+        detail = 'Exposure ${score.round()} (Bench My Room lux field)';
       case RigLiveDomain.ergonomics:
         ergonomics = ErgonomicsSimulator.build(
           furniture: furniture,
@@ -64,10 +72,35 @@ class RigLiveFieldCache {
         airflow = null;
         lighting = null;
         score = ergonomics!.metrics.comfortScore.clamp(0, 100);
+        detail = 'Comfort ${score.round()} (Bench My Room reach)';
       case RigLiveDomain.none:
         break;
     }
   }
+}
+
+/// Same floor-temp blend Bench [AirflowVoxelPainter] uses for top-down heat maps.
+double _compositeFloorTemp(AirflowVoxelField field, int x, int z) {
+  final yFloor = 1.clamp(0, field.ny - 1);
+  final yMid = field.ny ~/ 2;
+  final yCeil = (field.ny - 2).clamp(0, field.ny - 1);
+  final tFloor = field.temperature[field.index(x, yFloor, z)];
+  final tMid = field.temperature[field.index(x, yMid, z)];
+  final tCeil = field.temperature[field.index(x, yCeil, z)];
+  return tFloor * 0.4 + tMid * 0.38 + tCeil * 0.22;
+}
+
+Color _airflowCellColor(AirflowVoxelField field, int x, int z) {
+  final ySlice = field.ny ~/ 2;
+  final i = field.index(x, ySlice, z);
+  final temp = _compositeFloorTemp(field, x, z);
+  final speed = field.speed[i];
+  final color = Color.lerp(AppColors.cyan, AppColors.red, ((temp + 1) / 2).clamp(0.0, 1.0))!;
+  final alpha = (0.08 + speed * 0.38 + temp.abs() * 0.14).clamp(0.05, 0.58);
+  if (speed < 0.12) {
+    return Color.alphaBlend(AppColors.red.withValues(alpha: 0.18), color.withValues(alpha: alpha));
+  }
+  return color.withValues(alpha: alpha);
 }
 
 class RigLiveFieldPainter extends CustomPainter {
@@ -104,40 +137,66 @@ class RigLiveFieldPainter extends CustomPainter {
     }
   }
 
+  /// Sims solve in a fixed world (e.g. 6×8). Map that world into this room's
+  /// grid so furniture at gridX aligns with field world X (same as Bench data).
+  Offset _worldToLocal(double wx, double wz) {
+    final sx = roomRect.width / gridCols;
+    final sz = roomRect.height / gridRows;
+    return Offset(roomRect.left + wx * sx, roomRect.top + wz * sz);
+  }
+
+  bool _worldInRoom(double wx, double wz) =>
+      wx < gridCols && wz < gridRows && wx >= 0 && wz >= 0;
+
   void _paintAirflow(Canvas canvas) {
     final snap = airflow;
     if (snap == null) return;
     final field = snap.field;
-    final midY = field.ny ~/ 2;
-    final cellW = roomRect.width / field.nx;
-    final cellH = roomRect.height / field.nz;
-    var maxSpeed = 0.001;
+    final ySlice = field.ny ~/ 2;
+    final voxW = field.roomWidth / field.nx;
+    final voxD = field.roomDepth / field.nz;
+    final sx = roomRect.width / gridCols;
+    final sz = roomRect.height / gridRows;
+    // Match Bench heatmap ramp; clip to this room's footprint.
     for (var z = 0; z < field.nz; z++) {
       for (var x = 0; x < field.nx; x++) {
-        final i = field.index(x, midY, z);
-        if (!field.solid[i]) {
-          maxSpeed = math.max(maxSpeed, field.speed[i]);
-        }
-      }
-    }
-    for (var z = 0; z < field.nz; z++) {
-      for (var x = 0; x < field.nx; x++) {
-        final i = field.index(x, midY, z);
+        final wx = x * voxW;
+        final wz = z * voxD;
+        if (!_worldInRoom(wx, wz)) continue;
+        final i = field.index(x, ySlice, z);
         if (field.solid[i]) continue;
-        final t = (field.speed[i] / maxSpeed).clamp(0.0, 1.0);
-        final color = Color.lerp(
-          AppColors.airflowColor.withValues(alpha: 0.05),
-          AppColors.airflowColor.withValues(alpha: 0.42),
-          t,
-        )!;
         canvas.drawRect(
           Rect.fromLTWH(
-            roomRect.left + x * cellW,
-            roomRect.top + z * cellH,
-            cellW + 0.5,
-            cellH + 0.5,
+            roomRect.left + wx * sx,
+            roomRect.top + wz * sz,
+            voxW * sx - 0.4,
+            voxD * sz - 0.4,
           ),
-          Paint()..color = color,
+          Paint()..color = _airflowCellColor(field, x, z),
+        );
+      }
+    }
+    final arrowPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.28)
+      ..strokeWidth = 1.1
+      ..strokeCap = StrokeCap.round;
+    for (var z = 1; z < field.nz; z += 3) {
+      for (var x = 1; x < field.nx; x += 3) {
+        final wx = (x + 0.5) * voxW;
+        final wz = (z + 0.5) * voxD;
+        if (!_worldInRoom(wx, wz)) continue;
+        final i = field.index(x, ySlice, z);
+        if (field.solid[i] || field.speed[i] < 0.08) continue;
+        final c = _worldToLocal(wx, wz);
+        final len = (6.0 + field.speed[i] * 10).clamp(5.0, 16.0);
+        final dx = field.vx[i];
+        final dz = field.vz[i];
+        final mag = math.sqrt(dx * dx + dz * dz);
+        if (mag < 1e-4) continue;
+        canvas.drawLine(
+          c,
+          Offset(c.dx + (dx / mag) * len, c.dy + (dz / mag) * len),
+          arrowPaint,
         );
       }
     }
@@ -146,30 +205,44 @@ class RigLiveFieldPainter extends CustomPainter {
   void _paintLighting(Canvas canvas) {
     final snap = lighting;
     if (snap == null) return;
-    final cellW = roomRect.width / snap.nx;
-    final cellH = roomRect.height / snap.nz;
-    var maxLux = 0.001;
-    for (final v in snap.lux) {
-      maxLux = math.max(maxLux, v);
-    }
+    final voxW = snap.roomWidth / snap.nx;
+    final voxD = snap.roomDepth / snap.nz;
+    final sx = roomRect.width / gridCols;
+    final sz = roomRect.height / gridRows;
     for (var z = 0; z < snap.nz; z++) {
       for (var x = 0; x < snap.nx; x++) {
+        final wx = x * voxW;
+        final wz = z * voxD;
+        if (!_worldInRoom(wx, wz)) continue;
         final v = snap.lux[snap.index(x, z)];
-        final t = (v / maxLux).clamp(0.0, 1.0);
+        final rect = Rect.fromLTWH(
+          roomRect.left + wx * sx,
+          roomRect.top + wz * sz,
+          voxW * sx - 0.3,
+          voxD * sz - 0.3,
+        );
+        if (v <= 0.001) {
+          canvas.drawRect(
+            rect,
+            Paint()..color = AppColors.textMuted.withValues(alpha: 0.28),
+          );
+          continue;
+        }
         final color = Color.lerp(
-          AppColors.lightingColor.withValues(alpha: 0.04),
-          AppColors.lightingColor.withValues(alpha: 0.40),
-          t,
+          const Color(0xFF1A1D26),
+          AppColors.lightingColor,
+          v.clamp(0.0, 1.0),
         )!;
         canvas.drawRect(
-          Rect.fromLTWH(
-            roomRect.left + x * cellW,
-            roomRect.top + z * cellH,
-            cellW + 0.5,
-            cellH + 0.5,
-          ),
-          Paint()..color = color,
+          rect,
+          Paint()..color = color.withValues(alpha: (0.2 + v * 0.65).clamp(0.15, 0.85)),
         );
+        if (v < 0.18) {
+          canvas.drawRect(
+            rect,
+            Paint()..color = AppColors.red.withValues(alpha: 0.16),
+          );
+        }
       }
     }
   }
@@ -177,13 +250,13 @@ class RigLiveFieldPainter extends CustomPainter {
   void _paintErgonomics(Canvas canvas) {
     final snap = ergonomics;
     if (snap == null) return;
-    // Soft wash + reach / path hints (room metres → roomRect).
     canvas.drawRRect(
       RRect.fromRectAndRadius(roomRect, const Radius.circular(8)),
       Paint()..color = AppColors.ergonomicsColor.withValues(alpha: 0.08),
     );
-    final sx = roomRect.width / snap.roomWidth;
-    final sz = roomRect.height / snap.roomDepth;
+    // Reach / paths are already in sim-world metres (= grid cells).
+    final sx = roomRect.width / gridCols;
+    final sz = roomRect.height / gridRows;
     final circle = snap.reachCircle;
     if (circle != null) {
       final cx = roomRect.left + circle.x * sx;
@@ -192,9 +265,7 @@ class RigLiveFieldPainter extends CustomPainter {
       canvas.drawCircle(
         Offset(cx, cy),
         r,
-        Paint()
-          ..color = AppColors.ergonomicsColor.withValues(alpha: 0.18)
-          ..style = PaintingStyle.fill,
+        Paint()..color = AppColors.ergonomicsColor.withValues(alpha: 0.18),
       );
       canvas.drawCircle(
         Offset(cx, cy),
@@ -205,25 +276,33 @@ class RigLiveFieldPainter extends CustomPainter {
           ..strokeWidth = 1.2,
       );
     }
-    for (final path in snap.paths.take(3)) {
+    final paths = [...snap.paths]..sort((a, b) => b.frequency.compareTo(a.frequency));
+    const pathColors = [
+      AppColors.ergonomicsColor,
+      AppColors.cyan,
+      AppColors.amber,
+    ];
+    final topPaths = paths.take(3).toList();
+    for (var i = 0; i < topPaths.length; i++) {
+      final path = topPaths[i];
       if (path.points.length < 2) continue;
       final p = Path()
         ..moveTo(
           roomRect.left + path.points.first.x * sx,
           roomRect.top + path.points.first.z * sz,
         );
-      for (var i = 1; i < path.points.length; i++) {
+      for (var j = 1; j < path.points.length; j++) {
         p.lineTo(
-          roomRect.left + path.points[i].x * sx,
-          roomRect.top + path.points[i].z * sz,
+          roomRect.left + path.points[j].x * sx,
+          roomRect.top + path.points[j].z * sz,
         );
       }
       canvas.drawPath(
         p,
         Paint()
-          ..color = AppColors.ergonomicsColor.withValues(alpha: 0.55)
+          ..color = pathColors[i % pathColors.length].withValues(alpha: 0.65)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2
+          ..strokeWidth = 2.2
           ..strokeCap = StrokeCap.round,
       );
     }
@@ -304,36 +383,31 @@ List<RigLiveFieldCell> _sampleAirflow(
   int maxAxis,
 ) {
   final field = snap.field;
-  final midY = field.ny ~/ 2;
-  var maxSpeed = 0.001;
-  for (var z = 0; z < field.nz; z++) {
-    for (var x = 0; x < field.nx; x++) {
-      final i = field.index(x, midY, z);
-      if (!field.solid[i]) maxSpeed = math.max(maxSpeed, field.speed[i]);
-    }
-  }
+  final ySlice = field.ny ~/ 2;
+  final voxW = field.roomWidth / field.nx;
+  final voxD = field.roomDepth / field.nz;
   final stepX = math.max(1, (field.nx / maxAxis).ceil());
   final stepZ = math.max(1, (field.nz / maxAxis).ceil());
   final out = <RigLiveFieldCell>[];
   for (var z = 0; z < field.nz; z += stepZ) {
     for (var x = 0; x < field.nx; x += stepX) {
-      final i = field.index(x, midY, z);
+      final wx0 = x * voxW;
+      final wz0 = z * voxD;
+      if (wx0 >= gridCols || wz0 >= gridRows) continue;
+      final i = field.index(x, ySlice, z);
       if (field.solid[i]) continue;
-      final t = (field.speed[i] / maxSpeed).clamp(0.0, 1.0);
-      if (t < 0.04) continue;
+      final speed = field.speed[i];
+      final temp = _compositeFloorTemp(field, x, z);
+      if (speed < 0.05 && temp.abs() < 0.15) continue;
       final x1 = math.min(x + stepX, field.nx);
       final z1 = math.min(z + stepZ, field.nz);
       out.add(
         RigLiveFieldCell(
-          x0: x / field.nx * gridCols,
-          z0: z / field.nz * gridRows,
-          x1: x1 / field.nx * gridCols,
-          z1: z1 / field.nz * gridRows,
-          color: Color.lerp(
-            AppColors.airflowColor.withValues(alpha: 0.08),
-            AppColors.airflowColor.withValues(alpha: 0.48),
-            t,
-          )!,
+          x0: wx0,
+          z0: wz0,
+          x1: math.min(x1 * voxW, gridCols.toDouble()),
+          z1: math.min(z1 * voxD, gridRows.toDouble()),
+          color: _airflowCellColor(field, x, z),
         ),
       );
     }
@@ -347,31 +421,42 @@ List<RigLiveFieldCell> _sampleLighting(
   int gridRows,
   int maxAxis,
 ) {
-  var maxLux = 0.001;
-  for (final v in snap.lux) {
-    maxLux = math.max(maxLux, v);
-  }
+  final voxW = snap.roomWidth / snap.nx;
+  final voxD = snap.roomDepth / snap.nz;
   final stepX = math.max(1, (snap.nx / maxAxis).ceil());
   final stepZ = math.max(1, (snap.nz / maxAxis).ceil());
   final out = <RigLiveFieldCell>[];
   for (var z = 0; z < snap.nz; z += stepZ) {
     for (var x = 0; x < snap.nx; x += stepX) {
+      final wx0 = x * voxW;
+      final wz0 = z * voxD;
+      if (wx0 >= gridCols || wz0 >= gridRows) continue;
       final v = snap.lux[snap.index(x, z)];
-      final t = (v / maxLux).clamp(0.0, 1.0);
-      if (t < 0.04) continue;
       final x1 = math.min(x + stepX, snap.nx);
       final z1 = math.min(z + stepZ, snap.nz);
+      final Color color;
+      if (v <= 0.001) {
+        color = AppColors.textMuted.withValues(alpha: 0.28);
+      } else {
+        final base = Color.lerp(
+          const Color(0xFF1A1D26),
+          AppColors.lightingColor,
+          v.clamp(0.0, 1.0),
+        )!;
+        color = v < 0.18
+            ? Color.alphaBlend(
+                AppColors.red.withValues(alpha: 0.16),
+                base.withValues(alpha: (0.2 + v * 0.65).clamp(0.15, 0.85)),
+              )
+            : base.withValues(alpha: (0.2 + v * 0.65).clamp(0.15, 0.85));
+      }
       out.add(
         RigLiveFieldCell(
-          x0: x / snap.nx * gridCols,
-          z0: z / snap.nz * gridRows,
-          x1: x1 / snap.nx * gridCols,
-          z1: z1 / snap.nz * gridRows,
-          color: Color.lerp(
-            AppColors.lightingColor.withValues(alpha: 0.06),
-            AppColors.lightingColor.withValues(alpha: 0.45),
-            t,
-          )!,
+          x0: wx0,
+          z0: wz0,
+          x1: math.min(x1 * voxW, gridCols.toDouble()),
+          z1: math.min(z1 * voxD, gridRows.toDouble()),
+          color: color,
         ),
       );
     }
@@ -427,12 +512,14 @@ class RigLiveDomainBar extends StatelessWidget {
   final RigLiveDomain domain;
   final double score;
   final ValueChanged<RigLiveDomain> onChanged;
+  final String detail;
 
   const RigLiveDomainBar({
     super.key,
     required this.domain,
     required this.score,
     required this.onChanged,
+    this.detail = '',
   });
 
   @override
@@ -481,8 +568,10 @@ class RigLiveDomainBar extends StatelessWidget {
         if (domain != RigLiveDomain.none) ...[
           const SizedBox(height: 6),
           Text(
-            'LIVE EST. ${score.round()} — Edit 2D / Orbit / Model · updates as you arrange',
-            style: TextStyle(
+            detail.isEmpty
+                ? 'LIVE · Bench My Room field · score ${score.round()}'
+                : 'LIVE · $detail — not Bench Improved',
+            style: const TextStyle(
               color: AppColors.textMuted,
               fontSize: 10,
               fontWeight: FontWeight.w600,
