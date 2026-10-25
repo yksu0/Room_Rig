@@ -1328,6 +1328,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showDialog<String>(
       context: context,
+      useRootNavigator: true,
+      barrierDismissible: true,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text('Rearrange my inventory?', style: TextStyle(color: AppColors.textPrimary)),
@@ -1341,17 +1343,19 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
         actions: [
           TextButton(
             style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
-            onPressed: () => Navigator.of(ctx).pop(false),
+            onPressed: () => Navigator.of(ctx, rootNavigator: true).pop(null),
             child: const Text('Cancel'),
           ),
           TextButton(
             style: TextButton.styleFrom(minimumSize: const Size(64, 44)),
-            onPressed: () => Navigator.of(ctx).pop('alternate'),
+            onPressed: () =>
+                Navigator.of(ctx, rootNavigator: true).pop('alternate'),
             child: const Text('Try alternate'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(minimumSize: const Size(88, 44)),
-            onPressed: () => Navigator.of(ctx).pop('best'),
+            onPressed: () =>
+                Navigator.of(ctx, rootNavigator: true).pop('best'),
             child: const Text('Run best'),
           ),
         ],

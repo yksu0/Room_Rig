@@ -4,6 +4,7 @@
 // Refs: Android Adaptive Apps SupportingPaneScaffold; MD3 window size classes.
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
+import '../room_model_scene_pointer_guard.dart';
 import '../room_model_scene_stub.dart'
     if (dart.library.html) '../room_model_scene_web.dart' as platform;
 
@@ -207,8 +208,8 @@ class AdaptivePanelController {
       );
     } finally {
       openRegion = null;
-      // NavigatorObserver also toggles this; restore when this sheet was the only overlay.
-      platform.setRoomModelScenePointerEvents(true);
+      // NavigatorObserver tracks depth; don't force-enable under another dialog.
+      RoomModelScenePointerGuard.instance.restoreIfClear();
     }
   }
 }

@@ -4,9 +4,12 @@ import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 
+/// Every Model iframe ever created (Rig + Bench can both mount via IndexedStack).
+final List<html.IFrameElement> _iframes = [];
 html.IFrameElement? _iframe;
 bool _registered = false;
 bool _messageHooked = false;
+bool _pointersEnabled = true;
 void Function()? _onReady;
 void Function(Map<String, dynamic> data)? _onMessage;
 
@@ -24,8 +27,12 @@ void registerRoomModelIFrameFactory() {
         ..style.width = '100%'
         ..style.height = '100%'
         ..style.backgroundColor = '#090B10';
+      _iframes.add(iframe);
       _iframe = iframe;
+      // Honor current overlay state (dialog may already be open).
+      _applyPointerEvents(iframe, _pointersEnabled);
       iframe.onLoad.listen((_) {
+        _applyPointerEvents(iframe, _pointersEnabled);
         _onReady?.call();
       });
       return iframe;
@@ -49,11 +56,50 @@ void pushRoomModelSceneWeb(Map<String, dynamic> payload) {
 }
 
 /// HtmlElementView sits above Flutter hit-testing on web — turn off iframe
-/// pointers while dialogs / sheets are open so buttons receive clicks.
+/// (and its platform-view host) while dialogs / sheets are open so buttons
+/// receive clicks.
 void setRoomModelScenePointerEvents(bool enabled) {
-  final iframe = _iframe;
-  if (iframe == null) return;
-  iframe.style.pointerEvents = enabled ? 'auto' : 'none';
+  _pointersEnabled = enabled;
+  _pruneDetachedIframes();
+  for (final iframe in _iframes) {
+    _applyPointerEvents(iframe, enabled);
+  }
+  // Catch any iframe the factory list missed (hot restart / remount).
+  for (final node in html.document.querySelectorAll('iframe')) {
+    if (node is! html.IFrameElement) continue;
+    final src = node.src ?? '';
+    if (!src.contains('room_viewer.html')) continue;
+    if (!_iframes.contains(node)) {
+      _iframes.add(node);
+    }
+    _applyPointerEvents(node, enabled);
+  }
+}
+
+void _pruneDetachedIframes() {
+  _iframes.removeWhere((e) => e.isConnected != true);
+  if (_iframe != null && _iframe!.isConnected != true) {
+    _iframe = _iframes.isEmpty ? null : _iframes.last;
+  }
+}
+
+void _applyPointerEvents(html.IFrameElement iframe, bool enabled) {
+  final value = enabled ? 'auto' : 'none';
+  iframe.style.pointerEvents = value;
+  // Flutter web hosts the iframe inside flt-platform-view; that host also
+  // steals hits unless pointer-events is cleared on the ancestors.
+  html.Element? el = iframe.parent;
+  while (el != null) {
+    final tag = el.tagName.toLowerCase();
+    if (tag == 'flt-platform-view' ||
+        tag == 'flt-platform-view-slot' ||
+        tag == 'slot') {
+      el.style.pointerEvents = value;
+    }
+    // Stop at the glass pane / flutter-view — don't disable the whole app.
+    if (tag == 'flt-glass-pane' || tag == 'flutter-view') break;
+    el = el.parent;
+  }
 }
 
 void setRoomModelSceneMessageHandler(
