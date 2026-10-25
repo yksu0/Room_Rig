@@ -816,7 +816,15 @@ class AppState extends ChangeNotifier {
     _furniture = [
       for (final f in _furniture) if (f.id == id) hosted else f,
     ];
-    if (LayoutCollision.itemCollides(hosted, _furniture)) return false;
+    final room = currentRoomData;
+    if (LayoutCollision.itemCollides(
+      hosted,
+      _furniture,
+      gridCols: room.gridCols,
+      gridRows: room.gridRows,
+    )) {
+      return false;
+    }
 
     final without = _furniture.where((f) => f.id != id).map((f) => f.copyWith()).toList(growable: false);
     _undoStack.add(without);
@@ -1461,6 +1469,8 @@ class AppState extends ChangeNotifier {
         _dragPoseBlocked = LayoutCollision.itemCollides(
           current.copyWith(gridX: resolved.gridX, gridY: resolved.gridY),
           _furniture,
+          gridCols: room.gridCols,
+          gridRows: room.gridRows,
         );
         _activeSnapGuides = guides;
         notifyListeners();
@@ -1476,7 +1486,12 @@ class AppState extends ChangeNotifier {
 
     if (_gestureCheckpointOpen) {
       final posed = _furniture[idx];
-      _dragPoseBlocked = LayoutCollision.itemCollides(posed, _furniture);
+      _dragPoseBlocked = LayoutCollision.itemCollides(
+        posed,
+        _furniture,
+        gridCols: room.gridCols,
+        gridRows: room.gridRows,
+      );
       if (!_dragPoseBlocked) {
         _dragLastValidX = posed.gridX;
         _dragLastValidY = posed.gridY;
@@ -1517,7 +1532,13 @@ class AppState extends ChangeNotifier {
       width: snappedW,
       height: snappedH,
     );
-    if (id != _pendingPlacementId && LayoutCollision.itemCollides(candidate, _furniture)) {
+    if (id != _pendingPlacementId &&
+        LayoutCollision.itemCollides(
+          candidate,
+          _furniture,
+          gridCols: room.gridCols,
+          gridRows: room.gridRows,
+        )) {
       return false;
     }
 

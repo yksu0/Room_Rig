@@ -1,6 +1,7 @@
 // lib/widgets/rig_customizer/room_orbit_3d_painter.dart
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../models/door_swing.dart';
 import '../../models/room_model.dart';
 import '../../models/surface_mount.dart';
 import '../../theme/app_theme.dart';
@@ -428,24 +429,33 @@ class RoomOrbit3DPainter extends CustomPainter {
     );
     if (face == null) return;
 
-    // Swing arc on the floor, hinged at the span start.
-    final radius = span.length;
+    // True quarter-circle swing on the floor (hinge → closed leaf → open leaf).
+    final swing = DoorSwingGeometry.fromSpan(span);
+    final hingeP = RoomProjection.project(
+      OrbitVec3(swing.hingeX, 0.02, swing.hingeZ),
+      size,
+      cam,
+    );
+    final closed = swing.pointAt(0);
+    final open = swing.pointAt(1);
+    final closedP = RoomProjection.project(
+      OrbitVec3(closed.$1, 0.02, closed.$2),
+      size,
+      cam,
+    );
+    final openP = RoomProjection.project(
+      OrbitVec3(open.$1, 0.02, open.$2),
+      size,
+      cam,
+    );
     final arc = <Offset>[];
-    const steps = 12;
-    for (int i = 0; i <= steps; i++) {
-      final t = i / steps;
-      final angle = t * math.pi / 2;
-      // Sweep from along-wall toward the inward normal.
-      final alongX = (span.x1 - span.x0) / (radius == 0 ? 1 : radius);
-      final alongZ = (span.z1 - span.z0) / (radius == 0 ? 1 : radius);
-      final px = span.x0 + (alongX * math.cos(angle) + span.inwardX * math.sin(angle)) * radius;
-      final pz = span.z0 + (alongZ * math.cos(angle) + span.inwardZ * math.sin(angle)) * radius;
-      final p = RoomProjection.project(OrbitVec3(px, 0.02, pz), size, cam);
-      if (p == null) {
+    for (final p in swing.arcPoints(steps: 28)) {
+      final proj = RoomProjection.project(OrbitVec3(p.$1, 0.02, p.$2), size, cam);
+      if (proj == null) {
         arc.clear();
         break;
       }
-      arc.add(p.offset);
+      arc.add(proj.offset);
     }
 
     final handle = _projectAlongWall(span, 0.82, mount.topY * 0.45, 0.05, size, cam);
@@ -461,25 +471,30 @@ class RoomOrbit3DPainter extends CustomPainter {
           ..strokeWidth = item.selected ? 2.4 : 1.8,
       );
 
-      if (arc.length > 2) {
+      if (hingeP != null && closedP != null && openP != null && arc.length > 2) {
+        final sector = Path()
+          ..moveTo(hingeP.offset.dx, hingeP.offset.dy)
+          ..lineTo(closedP.offset.dx, closedP.offset.dy);
+        for (final p in arc.skip(1)) {
+          sector.lineTo(p.dx, p.dy);
+        }
+        sector.close();
+        canvas.drawPath(
+          sector,
+          Paint()
+            ..color = AppColors.textSecondary.withValues(alpha: item.selected ? 0.14 : 0.08),
+        );
         final arcPath = Path()..moveTo(arc.first.dx, arc.first.dy);
         for (final p in arc.skip(1)) {
           arcPath.lineTo(p.dx, p.dy);
         }
-        canvas.drawPath(
-          arcPath,
-          Paint()
-            ..color = AppColors.textSecondary.withValues(alpha: 0.45)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2,
-        );
-        canvas.drawLine(
-          arc.first,
-          arc.last,
-          Paint()
-            ..color = AppColors.textSecondary.withValues(alpha: 0.28)
-            ..strokeWidth = 1,
-        );
+        final stroke = Paint()
+          ..color = AppColors.textSecondary.withValues(alpha: item.selected ? 0.7 : 0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.35;
+        canvas.drawPath(arcPath, stroke);
+        canvas.drawLine(hingeP.offset, closedP.offset, stroke);
+        canvas.drawLine(hingeP.offset, openP.offset, stroke);
       }
 
       if (handle != null) {

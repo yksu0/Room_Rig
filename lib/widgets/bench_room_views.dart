@@ -3,6 +3,7 @@
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import '../models/door_swing.dart';
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
 import '../services/furniture_sprites.dart';
@@ -862,36 +863,46 @@ class BenchFurnitureRenderer {
         }
       }));
     } else if (mount.style == MountStyle.door) {
-      final radius = span.length;
-      final alongX = (span.x1 - span.x0) / (radius == 0 ? 1 : radius);
-      final alongZ = (span.z1 - span.z0) / (radius == 0 ? 1 : radius);
+      final swing = DoorSwingGeometry.fromSpan(span);
+      final hinge = _project(_V3(swing.hingeX, 0.02, swing.hingeZ), size, cam);
+      final closed = swing.pointAt(0);
+      final open = swing.pointAt(1);
+      final closedP = _project(_V3(closed.$1, 0.02, closed.$2), size, cam);
+      final openP = _project(_V3(open.$1, 0.02, open.$2), size, cam);
       final arc = <Offset>[];
-      for (int i = 0; i <= 10; i++) {
-        final t = i / 10;
-        final angle = t * math.pi / 2;
-        final px = span.x0 + (alongX * math.cos(angle) + span.inwardX * math.sin(angle)) * radius;
-        final pz = span.z0 + (alongZ * math.cos(angle) + span.inwardZ * math.sin(angle)) * radius;
-        final p = _project(_V3(px, 0.02, pz), size, cam);
-        if (p == null) {
+      for (final p in swing.arcPoints(steps: 28)) {
+        final proj = _project(_V3(p.$1, 0.02, p.$2), size, cam);
+        if (proj == null) {
           arc.clear();
           break;
         }
-        arc.add(p.$1);
+        arc.add(proj.$1);
       }
       final handle = _project(_alongWall(span, 0.82, mount.topY * 0.45, inset + 0.04), size, cam);
       overlays.add(_BenchOverlay(face.depth - 0.01, (c) {
-        if (arc.length >= 2) {
-          final path = Path()..moveTo(arc.first.dx, arc.first.dy);
+        if (hinge != null && closedP != null && openP != null && arc.length >= 2) {
+          final sector = Path()
+            ..moveTo(hinge.$1.dx, hinge.$1.dy)
+            ..lineTo(closedP.$1.dx, closedP.$1.dy);
           for (final pt in arc.skip(1)) {
-            path.lineTo(pt.dx, pt.dy);
+            sector.lineTo(pt.dx, pt.dy);
           }
+          sector.close();
           c.drawPath(
-            path,
-            Paint()
-              ..color = color.withValues(alpha: 0.55)
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.2,
+            sector,
+            Paint()..color = color.withValues(alpha: 0.12),
           );
+          final stroke = Paint()
+            ..color = color.withValues(alpha: 0.65)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.25;
+          final arcPath = Path()..moveTo(arc.first.dx, arc.first.dy);
+          for (final pt in arc.skip(1)) {
+            arcPath.lineTo(pt.dx, pt.dy);
+          }
+          c.drawPath(arcPath, stroke);
+          c.drawLine(hinge.$1, closedP.$1, stroke);
+          c.drawLine(hinge.$1, openP.$1, stroke);
         }
         if (handle != null) {
           c.drawCircle(handle.$1, 2.4, Paint()..color = AppColors.amber);

@@ -1,4 +1,7 @@
 // lib/services/layout_collision.dart
+import 'dart:math' as math;
+
+import '../models/door_swing.dart';
 import '../models/room_model.dart';
 import '../models/surface_mount.dart';
 
@@ -79,8 +82,34 @@ class LayoutCollision {
         hay.contains('curtain');
   }
 
-  static bool itemCollides(FurnitureItem candidate, List<FurnitureItem> furniture) =>
-      _collidesWithOthers(candidate, furniture);
+  static bool itemCollides(
+    FurnitureItem candidate,
+    List<FurnitureItem> furniture, {
+    int? gridCols,
+    int? gridRows,
+  }) =>
+      _collidesWithOthers(
+        candidate,
+        furniture,
+        gridCols: gridCols ?? _inferCols(furniture),
+        gridRows: gridRows ?? _inferRows(furniture),
+      );
+
+  static int _inferCols(List<FurnitureItem> furniture) {
+    var max = 6.0;
+    for (final f in furniture) {
+      max = math.max(max, f.gridX + f.width);
+    }
+    return max.ceil().clamp(4, 64);
+  }
+
+  static int _inferRows(List<FurnitureItem> furniture) {
+    var max = 8.0;
+    for (final f in furniture) {
+      max = math.max(max, f.gridY + f.height);
+    }
+    return max.ceil().clamp(4, 64);
+  }
 
   static double snap(double v) => (v / snapStep).round() * snapStep;
 
@@ -115,17 +144,32 @@ class LayoutCollision {
     }
 
     final candidate = moving.copyWith(gridX: x, gridY: y);
-    if (!_collidesWithOthers(candidate, furniture)) {
+    if (!_collidesWithOthers(
+      candidate,
+      furniture,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    )) {
       return LayoutMoveResult(gridX: x, gridY: y, snapped: true);
     }
 
     // Try axis slides from last valid intent (prefer X then Y then both).
     final xOnly = moving.copyWith(gridX: x);
-    if (!_collidesWithOthers(xOnly, furniture)) {
+    if (!_collidesWithOthers(
+      xOnly,
+      furniture,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    )) {
       return LayoutMoveResult(gridX: x, gridY: moving.gridY, snapped: true);
     }
     final yOnly = moving.copyWith(gridY: y);
-    if (!_collidesWithOthers(yOnly, furniture)) {
+    if (!_collidesWithOthers(
+      yOnly,
+      furniture,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    )) {
       return LayoutMoveResult(gridX: moving.gridX, gridY: y, snapped: true);
     }
 
@@ -180,7 +224,12 @@ class LayoutCollision {
         yawDegrees: ((moving.yawDegrees + steps * 90) % 360 + 360) % 360,
       );
       if (_skipsCollision(candidate)) return true;
-      return !_collidesWithOthers(candidate, furniture);
+      return !_collidesWithOthers(
+        candidate,
+        furniture,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      );
     }
 
     // Prefer keeping the center, then spiral out on the snap grid.
@@ -276,7 +325,14 @@ class LayoutCollision {
           width: width,
           height: height,
         );
-        if (_collidesWithOthers(probe, furniture)) continue;
+        if (_collidesWithOthers(
+          probe,
+          furniture,
+          gridCols: gridCols,
+          gridRows: gridRows,
+        )) {
+          continue;
+        }
         // Also reject cells that sit on door/window openings.
         var blocksOpening = false;
         for (final opening in furniture.where(_isOpening)) {
@@ -312,10 +368,45 @@ class LayoutCollision {
     return (gridX: best.gridX, gridY: best.gridY);
   }
 
-  static bool _collidesWithOthers(FurnitureItem candidate, List<FurnitureItem> furniture) {
+  static bool _collidesWithOthers(
+    FurnitureItem candidate,
+    List<FurnitureItem> furniture, {
+    required int gridCols,
+    required int gridRows,
+  }) {
     for (final other in furniture) {
       if (other.id == candidate.id) continue;
       if (_pairBlocks(candidate, other, furniture)) return true;
+    }
+    if (_overlapsDoorSwing(
+      candidate,
+      furniture,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    )) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Floor furniture may not sit in a door's inward quarter-circle swing.
+  static bool _overlapsDoorSwing(
+    FurnitureItem candidate,
+    List<FurnitureItem> furniture, {
+    required int gridCols,
+    required int gridRows,
+  }) {
+    if (_skipsCollision(candidate)) return false;
+    if (SurfaceMounts.isDeskTopItem(candidate)) return false;
+    for (final f in furniture) {
+      if (f.id == candidate.id) continue;
+      final swing = DoorSwingGeometry.of(
+        f,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      );
+      if (swing == null) continue;
+      if (swing.overlapsItem(candidate)) return true;
     }
     return false;
   }
@@ -374,20 +465,30 @@ class LayoutCollision {
     }
 
     for (final opening in furniture.where(_isOpening)) {
+      final swing = DoorSwingGeometry.of(
+        opening,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      );
       for (final other in furniture) {
         if (other.id == opening.id) continue;
         if (_skipsCollision(other)) continue;
-        if (!overlaps(opening, other)) continue;
+        final hitsFootprint = overlaps(opening, other);
+        final hitsSwing = swing != null && swing.overlapsItem(other);
+        if (!hitsFootprint && !hitsSwing) continue;
         conflicts.add(
           LayoutConflict(
             kind: LayoutConflictKind.blockedOpening,
-            message: '${other.name} blocks ${opening.name}',
+            message: hitsSwing && !hitsFootprint
+                ? '${other.name} blocks ${opening.name} swing'
+                : '${other.name} blocks ${opening.name}',
             itemIds: [other.id, opening.id],
           ),
         );
       }
 
-      // Soft clearance: keep ~0.75 cell free inward from wall openings.
+      // Windows (no swing): keep a short inward clearance strip.
+      if (swing != null) continue;
       final inwardY = opening.gridY <= 0.35
           ? opening.gridY + opening.height
           : opening.gridY >= gridRows - opening.height - 0.35
@@ -397,7 +498,7 @@ class LayoutCollision {
         final zone = FurnitureItem(
           id: '_clearance',
           name: 'Clearance',
-          iconName: 'door',
+          iconName: 'window',
           category: 'neutral',
           gridX: opening.gridX,
           gridY: inwardY,

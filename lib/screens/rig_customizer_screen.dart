@@ -3398,31 +3398,50 @@ class _WallFittingPainter extends CustomPainter {
         _line(canvas, size, 0, 1, 0, 10, jamb);
         _line(canvas, size, 1, 1, 1, 10, jamb);
       case MountStyle.door:
-        // Opening shown as a break in the wall, with the leaf swung inward.
+        // Opening break + true quarter-circle swing in pixel space.
         _line(canvas, size, 0, 2, 0.06, 2, wallFace);
         _line(canvas, size, 0.94, 2, 1, 2, wallFace);
-        final leafLen = math.min(
-          wall == RoomWall.north || wall == RoomWall.south ? size.height : size.width,
-          38.0,
-        );
-        _line(canvas, size, 0.06, 2, 0.06, leafLen, wallFace);
-        final arc = Path();
-        for (int i = 0; i <= 10; i++) {
-          final a = (i / 10) * math.pi / 2;
-          final pt = _p(size, 0.06 + 0.88 * math.sin(a), 2 + (leafLen - 2) * math.cos(a));
-          if (i == 0) {
-            arc.moveTo(pt.dx, pt.dy);
-          } else {
-            arc.lineTo(pt.dx, pt.dy);
-          }
+        final alongPx = wall == RoomWall.north || wall == RoomWall.south
+            ? size.width
+            : size.height;
+        final inwardPx = wall == RoomWall.north || wall == RoomWall.south
+            ? size.height
+            : size.width;
+        final radius = math.min(alongPx * 0.88, math.max(inwardPx - 4, 8.0));
+        final hinge = _p(size, 0.06, 2);
+        // Closed leaf tip (along wall) and open tip (into room) in equal pixel radius.
+        Offset tip(double angle) {
+          // angle 0 = along wall toward t=1; π/2 = straight inward.
+          final alongT = 0.06 + (radius / alongPx) * math.cos(angle);
+          final depth = 2 + radius * math.sin(angle);
+          return _p(size, alongT, depth);
         }
+        final closed = tip(0);
+        final open = tip(math.pi / 2);
+        _line(canvas, size, 0.06, 2, 0.06, 2 + radius, wallFace);
+        final sector = Path()..moveTo(hinge.dx, hinge.dy)..lineTo(closed.dx, closed.dy);
+        for (int i = 1; i <= 24; i++) {
+          final a = (i / 24) * math.pi / 2;
+          final pt = tip(a);
+          sector.lineTo(pt.dx, pt.dy);
+        }
+        sector.close();
         canvas.drawPath(
-          arc,
-          Paint()
-            ..color = color.withValues(alpha: selected ? 0.6 : 0.35)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2,
+          sector,
+          Paint()..color = color.withValues(alpha: selected ? 0.16 : 0.08),
         );
+        final stroke = Paint()
+          ..color = color.withValues(alpha: selected ? 0.7 : 0.4)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2;
+        final arc = Path()..moveTo(closed.dx, closed.dy);
+        for (int i = 1; i <= 24; i++) {
+          final pt = tip((i / 24) * math.pi / 2);
+          arc.lineTo(pt.dx, pt.dy);
+        }
+        canvas.drawPath(arc, stroke);
+        canvas.drawLine(hinge, closed, stroke);
+        canvas.drawLine(hinge, open, stroke);
       case MountStyle.vent:
         // Wall unit with louvers facing into the room.
         _line(canvas, size, 0, 2, 1, 2, wallFace);
