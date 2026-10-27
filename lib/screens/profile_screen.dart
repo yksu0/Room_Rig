@@ -57,7 +57,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _editName(ProfileService profiles) async {
-    final ctrl = TextEditingController(text: profiles.displayLabel);
+    final ctrl = TextEditingController(
+      text: profiles.hasDisplayName ? profiles.displayLabel : '',
+    );
     String? error;
     final saved = await showDialog<String>(
       context: context,
@@ -428,7 +430,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ProfileAvatar(
                 size: 104,
                 imageUrl: profiles.avatarUrl,
-                label: profiles.displayLabel,
+                // Initial only when they set an app name — never Google.
+                label: profiles.hasDisplayName ? profiles.displayLabel : null,
               ),
               Positioned(
                 right: -2,
@@ -465,8 +468,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       profiles.displayLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
+                      style: TextStyle(
+                        color: profiles.hasDisplayName
+                            ? AppColors.textPrimary
+                            : AppColors.textMuted,
                         fontSize: 22,
                         fontWeight: FontWeight.w800,
                       ),

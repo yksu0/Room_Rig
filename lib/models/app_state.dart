@@ -1353,7 +1353,7 @@ class AppState extends ChangeNotifier {
     final guestSnapshot =
         _rooms.where((r) => r.isGuestOwned).toList(growable: false);
     _stashActiveRoom();
-    await _roomRepo.ensureProfile(userId: uid, displayName: signedInEmail);
+    await _roomRepo.ensureProfile(userId: uid);
     var cloudLoaded = false;
     try {
       final cloud = await _roomRepo.fetchRooms(uid);

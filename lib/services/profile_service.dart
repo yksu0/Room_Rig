@@ -65,36 +65,22 @@ class ProfileService extends ChangeNotifier {
   SupabaseClient? get _client => SupabaseBootstrap.clientOrNull;
   User? get _user => _client?.auth.currentUser;
 
-  /// Google photo from the identity payload (used while no custom avatar exists).
-  String? get providerAvatarUrl {
-    final meta = _user?.userMetadata;
-    if (meta == null) return null;
-    final v = meta['avatar_url'] ?? meta['picture'];
-    return v is String && v.isNotEmpty ? v : null;
-  }
-
-  String? get providerDisplayName {
-    final meta = _user?.userMetadata;
-    if (meta == null) return null;
-    final v = meta['full_name'] ?? meta['name'] ?? meta['display_name'];
-    return v is String && v.trim().isNotEmpty ? v.trim() : null;
-  }
-
-  /// Best-effort name for chips: profile → provider → email local part.
+  /// App-owned display name only — never Google / OAuth metadata.
   String get displayLabel {
     final p = _profile?.displayName?.trim();
     if (p != null && p.isNotEmpty) return p;
-    final g = providerDisplayName;
-    if (g != null) return g;
-    final email = _user?.email;
-    if (email != null && email.contains('@')) return email.split('@').first;
-    return 'Account';
+    return 'Add name';
   }
 
+  /// True when the user has set a Room Rig display name in Profile.
+  bool get hasDisplayName =>
+      (_profile?.displayName ?? '').trim().isNotEmpty;
+
+  /// App-owned avatar URL only (avatars bucket). Never Google photo.
   String? get avatarUrl {
     final a = _profile?.avatarUrl;
     if (a != null && a.isNotEmpty) return a;
-    return providerAvatarUrl;
+    return null;
   }
 
   void clear() {
@@ -103,8 +89,8 @@ class ProfileService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Fetch (or seed) the profile row. Also cancels a pending deletion — a
-  /// sign-in inside the 7-day window means the user changed their mind.
+  /// Fetch (or create a blank) app profile row. Never copies Google name/photo.
+  /// Sign-in inside the 7-day delete window cancels pending deletion.
   Future<void> load({bool cancelPendingDeletion = true}) async {
     final client = _client;
     final user = _user;
@@ -124,25 +110,17 @@ class ProfileService extends ChangeNotifier {
           ? UserProfile(id: user.id)
           : UserProfile.fromRow(Map<String, dynamic>.from(row));
 
-      // Seed missing name/avatar from the provider (Google photo etc.).
       final patch = <String, dynamic>{};
-      if ((p.displayName ?? '').trim().isEmpty) {
-        final seed = providerDisplayName ?? user.email?.split('@').first;
-        if (seed != null) patch['display_name'] = seed;
-      }
-      if ((p.avatarUrl ?? '').isEmpty && providerAvatarUrl != null) {
-        patch['avatar_url'] = providerAvatarUrl;
-      }
       if (cancelPendingDeletion && p.deletionRequestedAt != null) {
         patch['deletion_requested_at'] = null;
       }
+      // Ensure the row exists; leave display_name / avatar_url null until
+      // the user sets them in Profile (app-owned identity).
       if (patch.isNotEmpty || row == null) {
         await client.from('profiles').upsert({'id': user.id, ...patch});
-        p = p.copyWith(
-          displayName: patch['display_name'] as String?,
-          avatarUrl: patch['avatar_url'] as String?,
-          clearDeletion: patch.containsKey('deletion_requested_at'),
-        );
+        if (patch.containsKey('deletion_requested_at')) {
+          p = p.copyWith(clearDeletion: true);
+        }
       }
       _profile = p;
     } catch (e) {

@@ -526,6 +526,7 @@ class _RoomNavBar extends StatelessWidget {
 }
 
 /// Centre Scan tab: a raised filled disc so it reads as the primary action.
+/// Sized to fit the 76px nav bar without overflow (icon + label).
 class _ScanNavTile extends StatelessWidget {
   final String label;
   final bool selected;
@@ -535,39 +536,40 @@ class _ScanNavTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final fill = selected ? AppColors.cyan : AppColors.cyan.withValues(alpha: 0.18);
     final iconColor = selected ? AppColors.bg : AppColors.cyan;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: fill,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.cyan.withValues(alpha: selected ? 1 : 0.6),
-                width: 1.5,
-              ),
-            ),
-            child: Center(
-              child: SvgIcon(RoomSvg.scan, size: 22, color: iconColor),
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: fill,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: AppColors.cyan.withValues(alpha: selected ? 1 : 0.6),
+              width: 1.5,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: AppColors.cyan,
-              fontSize: 11,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
-              letterSpacing: 0.2,
-            ),
+          child: Center(
+            child: SvgIcon(RoomSvg.scan, size: 18, color: iconColor),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: AppColors.cyan,
+            fontSize: 10,
+            fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
+            letterSpacing: 0.2,
+            height: 1.1,
+          ),
+        ),
+      ],
     );
   }
 }

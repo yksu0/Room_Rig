@@ -55,18 +55,13 @@ class RoomRepository {
     await client.from('rooms').delete().eq('user_id', userId).eq('id', roomId);
   }
 
-  Future<void> ensureProfile({
-    required String userId,
-    String? displayName,
-  }) async {
+  /// Ensures a blank profiles row exists. Does not set display_name / avatar —
+  /// those are app-owned and only written from Profile.
+  Future<void> ensureProfile({required String userId}) async {
     final client = _client;
     if (client == null) return;
     try {
-      await client.from('profiles').upsert({
-        'id': userId,
-        if (displayName != null && displayName.trim().isNotEmpty)
-          'display_name': displayName.trim(),
-      });
+      await client.from('profiles').upsert({'id': userId});
     } catch (e) {
       debugPrint('ensureProfile: $e');
     }

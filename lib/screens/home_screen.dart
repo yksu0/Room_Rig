@@ -372,7 +372,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: ProfileAvatar(
                   size: 44,
                   imageUrl: auth.isSignedIn ? profiles.avatarUrl : null,
-                  label: auth.isSignedIn ? profiles.displayLabel : null,
+                  label: auth.isSignedIn && profiles.hasDisplayName
+                      ? profiles.displayLabel
+                      : null,
                 ),
               ),
             ),
