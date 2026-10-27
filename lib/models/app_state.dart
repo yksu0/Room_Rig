@@ -12,6 +12,7 @@ import 'room_model.dart';
 import 'room_scale.dart';
 import 'sim_room_bounds.dart';
 import 'benchmark_compare_source.dart';
+import 'published_layout.dart';
 import 'saved_room.dart';
 import 'surface_mount.dart';
 import 'scan_layout_model.dart';
@@ -29,6 +30,7 @@ import '../services/layout_snap_guides.dart';
 import '../services/lighting_optimizer.dart';
 import '../services/lighting_simulator.dart';
 import '../services/multi_objective_optimizer.dart';
+import '../services/published_layout_repository.dart';
 import '../services/room_repository.dart';
 import '../services/scan_layout_converter.dart';
 import '../services/scan_pipeline.dart';
@@ -284,6 +286,8 @@ class AppState extends ChangeNotifier {
 
   BenchmarkCompareSource _benchmarkCompareLeft = const BenchmarkCompareSource.currentRoom();
   BenchmarkCompareSource _benchmarkCompareRight = const BenchmarkCompareSource.autoRig();
+  final PublishedLayoutRepository _publishedLayouts = PublishedLayoutRepository();
+  final Map<String, PublishedLayout> _publishedLayoutCache = {};
 
   /// Bumped when the user mutates session state so a late prefs hydrate cannot
   /// overwrite in-memory Place ghosts / demo work.
@@ -1623,8 +1627,23 @@ class AppState extends ChangeNotifier {
           if (r.id == id) return r.label;
         }
         return 'Snapshot';
+      case BenchmarkCompareKind.publishedLayout:
+        final cached = source.publishedLayoutId == null
+            ? null
+            : _publishedLayoutCache[source.publishedLayoutId!];
+        return source.publishedLayoutTitle ??
+            cached?.title ??
+            'Community layout';
     }
   }
+
+  /// Cache a community layout so Compare can resolve it offline after pick.
+  void cachePublishedLayout(PublishedLayout layout) {
+    _publishedLayoutCache[layout.id] = layout;
+  }
+
+  PublishedLayout? cachedPublishedLayout(String id) =>
+      _publishedLayoutCache[id];
 
   /// Furniture for a compare side. [autoRig] returns null (caller runs optimizer).
   List<FurnitureItem>? resolveBenchmarkCompareFurniture(BenchmarkCompareSource source) {
@@ -1650,8 +1669,118 @@ class AppState extends ChangeNotifier {
             .where((f) => !f.hidden)
             .map((f) => f.copyWith())
             .toList(growable: false);
+      case BenchmarkCompareKind.publishedLayout:
+        final id = source.publishedLayoutId;
+        if (id == null) return const [];
+        final hit = _publishedLayoutCache[id];
+        if (hit == null) return const [];
+        return hit.layout.furniture
+            .where((f) => !f.hidden)
+            .map((f) => f.copyWith())
+            .toList(growable: false);
     }
   }
+
+  /// Snapshot of the active room for Community publish.
+  PublishedLayoutSnapshot currentRoomPublishSnapshot() {
+    final room = currentRoomData;
+    return PublishedLayoutSnapshot(
+      name: room.name,
+      presetName: _selectedPreset.name,
+      gridCols: room.gridCols,
+      gridRows: room.gridRows,
+      furniture: committedFurniture.map((f) => f.copyWith()).toList(growable: false),
+    );
+  }
+
+  Map<String, dynamic> currentRoomPublishScores() => {
+        'overall': overallScore.round(),
+        'airflow': airflowScore.round(),
+        'lighting': lightingScore.round(),
+        'ergonomics': ergonomicsScore.round(),
+        'spatial': spatialScore.round(),
+      };
+
+  Future<PublishedLayout> publishCurrentRoom({
+    required String authorId,
+    required String title,
+    List<String> tags = const [],
+  }) async {
+    final published = await _publishedLayouts.publish(
+      authorId: authorId,
+      title: title,
+      layout: currentRoomPublishSnapshot(),
+      scores: currentRoomPublishScores(),
+      tags: tags,
+    );
+    cachePublishedLayout(published);
+    return published;
+  }
+
+  Future<PublishedLayout?> ensurePublishedLayoutCached(String id) async {
+    final existing = _publishedLayoutCache[id];
+    if (existing != null) return existing;
+    final fetched = await _publishedLayouts.fetchById(id);
+    if (fetched != null) cachePublishedLayout(fetched);
+    return fetched;
+  }
+
+  /// Replace the active Room with a community / baseline layout.
+  Future<bool> clonePublishedLayout(String layoutId) async {
+    if (!isSignedIn) return false;
+    final layout = await ensurePublishedLayoutCached(layoutId);
+    if (layout == null) return false;
+    final snap = layout.layout;
+    const cell = RoomScale.cellMeters;
+    cancelPendingPlacement(notify: false);
+    _pushUndoCheckpoint();
+    _furniture = RoomCatalog.retainV1(
+      snap.furniture.map((f) => f.copyWith()).toList(growable: false),
+    );
+    _activeRoomLayout = RoomLayoutModel(
+      roomName: snap.name,
+      dimensions: RoomDimensions(
+        lengthMeters: snap.gridCols * cell,
+        widthMeters: snap.gridRows * cell,
+        heightMeters: RoomScale.defaultHeightMeters,
+      ),
+      coverageGrid: CoverageGrid.empty(cols: snap.gridCols, rows: snap.gridRows),
+      objects: _furniture
+          .map((item) => ScanObject.fromFurniture(item, cellMeters: cell))
+          .toList(growable: false),
+      detections: const [],
+      updatedAt: DateTime.now().toUtc(),
+      scanSource: 'community',
+    );
+    _rememberFurniture();
+    _selectedItemId = null;
+    _selectedIsScanObject = false;
+    _markScoresDirty();
+    _originalFurniture = null;
+    _originalScores = null;
+    _syncUpgradesFromFurniture();
+    checkpointActiveRoom('Cloned: ${layout.title}');
+    notifyListeners();
+    return true;
+  }
+
+  /// Open a community layout as the right Compare source.
+  Future<bool> openPublishedInCompare(String layoutId, {String? title}) async {
+    if (!isSignedIn) return false;
+    final layout = await ensurePublishedLayoutCached(layoutId);
+    if (layout == null) return false;
+    setBenchmarkMode('community');
+    setBenchmarkCompareLeft(const BenchmarkCompareSource.currentRoom());
+    setBenchmarkCompareRight(
+      BenchmarkCompareSource.publishedLayout(
+        layout.id,
+        title: title ?? layout.title,
+      ),
+    );
+    return true;
+  }
+
+  PublishedLayoutRepository get publishedLayoutRepository => _publishedLayouts;
 
   /// Seed inventory for Auto-Rig when that side is selected (prefer the other side).
   List<FurnitureItem> benchmarkAutoRigSeedFurniture({required bool forRight}) {

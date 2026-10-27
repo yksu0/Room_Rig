@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../models/app_state.dart';
 import '../screens/auth_screen.dart';
+import '../screens/profile_screen.dart';
 import '../services/auth_service.dart';
+import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
 
 /// Hard block for guests who already own their one room.
@@ -23,6 +25,64 @@ Future<bool> ensureCanCreateRoom(BuildContext context) async {
   );
   if (!context.mounted) return false;
   return signedIn && context.read<AppState>().canCreateAnotherRoom;
+}
+
+/// Publish / rate / clone / Compare / Apply need a signed-in account.
+Future<bool> ensureSignedInForCommunity(
+  BuildContext context, {
+  required String actionLabel,
+}) async {
+  if (context.read<AuthService>().isSignedIn) return true;
+  return showGuestSignupGate(
+    context,
+    title: 'Sign in to $actionLabel',
+    body: 'You can browse Community layouts as a guest. '
+        'Sign in to $actionLabel, keep rooms synced, and build your Profile.',
+  );
+}
+
+/// Publish / rate also need display name + avatar on Profile.
+Future<bool> ensureProfileCompleteForPublish(BuildContext context) async {
+  if (!await ensureSignedInForCommunity(context, actionLabel: 'continue')) {
+    return false;
+  }
+  if (!context.mounted) return false;
+  final profile = context.read<ProfileService>();
+  if (profile.canPublishOrRate) return true;
+
+  final go = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text(
+        'Complete your Profile',
+        style: TextStyle(color: AppColors.textPrimary),
+      ),
+      content: const Text(
+        'Publishing and rating need a display name and avatar. '
+        'Set them on Profile, then come back here.',
+        style: TextStyle(color: AppColors.textSecondary),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Not now'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Open Profile'),
+        ),
+      ],
+    ),
+  );
+  if (go != true || !context.mounted) return false;
+  await Navigator.of(context).push(
+    MaterialPageRoute(builder: (_) => const ProfileScreen()),
+  );
+  if (!context.mounted) return false;
+  await context.read<ProfileService>().load();
+  if (!context.mounted) return false;
+  return context.read<ProfileService>().canPublishOrRate;
 }
 
 /// Shows the signup popup. Returns true if the user is signed in afterwards.

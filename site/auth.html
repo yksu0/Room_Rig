@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in · Room Rig</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Source+Sans+3:wght@400;600;650&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">Room Rig</a>
+      <nav class="nav" aria-label="Primary">
+        <a href="/">Product</a>
+        <a href="/download">Download</a>
+        <a href="/auth" aria-current="page">Sign in</a>
+        <span id="auth-slot"></span>
+      </nav>
+    </header>
+
+    <main class="section">
+      <h2 id="auth-title">Sign in</h2>
+      <p class="muted">
+        Web auth for the storefront. Android Google Sign-In is native and does
+        not route through this site. Mobile email deep link remains
+        <code>com.roomrig.room_rig://login-callback/</code>.
+      </p>
+
+      <div class="panel">
+        <form class="form" id="auth-form">
+          <label>
+            Email
+            <input id="email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input
+              id="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              minlength="6"
+            />
+          </label>
+          <button class="btn btn-primary" id="auth-submit" type="submit">
+            Sign in
+          </button>
+          <button class="btn" id="google-btn" type="button">Continue with Google</button>
+          <a href="#" id="mode-toggle">Need an account? Sign up</a>
+          <p class="status" id="status" role="status"></p>
+        </form>
+      </div>
+    </main>
+
+    <footer class="footer">
+      Redirect allow-list includes <code>https://roomrig.vercel.app/**</code>.
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/config.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

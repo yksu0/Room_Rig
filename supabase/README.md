@@ -3,9 +3,13 @@
 Free-tier orgs are limited to **2 active projects**. Creating `room-rig` failed because both existing projects are in use. Free a slot (pause/delete an unused project) or upgrade, then:
 
 1. Create project `room-rig` (region `ap-southeast-1` recommended).
-2. Run SQL in [migrations/20261018120000_room_rig_init.sql](migrations/20261018120000_room_rig_init.sql), then [migrations/20261027120000_profiles_avatar_soft_delete.sql](migrations/20261027120000_profiles_avatar_soft_delete.sql) (SQL editor or CLI). The second one adds `profiles.avatar_url` / `deletion_requested_at`, the public `avatars` Storage bucket, and the `profiles_due_for_purge` view.
-   - Deploy `functions/purge-deleted-accounts` and schedule it daily (Edge Functions → Schedules, cron `0 3 * * *`). It hard-deletes accounts 7 days after the in-app OTP-confirmed delete; signing in within the window cancels.
+2. Apply migrations with `supabase db push` (or SQL editor), including:
+   - [migrations/20261018120000_room_rig_init.sql](migrations/20261018120000_room_rig_init.sql)
+   - [migrations/20261027120000_profiles_avatar_soft_delete.sql](migrations/20261027120000_profiles_avatar_soft_delete.sql) — `profiles.avatar_url` / `deletion_requested_at`, `avatars` bucket, `profiles_due_for_purge`
+   - [migrations/20261028140000_published_layouts_social.sql](migrations/20261028140000_published_layouts_social.sql) — Community `published_layouts` / `layout_ratings`, `layout_rating_stats`, `monthly_featured_layouts`, `profiles.is_admin`, seeded baselines
+   - Deploy `functions/purge-deleted-accounts` and schedule it daily (Dashboard → Edge Functions → Schedules, cron `0 3 * * *`, or see [functions/purge-deleted-accounts/README.md](functions/purge-deleted-accounts/README.md)). It hard-deletes accounts 7 days after the in-app OTP-confirmed delete; signing in within the window cancels.
    - Email Templates → **Magic Link**: paste `email_templates/magic_link.html` (keeps `{{ .Token }}` so the in-app 6-digit confirm works).
+   - Admin storefront access: `UPDATE profiles SET is_admin = true WHERE id = '…';`
 3. Auth → Email enabled; Confirm email **off** until Brevo SMTP works, then turn **on**.
 4. Auth → URL Configuration (hosted project — required for Android auth handoff):
    - Site URL: `https://roomrig.vercel.app` (or `http://localhost:7357` while web-only testing).
@@ -38,23 +42,23 @@ flutter run -d web-server --web-port 7357 `
 
 Without keys the app runs **guest-only** (local My Rooms). Guests own exactly **one** room; creating a second one is a hard sign-up gate, and the guest room is force-claimed into the account on first sign-in.
 
-## Social layer (not built yet — constraints to keep)
+## Social layer (mobile Benchmark → Community)
 
-No social UI ships today. The Profile page and schema are shaped so the Benchmark social layer can land without migrations that break existing rows:
+Shipped in the Android app + `published_layouts` migration:
 
-- Users publish **full layouts** (not just scores); others can clone or compare against them.
-- Ratings are **up/down + tagged criteria** (airflow / lighting / ergonomics / spatial), one row per rater per layout.
-- **Admin-authored baselines** first; community top-3 monthly later.
-- Publishing or rating requires `profiles.display_name` **and** `profiles.avatar_url` (both already editable on Profile).
-- Moderation hooks (report / hide) are a later step; keep author ids on every public row so they are possible.
+- Guests may **browse** the feed; **publish / rate / clone / Compare / Apply** require sign-in.
+- Publish / rate also require a complete Profile (`display_name` + `avatar_url`).
+- Ratings are up/down + optional tags (airflow / lighting / ergonomics / spatial).
+- Admin baselines are SQL-seeded (`is_admin_baseline`); clients cannot set that flag.
+- Monthly top-3 view: `monthly_featured_layouts` (empty until prior-month rating activity).
+- Report / hide UI is later; `hidden` + `author_id` are already on the table.
 
-Table sketches live as comments at the bottom of `migrations/20261027120000_profiles_avatar_soft_delete.sql`.
+## Production (Vercel storefront)
 
-## Production (Vercel)
+Vercel hosts the **marketing site** in [`site/`](../site/) — product description, Sign in / Sign up, Download (GitHub Releases link), Admin stub. It does **not** host the Flutter web customizer.
 
-Localhost is for you only. Shared access uses a Vercel URL (`*.vercel.app` or custom domain).
-
-1. `vercel login` (CLI) → create/link project (see repo `vercel.json`).
-2. GitHub Actions [`.github/workflows/deploy-web.yml`](../.github/workflows/deploy-web.yml) builds Flutter web and deploys `build/web`.
+1. `vercel login` (CLI) → create/link project (see repo `vercel.json` / `site/vercel.json`).
+2. GitHub Actions [`.github/workflows/deploy-web.yml`](../.github/workflows/deploy-web.yml) runs `scripts/build_site.sh` and deploys `build/site`.
 3. Repo secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
-4. After first deploy, add the production origin to Supabase Auth URL allow list **and** Google OAuth JS origins (keep localhost too).
+4. Keep `https://roomrig.vercel.app/**` on the Auth redirect allow list for **storefront** OAuth. Native Android Google Sign-In does not use Vercel.
+5. Download page points at GitHub Releases; uploading an APK asset is a separate release step (suggested tag style `v1.0.0+1`, not locked).

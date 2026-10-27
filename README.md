@@ -9,8 +9,9 @@ Flutter app that treats an indoor room like a PC build: **layout → score → o
 
 - **Hub** — presets, manual rooms, My Rooms, score rings (`ROUGH EST.` / `BENCHMARK OK`), checkpoints / history / compare (local builds)
 - **Room** — 2D drag + snap/collision, 3D orbit + MOVE, Items drawer / Place, Auto-Rig, undo
-- **Benchmark** — airflow / lighting / ergonomics / spatial sims on the live Room layout; My Room → Improved compare; Apply with conflict + no-op gates
+- **Benchmark** — airflow / lighting / ergonomics / spatial sims on the live Room layout; My Room → Improved compare; Apply with conflict + no-op gates; **Community** feed (publish / rate / clone / compare; guest browse)
 - **Scan (approximate)** — Room Rig 18-class YOLO when `yolo_roomrig.tflite` is bundled; otherwise luma heuristics. Manual / walk / preset room size; ARCore (opt-in) or visual tracking for the minimap.
+- **Storefront** — [`site/`](site/) on Vercel (`roomrig.vercel.app`): product pages, auth, GitHub Releases download entry, admin stub. Product use is the **Android APK**, not Flutter web.
 
 ## Honest limits (say this in a presentation)
 

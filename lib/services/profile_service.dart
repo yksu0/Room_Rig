@@ -11,15 +11,17 @@ class UserProfile {
   final String? displayName;
   final String? avatarUrl;
   final DateTime? deletionRequestedAt;
+  final bool isAdmin;
 
   const UserProfile({
     required this.id,
     this.displayName,
     this.avatarUrl,
     this.deletionRequestedAt,
+    this.isAdmin = false,
   });
 
-  /// Name + avatar are the publish/rate prerequisites for the later social layer.
+  /// Name + avatar are required to publish or rate community layouts.
   bool get isComplete =>
       (displayName ?? '').trim().isNotEmpty && (avatarUrl ?? '').isNotEmpty;
 
@@ -27,6 +29,7 @@ class UserProfile {
     String? displayName,
     String? avatarUrl,
     DateTime? deletionRequestedAt,
+    bool? isAdmin,
     bool clearDeletion = false,
   }) {
     return UserProfile(
@@ -35,6 +38,7 @@ class UserProfile {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       deletionRequestedAt:
           clearDeletion ? null : (deletionRequestedAt ?? this.deletionRequestedAt),
+      isAdmin: isAdmin ?? this.isAdmin,
     );
   }
 
@@ -45,6 +49,7 @@ class UserProfile {
       displayName: row['display_name'] as String?,
       avatarUrl: row['avatar_url'] as String?,
       deletionRequestedAt: raw is String ? DateTime.tryParse(raw) : null,
+      isAdmin: row['is_admin'] as bool? ?? false,
     );
   }
 }
@@ -83,6 +88,11 @@ class ProfileService extends ChangeNotifier {
     return null;
   }
 
+  /// Publish / rate need a complete Profile (name + avatar).
+  bool get canPublishOrRate => _profile?.isComplete == true;
+
+  bool get isAdmin => _profile?.isAdmin == true;
+
   void clear() {
     _profile = null;
     _loading = false;
@@ -103,7 +113,9 @@ class ProfileService extends ChangeNotifier {
     try {
       final row = await client
           .from('profiles')
-          .select('id, display_name, avatar_url, deletion_requested_at')
+          .select(
+            'id, display_name, avatar_url, deletion_requested_at, is_admin',
+          )
           .eq('id', user.id)
           .maybeSingle();
       var p = row == null

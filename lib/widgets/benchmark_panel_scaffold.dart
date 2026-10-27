@@ -17,6 +17,7 @@ import 'benchmark_validation_card.dart';
 import 'benchmark_room_views.dart';
 import 'chrome/adaptive_panel.dart';
 import 'chrome/benchmark_results_chrome.dart';
+import 'community_benchmark_panel.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
 import 'score_ring.dart';
@@ -1345,6 +1346,20 @@ class BenchmarkComparePanel extends StatelessWidget {
                   style: TextStyle(color: AppColors.textMuted),
                 ),
                 onTap: () => Navigator.pop(ctx, const BenchmarkCompareSource.autoRig()),
+              ),
+              ListTile(
+                title: const Text('Community layout…', style: TextStyle(color: AppColors.textPrimary)),
+                subtitle: const Text(
+                  'Baselines and published rooms (signed in)',
+                  style: TextStyle(color: AppColors.textMuted),
+                ),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await showCommunityComparePicker(
+                    context,
+                    onPick: onPick,
+                  );
+                },
               ),
               if (revs.isNotEmpty) ...[
                 const Padding(

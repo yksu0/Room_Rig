@@ -17,6 +17,7 @@ import '../widgets/room_status_strip.dart';
 import '../widgets/benchmark_room_views.dart';
 import '../widgets/benchmark_panel_scaffold.dart';
 import '../widgets/chrome/benchmark_results_chrome.dart';
+import '../widgets/community_benchmark_panel.dart';
 import '../widgets/ergonomics_benchmark_panel.dart';
 import '../widgets/lighting_benchmark_panel.dart';
 import '../widgets/room_icons.dart';
@@ -265,6 +266,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         return SpatialBenchmarkPanel(onOrbitDraggingChanged: _setOrbitDragging);
       case 'ergonomics':
         return ErgonomicsBenchmarkPanel(onOrbitDraggingChanged: _setOrbitDragging);
+      case 'community':
+        return const CommunityBenchmarkPanel();
       default:
         return _buildAirflowDesktop(state);
     }
@@ -308,6 +311,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
 
   Widget _buildModeScoreHero(AppState state, {bool expand = false}) {
     final mode = state.benchmarkMode;
+    if (mode == 'community') {
+      return const SizedBox.shrink();
+    }
     final (label, score, prev, color) = switch (mode) {
       'lighting' => (
           'Lighting',
@@ -391,6 +397,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       ('lighting', 'Lighting', AppColors.lightingColor),
       ('ergonomics', 'Ergo', AppColors.ergonomicsColor),
       ('spatial', 'Space', AppColors.spatialColor),
+      ('community', 'Community', AppColors.cyan),
     ];
 
     return BenchmarkSegmentBar(

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Room Rig</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Source+Sans+3:wght@400;600;650&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/">Room Rig</a>
+      <nav class="nav" aria-label="Primary">
+        <a href="/" aria-current="page">Product</a>
+        <a href="/download">Download</a>
+        <a href="/auth">Sign in</a>
+        <span id="auth-slot"></span>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="hero-brand">Room Rig</p>
+        <h1>Treat your room like a PC build.</h1>
+        <p>
+          Layout → score → optimize. The product is the Android app. This site
+          is the public front door — not the full web customizer.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="/download">Get the Android APK</a>
+          <a class="btn" href="/auth">Sign in / Sign up</a>
+        </div>
+      </section>
+
+      <section class="section" id="loop">
+        <h2>The loop</h2>
+        <p>
+          Hub → Room → Scan → Benchmark. Set up a room, drag furniture, run
+          coarse sims, then Apply improvements back into the live layout.
+        </p>
+        <ul>
+          <li><strong>Hub</strong> — rooms, score rings, history</li>
+          <li><strong>Room</strong> — 2D / 3D layout editor + Auto-Rig</li>
+          <li><strong>Scan</strong> — approximate seed when the camera cooperates</li>
+          <li><strong>Benchmark</strong> — airflow, lighting, ergonomics, spatial, Community</li>
+        </ul>
+      </section>
+
+      <section class="section" id="honesty">
+        <h2>Honesty limits</h2>
+        <p>
+          Benchmark scores are layout estimates — not CFD, radiosity, or survey-grade
+          scan. Prices are mid-market PH estimates with a published basis.
+        </p>
+        <p>
+          Price basis summary:
+          <a href="https://github.com/yksu0/Room_Rig/blob/main/assets/PRICE_SOURCES.md"
+            >PRICE_SOURCES.md</a
+          >
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Room Rig · product on Android · auth for this site uses Supabase ·
+      <a href="/admin">Admin</a>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/config.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

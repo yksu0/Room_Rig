@@ -1,4 +1,5 @@
-# Build Flutter web and deploy static output to Vercel.
+# Build marketing storefront and deploy static output to Vercel.
+# Product experience is the Android APK; Vercel hosts description + auth + download.
 # Secrets (repo Settings → Secrets → Actions):
 #   SUPABASE_URL, SUPABASE_ANON_KEY
 #   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
@@ -16,16 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Build web
+      - name: Build storefront
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: bash scripts/build_web.sh
+        run: bash scripts/build_site.sh
 
       - name: Deploy to Vercel
         env:
@@ -37,6 +33,4 @@ jobs:
           npm install -g vercel@latest
           mkdir -p .vercel
           printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" > .vercel/project.json
-          cp vercel.json build/web/vercel.json
-          # Ship only build/web; archive avoids file-count limits on large trees.
-          vercel deploy build/web --prod --yes --token="$VERCEL_TOKEN" --archive=tgz
+          vercel deploy build/site --prod --yes --token="$VERCEL_TOKEN" --archive=tgz
