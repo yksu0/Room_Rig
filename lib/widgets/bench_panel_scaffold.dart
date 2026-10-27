@@ -1021,7 +1021,7 @@ void showBenchApplySnackBar(
   onOpenRig();
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      duration: const Duration(seconds: 6),
+      duration: const Duration(seconds: 4),
       content: Row(
         children: [
           Expanded(child: Text(message)),
@@ -1055,6 +1055,10 @@ void showBenchApplySnackBar(
       ),
       backgroundColor: accentColor.withValues(alpha: 0.9),
       behavior: SnackBarBehavior.floating,
+      dismissDirection: DismissDirection.horizontal,
+      showCloseIcon: true,
+      closeIconColor: Colors.white70,
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
     ),
   );
 }

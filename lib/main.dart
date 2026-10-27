@@ -12,6 +12,7 @@ import 'services/furniture_sprites.dart';
 import 'services/supabase_bootstrap.dart';
 import 'theme/app_layout.dart';
 import 'theme/app_theme.dart';
+import 'widgets/app_snack_bar.dart';
 import 'widgets/room_icons.dart';
 import 'screens/home_screen.dart';
 import 'screens/scanner_screen_selector.dart';
@@ -104,6 +105,8 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
   bool _importDialogOpen = false;
   bool _recoveryRouteOpen = false;
   DateTime? _pausedAt;
+  Timer? _signOutDebounce;
+  bool _authWasSignedIn = false;
 
   @override
   void initState() {
@@ -113,14 +116,17 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _signOutDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
+    // Only [paused] means the user left the app. [inactive] also fires for
+    // notification shade / dialogs / brief focus loss and must not start the
+    // shared-phone idle timer (or short background hops look like a reset).
+    if (state == AppLifecycleState.paused) {
       _pausedAt ??= DateTime.now();
       return;
     }
@@ -135,44 +141,50 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
       return;
     }
     unawaited(auth.signOut());
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
+    showAppSnackBar(
+      context,
+      message:
           'Signed out after idle (shared phone lock). '
-          'Shared photos or files are not removed from the phone; delete those yourself if needed.',
-        ),
-      ),
+          'Sign in again to restore rooms from the cloud.',
+      duration: const Duration(seconds: 4),
     );
   }
 
   void _consumeTabNotice(AppState state) {
     final notice = state.takeTabNotice();
     if (notice == null || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(notice),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    showAppSnackBar(context, message: notice);
   }
 
   void _hookAuth(AuthService auth, AppState app) {
     if (_authHooked) return;
     _authHooked = true;
-    var wasSignedIn = auth.isSignedIn;
-    if (wasSignedIn) {
+    _authWasSignedIn = auth.isSignedIn;
+    if (_authWasSignedIn) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(app.handleSignedIn());
       });
     }
     auth.addListener(() {
       final now = auth.isSignedIn;
-      if (now && !wasSignedIn) {
+      if (now && !_authWasSignedIn) {
+        // Session restored (or real sign-in) — cancel a pending wipe.
+        _signOutDebounce?.cancel();
+        _signOutDebounce = null;
+        _authWasSignedIn = true;
         unawaited(app.handleSignedIn());
-      } else if (!now && wasSignedIn) {
-        unawaited(app.handleSignedOut());
+      } else if (!now && _authWasSignedIn) {
+        // Token refresh / brief auth blips can emit signed-out then signed-in.
+        // Debounce the device wipe so backgrounding the app does not reset
+        // My Rooms to an empty lot.
+        _signOutDebounce?.cancel();
+        _signOutDebounce = Timer(const Duration(milliseconds: 900), () {
+          if (!mounted) return;
+          if (auth.isSignedIn) return;
+          _authWasSignedIn = false;
+          unawaited(app.handleSignedOut());
+        });
       }
-      wasSignedIn = now;
     });
   }
 
@@ -272,7 +284,8 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
     );
 
     // Desktop website shell: persistent left nav + full remaining width.
-    // Mobile: full-bleed screens + bottom tab bar.
+    // Mobile: body + bottomNavigationBar so floating snackbars sit above tabs
+    // (they used to paint over the custom nav and block tab switches).
     if (desktop) {
       return Scaffold(
         backgroundColor: AppColors.bg,
@@ -287,12 +300,8 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Column(
-        children: [
-          Expanded(child: stack),
-          _RigNavBar(currentIndex: state.currentTab),
-        ],
-      ),
+      body: stack,
+      bottomNavigationBar: _RigNavBar(currentIndex: state.currentTab),
     );
   }
 }
@@ -354,7 +363,10 @@ class _RigSideNav extends StatelessWidget {
                       borderRadius: BorderRadius.circular(AppRadius.sm),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(AppRadius.sm),
-                        onTap: () => context.read<AppState>().setTab(i),
+                        onTap: () {
+                          clearAppSnackBars(context);
+                          context.read<AppState>().setTab(i);
+                        },
                         child: Padding(
                           padding: EdgeInsets.symmetric(
                             vertical: compact ? 10 : 14,
@@ -416,77 +428,78 @@ class _RigNavBar extends StatelessWidget {
     ];
 
     final bottom = MediaQuery.paddingOf(context).bottom;
-    return Container(
-      height: 76 + bottom,
-      padding: EdgeInsets.only(bottom: bottom),
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.96),
-        border: const Border(
-          top: BorderSide(color: AppColors.borderSubtle, width: 1),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.45),
-            blurRadius: 24,
-            offset: const Offset(0, -6),
+    return Material(
+      color: AppColors.surface.withValues(alpha: 0.96),
+      elevation: 8,
+      child: Container(
+        height: 76 + bottom,
+        padding: EdgeInsets.only(bottom: bottom),
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: AppColors.borderSubtle, width: 1),
           ),
-        ],
-      ),
-      child: Row(
-        children: items.asMap().entries.map((entry) {
-          final i = entry.key;
-          final item = entry.value;
-          final isSelected = i == currentIndex;
-          return Expanded(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => context.read<AppState>().setTab(i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(
-                        color: isSelected ? AppColors.cyan : Colors.transparent,
-                        width: 2.5,
+        ),
+        child: Row(
+          children: items.asMap().entries.map((entry) {
+            final i = entry.key;
+            final item = entry.value;
+            final isSelected = i == currentIndex;
+            return Expanded(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    clearAppSnackBars(context);
+                    context.read<AppState>().setTab(i);
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(
+                          color:
+                              isSelected ? AppColors.cyan : Colors.transparent,
+                          width: 2.5,
+                        ),
                       ),
                     ),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AnimatedScale(
-                        scale: isSelected ? 1.1 : 1.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: SvgIcon(
-                          item.$1,
-                          size: 22,
-                          color: isSelected
-                              ? AppColors.cyan
-                              : AppColors.textMuted,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AnimatedScale(
+                          scale: isSelected ? 1.1 : 1.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: SvgIcon(
+                            item.$1,
+                            size: 22,
+                            color: isSelected
+                                ? AppColors.cyan
+                                : AppColors.textMuted,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        item.$2,
-                        style: TextStyle(
-                          color: isSelected
-                              ? AppColors.cyan
-                              : AppColors.textMuted,
-                          fontSize: 11,
-                          fontWeight:
-                              isSelected ? FontWeight.w800 : FontWeight.w600,
-                          letterSpacing: 0.2,
+                        const SizedBox(height: 6),
+                        Text(
+                          item.$2,
+                          style: TextStyle(
+                            color: isSelected
+                                ? AppColors.cyan
+                                : AppColors.textMuted,
+                            fontSize: 11,
+                            fontWeight: isSelected
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            letterSpacing: 0.2,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }

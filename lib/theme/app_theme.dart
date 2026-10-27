@@ -250,11 +250,18 @@ class AppTheme {
           fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
+        actionTextColor: AppColors.cyan,
+        disabledActionTextColor: AppColors.textMuted,
         behavior: SnackBarBehavior.floating,
+        // Sit above bottom nav / safe area; shell uses bottomNavigationBar so
+        // Material also insets above the tab bar.
+        insetPadding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
         elevation: 0,
+        showCloseIcon: true,
+        closeIconColor: AppColors.textMuted,
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
