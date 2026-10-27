@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -220,23 +222,34 @@ class ProfileService extends ChangeNotifier {
   // Delete account: email OTP confirm → soft delete (7-day grace) → sign out.
   // ---------------------------------------------------------------------------
 
-  /// Quick reachability probe; the delete flow refuses to start offline.
-  Future<bool> isOnline() async {
+  /// Reachability probe for delete: phone must reach Room Rig's cloud
+  /// (Supabase), not a specific website. Null = ok; otherwise a short reason.
+  Future<String?> cloudReachabilityError() async {
     final client = _client;
     final user = _user;
-    if (client == null || user == null) return false;
+    if (client == null) {
+      return 'Cloud is not configured on this build.';
+    }
+    if (user == null) {
+      return 'You are signed out.';
+    }
     try {
       await client
           .from('profiles')
           .select('id')
           .eq('id', user.id)
-          .limit(1)
-          .timeout(const Duration(seconds: 6));
-      return true;
-    } catch (_) {
-      return false;
+          .maybeSingle()
+          .timeout(const Duration(seconds: 8));
+      return null;
+    } on TimeoutException {
+      return 'Timed out reaching Room Rig cloud. Check Wi‑Fi or mobile data.';
+    } catch (e) {
+      return 'Cannot reach Room Rig cloud ($e). Check Wi‑Fi or mobile data.';
     }
   }
+
+  /// True when [cloudReachabilityError] is null.
+  Future<bool> isOnline() async => await cloudReachabilityError() == null;
 
   /// Emails a one-time code (Magic Link template with `{{ .Token }}`).
   /// Works for Google-only accounts too — it only needs the account email.

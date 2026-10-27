@@ -172,16 +172,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _deleteAccount(AuthService auth, ProfileService profiles) async {
-    // Step 0: must be online — the OTP + soft-delete both need the server.
+    // Step 0: phone must reach Room Rig cloud (Wi‑Fi / mobile data) so we can
+    // email the OTP and set the soft-delete flag. Not a website login.
     setState(() => _busy = true);
-    final online = await profiles.isOnline();
+    final reachErr = await profiles.cloudReachabilityError();
     if (!mounted) return;
     setState(() => _busy = false);
-    if (!online) {
+    if (reachErr != null) {
       showAppSnackBar(
         context,
-        message: 'You need to be online to delete your account. '
-            'Check your connection and try again.',
+        message: 'Delete needs an internet connection to Room Rig\'s servers '
+            '(not a website). $reachErr',
+        duration: const Duration(seconds: 5),
       );
       return;
     }
@@ -527,7 +529,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         const Text(
           'Rooms sync to your account when signed in. '
           'Give it a moment after a big change before closing the app. '
-          'Signing out removes rooms from this device; they stay in your account online.',
+          'Signing out uploads your rooms one final time, then removes them from this device — '
+          'they stay in your account online so the next sign-in can restore them.',
           style: TextStyle(color: AppColors.textMuted, fontSize: 12, height: 1.4),
         ),
         const SizedBox(height: 28),
@@ -576,7 +579,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           title: const Text('Delete account',
               style: TextStyle(color: AppColors.red)),
           subtitle: const Text(
-            'Email code required. Account and synced rooms are removed after a 7-day grace period.',
+            'Needs internet to Room Rig cloud. Email code required; account and synced rooms are removed after a 7-day grace period.',
             style: TextStyle(color: AppColors.textMuted, fontSize: 12),
           ),
           onTap: _busy ? null : () => _deleteAccount(auth, profiles),
