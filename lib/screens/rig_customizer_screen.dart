@@ -156,9 +156,10 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
 
   /// Adaptive supporting panes (compact sheet; expanded rails later).
   CameraPreset? _pendingPreset;
-  bool _showMiniMap = false;
+  // Mini-map / focus UI removed from View; keep Model scene wiring off.
+  final bool _showMiniMap = false;
   bool _showDimensions = false;
-  int _focusToken = 0;
+  final int _focusToken = 0;
 
   ChromeViewMode _chromeForViewMode(_RigViewMode m) => switch (m) {
         _RigViewMode.twoD => ChromeViewMode.edit,
@@ -479,60 +480,8 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
             ],
           ),
           const SizedBox(height: AppSpace.sm),
+          // 2D / Orbit / Model lives only in the View panel (not duplicated here).
           if (desktop)
-            SizedBox(
-              height: 48,
-              child: _buildCompactViewChips(),
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  height: 48,
-                  child: _buildCompactViewChips(),
-                ),
-                const SizedBox(height: AppSpace.xs),
-                _RigChromeScrollRow(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AdaptivePanelTriggers(
-                        controller: _adaptivePanelControllerFor(state),
-                        visible: const [
-                          ChromeRegion.view,
-                          ChromeRegion.tools,
-                          ChromeRegion.snapshot,
-                          ChromeRegion.inspect,
-                        ],
-                        regionLabels: const {
-                          ChromeRegion.inspect: 'Items',
-                        },
-                        regionActions: {
-                          ChromeRegion.inspect: () {
-                            _scaffoldKey.currentState?.openEndDrawer();
-                          },
-                        },
-                      ),
-                      const SizedBox(width: 6),
-                      RigLiveDomainBar(
-                        compactMenu: true,
-                        domain: _liveDomain,
-                        score: _liveCache.score,
-                        detail: _liveCache.isStale
-                            ? '${_liveCache.detail} · updating…'
-                            : _liveCache.detail,
-                        onChanged: (d) => _setLiveDomain(state, d),
-                      ),
-                      // Room so the last chip isn't flush against the fade edge.
-                      const SizedBox(width: 20),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          if (desktop) ...[
-            const SizedBox(height: AppSpace.xs),
             RigLiveDomainBar(
               domain: _liveDomain,
               score: _liveCache.score,
@@ -540,8 +489,44 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
                   ? '${_liveCache.detail} · updating…'
                   : _liveCache.detail,
               onChanged: (d) => _setLiveDomain(state, d),
+            )
+          else
+            _RigChromeScrollRow(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AdaptivePanelTriggers(
+                    controller: _adaptivePanelControllerFor(state),
+                    visible: const [
+                      ChromeRegion.view,
+                      ChromeRegion.tools,
+                      ChromeRegion.snapshot,
+                      ChromeRegion.inspect,
+                    ],
+                    regionLabels: const {
+                      ChromeRegion.inspect: 'Items',
+                    },
+                    regionActions: {
+                      ChromeRegion.inspect: () {
+                        _scaffoldKey.currentState?.openEndDrawer();
+                      },
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  RigLiveDomainBar(
+                    compactMenu: true,
+                    domain: _liveDomain,
+                    score: _liveCache.score,
+                    detail: _liveCache.isStale
+                        ? '${_liveCache.detail} · updating…'
+                        : _liveCache.detail,
+                    onChanged: (d) => _setLiveDomain(state, d),
+                  ),
+                  // Room so the last chip isn't flush against the fade edge.
+                  const SizedBox(width: 20),
+                ],
+              ),
             ),
-          ],
         ],
       ),
     );
@@ -825,37 +810,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
     ]);
   }
 
-  Widget _buildCompactViewChips() {
-    final mode = _chromeForViewMode(_viewMode);
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          for (final m in const [
-            ChromeViewMode.edit,
-            ChromeViewMode.orbit,
-            ChromeViewMode.check,
-          ]) ...[
-            if (m != ChromeViewMode.edit) const SizedBox(width: 2),
-            Expanded(
-              child: _ViewModeChip(
-                label: m.label,
-                active: mode == m,
-                onTap: () => _applyChromeView(m),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _buildViewPanelBody(AppState state, {required bool embedded}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -884,62 +838,13 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
               if (_viewMode == _RigViewMode.model3D) {
                 _pendingPreset = p;
               } else {
-                // Stay on Orbit (or open Orbit from Edit) — do not force Check.
+                // Stay on Orbit (or open Orbit from 2D) — do not force Model.
                 _viewMode = _RigViewMode.threeD;
                 _applyOrbitCameraPreset(p, state);
               }
             });
             if (!embedded) _maybeCloseSupportingSheet();
           },
-        ),
-        const SizedBox(height: 16),
-        StatefulBuilder(
-          builder: (context, setLocal) {
-            return SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(vertical: 4),
-              title: const Text('Mini-map', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-              subtitle: const Text('Picture-in-picture floor plan', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-              value: _showMiniMap,
-              activeThumbColor: AppColors.cyan,
-              onChanged: (v) {
-                setLocal(() => _showMiniMap = v);
-                setState(() {});
-              },
-            );
-          },
-        ),
-        Material(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: state.selectedFurniture == null
-                ? null
-                : () {
-                    setState(() {
-                      if (_viewMode == _RigViewMode.model3D) {
-                        _focusToken++;
-                      } else {
-                        _viewMode = _RigViewMode.threeD;
-                        _focusOrbitOnSelection(state);
-                      }
-                    });
-                    if (!embedded) _maybeCloseSupportingSheet();
-                  },
-            child: ListTile(
-              enabled: state.selectedFurniture != null,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              minVerticalPadding: 10,
-              leading: const Icon(Icons.center_focus_strong_rounded, color: AppColors.cyan, size: 24),
-              title: const Text('Focus selection', style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-              subtitle: Text(
-                state.selectedFurniture == null
-                    ? 'Select an item first'
-                    : 'Frame ${state.selectedFurniture!.name}',
-                style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
-              ),
-            ),
-          ),
         ),
       ],
     );
@@ -996,17 +901,6 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
         _cameraDistance = (span * 0.7).clamp(6.0, 18.0);
         break;
     }
-  }
-
-  void _focusOrbitOnSelection(AppState state) {
-    final item = state.selectedFurniture;
-    if (item == null || state.selectedIsScanObject) return;
-    final cols = state.currentRoomData.gridCols.toDouble();
-    final rows = state.currentRoomData.gridRows.toDouble();
-    _lookAtX = item.gridX + item.width * 0.5;
-    _lookAtZ = item.gridY + item.height * 0.5;
-    _cameraPitchRad = 0.42;
-    _cameraDistance = (math.max(cols, rows) * 0.55).clamp(5.0, 16.0);
   }
 
   Widget _buildSnapshotPanelBody(BuildContext ctx, AppState state) {
@@ -4012,39 +3906,6 @@ class _AddCatalogTile extends StatelessWidget {
   }
 }
 
-
-class _ViewModeChip extends StatelessWidget {
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _ViewModeChip({required this.label, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: active ? AppColors.cyan.withValues(alpha: 0.16) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: active ? AppColors.cyan.withValues(alpha: 0.7) : Colors.transparent),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: active ? AppColors.cyan : AppColors.textSecondary,
-            fontSize: 12,
-            fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class _RotationButton extends StatelessWidget {
   final IconData icon;

@@ -323,14 +323,14 @@ class _PanelTriggerChip extends StatelessWidget {
   }
 }
 
-/// Shared explore modes (2D plan · Orbit · Check/Model).
+/// Shared explore modes (2D plan · Orbit · Model).
 enum ChromeViewMode { edit, orbit, check }
 
 extension ChromeViewModeLabel on ChromeViewMode {
   String get label => switch (this) {
         ChromeViewMode.edit => '2D',
         ChromeViewMode.orbit => 'Orbit',
-        ChromeViewMode.check => 'Check',
+        ChromeViewMode.check => 'Model',
       };
 
   String get purpose => switch (this) {
