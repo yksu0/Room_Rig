@@ -75,10 +75,13 @@ void main() {
           reason: 'the bench must not have moved it back');
     });
 
-    testWidgets('the $mode bench defaults to My Room, not the sample', (tester) async {
+    testWidgets('the $mode bench defaults to Current Rig, not the sample', (tester) async {
       await pumpBench(tester, mode);
-      expect(find.text('My Room'), findsWidgets);
-      expect(find.textContaining('items from the Rig'), findsWidgets);
+      expect(find.text('Current Rig'), findsWidgets);
+      expect(find.text('Auto-Rig'), findsWidgets);
+      expect(find.text('Layout'), findsWidgets);
+      expect(find.text('Analyze'), findsWidgets);
+      expect(find.text('Results'), findsWidgets);
     });
   }
 
@@ -100,7 +103,7 @@ void main() {
 
   testWidgets('the visible bench redraws when furniture moves', (tester) async {
     final state = await pumpBench(tester, 'airflow');
-    expect(find.textContaining('items from the Rig'), findsWidgets);
+    expect(find.text('Current Rig'), findsWidgets);
 
     // The layout preview is keyed by the room fingerprint, so its key only
     // changes once the bench has actually re-read the Rig. The AnimatedSwitcher
@@ -172,10 +175,10 @@ void main() {
     expect(find.text('Sample room — AC in a corner, weak coverage'), findsOneWidget);
 
     // And it is a one-shot: the user can go straight back to their own room.
-    await tester.tap(find.text('My Room').first);
+    await tester.tap(find.text('Current Rig').first);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.textContaining('items from the Rig'), findsWidgets);
+    expect(find.text('Current Rig'), findsWidgets);
   });
 
   testWidgets('applying an improved layout keeps the room you were in', (tester) async {

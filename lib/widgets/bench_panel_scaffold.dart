@@ -28,7 +28,10 @@ const int benchStepLayout = 0;
 const int benchStepMiddle = 1;
 const int benchStepResults = 2;
 
-/// Layout / Simulate|Analyze / Results — inset sliding-pill track (style D).
+/// Universal wizard chip labels (no numeric prefixes — mobile truncates them).
+const List<String> kBenchStepLabels = ['Layout', 'Analyze', 'Results'];
+
+/// Layout / Analyze / Results — inset sliding-pill track (style D).
 class BenchStepTabs extends StatelessWidget {
   final Color accentColor;
   final int step;
@@ -902,7 +905,92 @@ class BenchScoreRingSpec {
   });
 }
 
-/// Results comparison: verdict-first, legend, rings, expandable validation.
+/// Left vs right metric bar used on Results scoreboards.
+///
+/// [left]/[right] drive the bar (0–100 scale). Optional [leftDisplay] /
+/// [rightDisplay] override the numeric caption when the bar is remapped.
+class BenchMetricComparisonRow extends StatelessWidget {
+  final String label;
+  final double left;
+  final double right;
+  final Color color;
+  final bool lowerIsBetter;
+  final double? leftDisplay;
+  final double? rightDisplay;
+
+  const BenchMetricComparisonRow({
+    super.key,
+    required this.label,
+    required this.left,
+    required this.right,
+    required this.color,
+    this.lowerIsBetter = false,
+    this.leftDisplay,
+    this.rightDisplay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final shownLeft = leftDisplay ?? left;
+    final shownRight = rightDisplay ?? right;
+    final delta = shownRight - shownLeft;
+    final good = lowerIsBetter ? delta <= 0 : delta >= 0;
+    final display = lowerIsBetter ? -delta : delta;
+    return Row(
+      children: [
+        SizedBox(
+          width: 88,
+          child: Text(
+            label,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+        ),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Stack(
+              children: [
+                Container(height: 8, color: AppColors.border),
+                FractionallySizedBox(
+                  widthFactor: (left / 100).clamp(0.0, 1.0),
+                  child: Container(height: 8, color: AppColors.textMuted),
+                ),
+                FractionallySizedBox(
+                  widthFactor: (right / 100).clamp(0.0, 1.0),
+                  child: Container(height: 8, color: color.withValues(alpha: 0.8)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 52,
+          child: Text(
+            '${shownLeft.toStringAsFixed(0)}→${shownRight.toStringAsFixed(0)}',
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '${good ? '+' : ''}${display.toStringAsFixed(1)}',
+          style: TextStyle(
+            color: good ? AppColors.green : AppColors.red,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Results comparison: dual rings + metric rows for the Compare pair.
 class BenchResultsCard extends StatelessWidget {
   final String title;
   final BenchmarkValidation validation;
@@ -911,6 +999,9 @@ class BenchResultsCard extends StatelessWidget {
   final Color? accentColor;
   final List<String> whyReasons;
   final VoidCallback? onOpenWhySheet;
+  /// e.g. "Now comparing: Current Rig vs Auto-Rig"
+  final String? compareHeader;
+  final List<Widget> metricRows;
 
   const BenchResultsCard({
     super.key,
@@ -921,6 +1012,8 @@ class BenchResultsCard extends StatelessWidget {
     this.accentColor,
     this.whyReasons = const [],
     this.onOpenWhySheet,
+    this.compareHeader,
+    this.metricRows = const [],
   });
 
   @override
@@ -936,8 +1029,18 @@ class BenchResultsCard extends StatelessWidget {
             detail: title,
             accent: accent,
             children: [
-              const BenchLegend(caption: 'Score scale'),
-              const SizedBox(height: 12),
+              if (compareHeader != null) ...[
+                Text(
+                  compareHeader!,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               Row(
                 children: [
                   SvgIcon(RoomSvg.trophy, size: 22, color: AppColors.amber),
@@ -981,6 +1084,13 @@ class BenchResultsCard extends StatelessWidget {
                   );
                 },
               ),
+              if (metricRows.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                for (var i = 0; i < metricRows.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 10),
+                  metricRows[i],
+                ],
+              ],
               const SizedBox(height: 14),
               BenchmarkValidationCard(validation: validation),
               if (whyReasons.isNotEmpty || onOpenWhySheet != null) ...[

@@ -294,7 +294,7 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     return BenchPanelScaffold(
       accentColor: AppColors.ergonomicsColor,
       step: _stepIndex,
-      stepLabels: const ['1. Layout', '2. Paths', '3. Results'],
+      stepLabels: kBenchStepLabels,
       resultsEnabled: _showResults,
       running: false,
       onStepChanged: (i) => setState(() => _step = _stepFromIndex(i)),
@@ -423,7 +423,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
               onPaths: (v) => setState(() => _showPaths = v),
             ),
             const SizedBox(height: 8),
-            const BenchLegend(caption: 'Walk paths'),
           ],
         );
       case _ErgoStep.results:
@@ -1093,7 +1092,6 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
           onPaths: (v) => setState(() => _showPaths = v),
         ),
         const SizedBox(height: 8),
-        const BenchLegend(caption: 'Walk paths'),
         const SizedBox(height: 12),
         Container(
           height: 300,
@@ -1180,22 +1178,63 @@ class _ErgonomicsBenchPanelState extends State<ErgonomicsBenchPanel>
     final validation = _validationForSimVariant(state);
     final base = _myRoomSim!.metrics;
     final opt = _improvedSim!.metrics;
+    final left = _layouts?.leftCaption ?? 'Left';
+    final right = _layouts?.rightCaption ?? 'Right';
     final pathDelta = ((opt.pathScore - base.pathScore) * 100).round();
     final pathLabel = pathDelta >= 0 ? '+$pathDelta' : '$pathDelta';
+    final why = (_layouts?.rightIsAutoRig ?? false)
+        ? (_layouts?.improvedReasons ?? const <String>[])
+        : const <String>[];
     return BenchResultsCard(
       title: 'Ergonomics Comfort Bench',
       accentColor: AppColors.ergonomicsColor,
       validation: validation,
-      whyReasons: _layouts?.improvedReasons ?? const [],
+      compareHeader: 'Now comparing: $left vs $right',
+      whyReasons: why,
       rings: [
-        BenchScoreRingSpec(score: base.comfortScore, color: AppColors.cyan, label: 'Baseline'),
-        BenchScoreRingSpec(score: opt.comfortScore, color: AppColors.ergonomicsColor, label: 'Auto-Rig'),
+        BenchScoreRingSpec(
+          score: base.comfortScore,
+          color: AppColors.cyan,
+          label: left,
+        ),
+        BenchScoreRingSpec(
+          score: opt.comfortScore,
+          color: AppColors.ergonomicsColor,
+          label: right,
+        ),
       ],
       summaryText:
           'Walk paths $pathLabel · '
           'Door view +${((opt.doorProspect - base.doorProspect) * 100).toStringAsFixed(0)} · '
           'Window +${((opt.windowSideLight - base.windowSideLight) * 100).toStringAsFixed(0)} · '
           'HVAC +${((opt.hvacClearance - base.hvacClearance) * 100).toStringAsFixed(0)}',
+      metricRows: [
+        BenchMetricComparisonRow(
+          label: 'Comfort',
+          left: base.comfortScore,
+          right: opt.comfortScore,
+          color: AppColors.ergonomicsColor,
+        ),
+        BenchMetricComparisonRow(
+          label: 'Walk paths',
+          left: base.pathScore * 100,
+          right: opt.pathScore * 100,
+          color: AppColors.cyan,
+        ),
+        BenchMetricComparisonRow(
+          label: 'Door view',
+          left: base.doorProspect * 100,
+          right: opt.doorProspect * 100,
+          color: AppColors.amber,
+        ),
+        BenchMetricComparisonRow(
+          label: 'Conflicts',
+          left: base.conflictRatio * 100,
+          right: opt.conflictRatio * 100,
+          color: AppColors.red,
+          lowerIsBetter: true,
+        ),
+      ],
     );
   }
 

@@ -13,7 +13,6 @@ import '../services/furniture_sprites.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
-import 'chrome/bench_results_chrome.dart';
 import 'glass_card.dart';
 import 'room_icons.dart';
 import 'room_model_scene.dart';
@@ -272,7 +271,7 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
     return BenchPanelScaffold(
       accentColor: AppColors.spatialColor,
       step: _stepIndex,
-      stepLabels: const ['1. Layout', '2. Analyze', '3. Results'],
+      stepLabels: kBenchStepLabels,
       resultsEnabled: _showResults,
       running: false,
       onStepChanged: (i) => setState(() => _step = _stepFromIndex(i)),
@@ -410,7 +409,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
               onChanged: (v) => setState(() => _analyzeVariant = v),
             ),
             const SizedBox(height: 8),
-            const BenchLegend(caption: 'Floor use'),
           ],
         );
       case _SpatialStep.results:
@@ -868,7 +866,6 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
           onChanged: (v) => setState(() => _analyzeVariant = v),
         ),
         const SizedBox(height: 8),
-        const BenchLegend(caption: 'Floor use'),
         const SizedBox(height: 12),
         _heatmapView(room: room, furniture: furniture, metrics: metrics),
         const SizedBox(height: 14),
@@ -948,22 +945,58 @@ class _SpatialBenchPanelState extends State<SpatialBenchPanel> {
     final validation = _validationForImproved(state);
     final base = _myRoomMetrics!;
     final opt = _improvedMetrics!;
+    final left = _layouts?.leftCaption ?? 'Left';
+    final right = _layouts?.rightCaption ?? 'Right';
 
     final spaceDelta = (opt.overallScore - base.overallScore).round();
     final spaceLabel = spaceDelta >= 0 ? '+$spaceDelta' : '$spaceDelta';
+    final why = (_layouts?.rightIsAutoRig ?? false)
+        ? (_layouts?.improvedReasons ?? const <String>[])
+        : const <String>[];
     return BenchResultsCard(
       title: 'Walkway Space Bench',
       accentColor: AppColors.spatialColor,
       validation: validation,
-      whyReasons: _layouts?.improvedReasons ?? const [],
+      compareHeader: 'Now comparing: $left vs $right',
+      whyReasons: why,
       rings: [
-        BenchScoreRingSpec(score: base.overallScore, color: AppColors.cyan, label: 'Baseline'),
-        BenchScoreRingSpec(score: opt.overallScore, color: AppColors.spatialColor, label: 'Auto-Rig'),
+        BenchScoreRingSpec(
+          score: base.overallScore,
+          color: AppColors.cyan,
+          label: left,
+        ),
+        BenchScoreRingSpec(
+          score: opt.overallScore,
+          color: AppColors.spatialColor,
+          label: right,
+        ),
       ],
       summaryText:
           'Space $spaceLabel · '
           'Walkable +${((opt.walkableRatio - base.walkableRatio) * 100).toStringAsFixed(0)} pts · '
           'Aisle +${(opt.largestAisleCells - base.largestAisleCells).toStringAsFixed(1)} cells',
+      metricRows: [
+        BenchMetricComparisonRow(
+          label: 'Space',
+          left: base.overallScore,
+          right: opt.overallScore,
+          color: AppColors.spatialColor,
+        ),
+        BenchMetricComparisonRow(
+          label: 'Walkable',
+          left: base.walkableRatio * 100,
+          right: opt.walkableRatio * 100,
+          color: AppColors.cyan,
+        ),
+        BenchMetricComparisonRow(
+          label: 'Aisle cells',
+          left: (base.largestAisleCells / 20.0 * 100).clamp(0.0, 100.0),
+          right: (opt.largestAisleCells / 20.0 * 100).clamp(0.0, 100.0),
+          leftDisplay: base.largestAisleCells,
+          rightDisplay: opt.largestAisleCells,
+          color: AppColors.amber,
+        ),
+      ],
     );
   }
 

@@ -13,7 +13,6 @@ import '../services/benchmark_validator.dart';
 import '../theme/app_theme.dart';
 import 'bench_panel_scaffold.dart';
 import 'bench_room_views.dart';
-import 'chrome/bench_results_chrome.dart';
 import 'glass_card.dart';
 import 'lighting_field_painter.dart';
 import 'room_icons.dart';
@@ -282,7 +281,7 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     return BenchPanelScaffold(
       accentColor: AppColors.lightingColor,
       step: _stepIndex,
-      stepLabels: const ['1. Layout', '2. Light Field', '3. Results'],
+      stepLabels: kBenchStepLabels,
       resultsEnabled: _showResults,
       running: false,
       onStepChanged: (i) => setState(() => _step = _stepFromIndex(i)),
@@ -405,8 +404,6 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            const BenchLegend(caption: 'Illuminance'),
           ],
         );
       case _LightStep.results:
@@ -1022,7 +1019,6 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
           ],
         ),
         const SizedBox(height: 8),
-        const BenchLegend(caption: 'Illuminance'),
         const SizedBox(height: 12),
         Container(
           height: 300,
@@ -1109,22 +1105,56 @@ class _LightingBenchPanelState extends State<LightingBenchPanel>
     final validation = _validationForSimVariant(state);
     final base = _myRoomSim!.metrics;
     final opt = _improvedSim!.metrics;
-    final delta =
-        (opt.exposureScore - base.exposureScore).round();
+    final left = _layouts?.leftCaption ?? 'Left';
+    final right = _layouts?.rightCaption ?? 'Right';
+    final delta = (opt.exposureScore - base.exposureScore).round();
     final deltaLabel = delta >= 0 ? '+$delta' : '$delta';
+    final why = (_layouts?.rightIsAutoRig ?? false)
+        ? (_layouts?.improvedReasons ?? const <String>[])
+        : const <String>[];
     return BenchResultsCard(
       title: 'Lighting Exposure Bench',
       accentColor: AppColors.lightingColor,
       validation: validation,
-      whyReasons: _layouts?.improvedReasons ?? const [],
+      compareHeader: 'Now comparing: $left vs $right',
+      whyReasons: why,
       rings: [
-        BenchScoreRingSpec(score: base.exposureScore, color: AppColors.cyan, label: 'Baseline'),
-        BenchScoreRingSpec(score: opt.exposureScore, color: AppColors.lightingColor, label: 'Auto-Rig'),
+        BenchScoreRingSpec(
+          score: base.exposureScore,
+          color: AppColors.cyan,
+          label: left,
+        ),
+        BenchScoreRingSpec(
+          score: opt.exposureScore,
+          color: AppColors.lightingColor,
+          label: right,
+        ),
       ],
       summaryText:
           'Exposure $deltaLabel · '
           'Shadows ${((base.shadowRatio - opt.shadowRatio) * 100).toStringAsFixed(0)} pts · '
           'Task light +${((opt.taskIllumination - base.taskIllumination) * 100).toStringAsFixed(0)}',
+      metricRows: [
+        BenchMetricComparisonRow(
+          label: 'Exposure',
+          left: base.exposureScore,
+          right: opt.exposureScore,
+          color: AppColors.lightingColor,
+        ),
+        BenchMetricComparisonRow(
+          label: 'Task light',
+          left: base.taskIllumination * 100,
+          right: opt.taskIllumination * 100,
+          color: AppColors.amber,
+        ),
+        BenchMetricComparisonRow(
+          label: 'Shadows',
+          left: base.shadowRatio * 100,
+          right: opt.shadowRatio * 100,
+          color: AppColors.red,
+          lowerIsBetter: true,
+        ),
+      ],
     );
   }
 

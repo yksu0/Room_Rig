@@ -424,7 +424,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       return BenchPanelScaffold(
         accentColor: AppColors.airflowColor,
         step: _airflowStepIndex,
-        stepLabels: const ['1. Layout', '2. Voxel Sim', '3. Results'],
+        stepLabels: kBenchStepLabels,
         resultsEnabled: _showResults,
         running: false,
         onStepChanged: (i) => setState(() {
@@ -610,7 +610,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               onHeatmap: (v) => setState(() => _showHeatmap = v),
             ),
             const SizedBox(height: 8),
-            const BenchLegend(caption: 'Airflow field'),
             if (_airflowStep == _AirflowStep.simulate &&
                 AppLayout.isDesktop(context)) ...[
               const SizedBox(height: 16),
@@ -894,9 +893,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
 
   Widget _buildAirflowStepTabs() {
     final steps = [
-      (_AirflowStep.layout, '1. Layout'),
-      (_AirflowStep.simulate, '2. Voxel Sim'),
-      (_AirflowStep.results, '3. Results'),
+      (_AirflowStep.layout, kBenchStepLabels[0]),
+      (_AirflowStep.simulate, kBenchStepLabels[1]),
+      (_AirflowStep.results, kBenchStepLabels[2]),
     ];
     return Row(
       children: steps.map((s) {
@@ -1078,8 +1077,13 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     final base = _myRoomSim!.metrics;
     final opt = _improvedSim!.metrics;
     final validation = _validationForSimVariant(state);
+    final left = _layouts?.leftCaption ?? 'Left';
+    final right = _layouts?.rightCaption ?? 'Right';
     final delta = (opt.circulationScore - base.circulationScore).round();
     final deltaLabel = delta >= 0 ? '+$delta' : '$delta';
+    final why = (_layouts?.rightIsAutoRig ?? false)
+        ? (_layouts?.improvedReasons ?? const <String>[])
+        : const <String>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1098,38 +1102,46 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           title: 'Voxel Circulation Bench',
           accentColor: AppColors.airflowColor,
           validation: validation,
-          whyReasons: _layouts?.improvedReasons ?? const [],
+          compareHeader: 'Now comparing: $left vs $right',
+          whyReasons: why,
           rings: [
-            BenchScoreRingSpec(score: base.circulationScore, color: AppColors.cyan, label: 'Baseline'),
-            BenchScoreRingSpec(score: opt.circulationScore, color: AppColors.airflowColor, label: 'Auto-Rig'),
+            BenchScoreRingSpec(
+              score: base.circulationScore,
+              color: AppColors.cyan,
+              label: left,
+            ),
+            BenchScoreRingSpec(
+              score: opt.circulationScore,
+              color: AppColors.airflowColor,
+              label: right,
+            ),
           ],
           summaryText:
               'Circulation $deltaLabel · '
               'Dead zones ${((base.deadZoneRatio - opt.deadZoneRatio) * 100).toStringAsFixed(0)} pts · '
               'Heat ${((base.heatPocketRatio - opt.heatPocketRatio) * 100).toStringAsFixed(0)} pts',
-        ),
-        const SizedBox(height: 12),
-        _ComparisonRow(
-          label: 'Circulation',
-          before: base.circulationScore,
-          after: opt.circulationScore,
-          color: AppColors.airflowColor,
-        ),
-        const SizedBox(height: 10),
-        _ComparisonRow(
-          label: 'Dead zones',
-          before: base.deadZoneRatio * 100,
-          after: opt.deadZoneRatio * 100,
-          color: AppColors.red,
-          lowerIsBetter: true,
-        ),
-        const SizedBox(height: 10),
-        _ComparisonRow(
-          label: 'Heat pockets',
-          before: base.heatPocketRatio * 100,
-          after: opt.heatPocketRatio * 100,
-          color: AppColors.amber,
-          lowerIsBetter: true,
+          metricRows: [
+            BenchMetricComparisonRow(
+              label: 'Circulation',
+              left: base.circulationScore,
+              right: opt.circulationScore,
+              color: AppColors.airflowColor,
+            ),
+            BenchMetricComparisonRow(
+              label: 'Dead zones',
+              left: base.deadZoneRatio * 100,
+              right: opt.deadZoneRatio * 100,
+              color: AppColors.red,
+              lowerIsBetter: true,
+            ),
+            BenchMetricComparisonRow(
+              label: 'Heat pockets',
+              left: base.heatPocketRatio * 100,
+              right: opt.heatPocketRatio * 100,
+              color: AppColors.amber,
+              lowerIsBetter: true,
+            ),
+          ],
         ),
       ],
     );
@@ -1246,61 +1258,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ComparisonRow extends StatelessWidget {
-  final String label;
-  final double before;
-  final double after;
-  final Color color;
-  final bool lowerIsBetter;
-
-  const _ComparisonRow({
-    required this.label,
-    required this.before,
-    required this.after,
-    required this.color,
-    this.lowerIsBetter = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final delta = after - before;
-    final good = lowerIsBetter ? delta <= 0 : delta >= 0;
-    final display = lowerIsBetter ? -delta : delta;
-    return Row(
-      children: [
-        SizedBox(width: 88, child: Text(label, style: TextStyle(color: AppColors.textSecondary, fontSize: 12))),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: Stack(
-              children: [
-                Container(height: 8, color: AppColors.border),
-                FractionallySizedBox(
-                  widthFactor: (before / 100).clamp(0.0, 1.0),
-                  child: Container(height: 8, color: AppColors.textMuted),
-                ),
-                FractionallySizedBox(
-                  widthFactor: (after / 100).clamp(0.0, 1.0),
-                  child: Container(height: 8, color: color.withValues(alpha: 0.8)),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          '${good ? '+' : ''}${display.toStringAsFixed(1)}',
-          style: TextStyle(
-            color: good ? AppColors.green : AppColors.red,
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ],
     );
   }
 }
