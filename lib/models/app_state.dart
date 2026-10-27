@@ -1253,7 +1253,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _stashActiveRoom() {
+  void _stashActiveRoom({bool upload = true}) {
     // Never write mid-scan seed layouts into My Rooms.
     if (isScanSessionActive) return;
     final layout = _activeRoomLayout;
@@ -1295,8 +1295,37 @@ class AppState extends ChangeNotifier {
       _rooms.add(snap);
     }
     // Cloud only when signed in — guests stay local.
-    if (uid != null) {
-      unawaited(_roomRepo.upsertRoom(uid, snap));
+    // Prefer [flushRoomsToCloud] when you need a guaranteed upload (sign-out).
+    if (upload && uid != null) {
+      unawaited(() async {
+        try {
+          await _roomRepo.upsertRoom(uid, snap);
+        } catch (e) {
+          debugPrint('stash upsertRoom: $e');
+        }
+      }());
+    }
+  }
+
+  /// Awaited upload of every lot for the signed-in user (incl. active).
+  /// Call before sign-out so logout wipe does not lose rooms that never synced.
+  Future<bool> flushRoomsToCloud() async {
+    final uid = signedInUserId;
+    if (uid == null) return false;
+    _stashActiveRoom(upload: false);
+    final owned = _rooms
+        .map((r) => r.ownerUserId == null ? r.copyWith(ownerUserId: uid) : r)
+        .toList(growable: false);
+    _rooms
+      ..clear()
+      ..addAll(owned);
+    try {
+      await _roomRepo.upsertMany(uid, owned);
+      await _persistActiveRoomLayout();
+      return true;
+    } catch (e) {
+      debugPrint('flushRoomsToCloud: $e');
+      return false;
     }
   }
 
@@ -1344,6 +1373,8 @@ class AppState extends ChangeNotifier {
         final match = _rooms.where((r) => r.id == _activeRoomId);
         _applySavedRoom(match.isNotEmpty ? match.first : _rooms.first);
       }
+      // Push local lots up so the next sign-out/sign-in cycle can restore them.
+      await flushRoomsToCloud();
     }
 
     final alreadyImported = await _hasImportedGuestRooms(uid);

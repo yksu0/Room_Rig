@@ -24,15 +24,29 @@ class RoomRepository {
   Future<void> upsertRoom(String userId, SavedRoom room) async {
     final client = _client;
     if (client == null) return;
-    await client.from('rooms').upsert(_toRow(userId, room));
+    try {
+      await client.from('rooms').upsert(
+            _toRow(userId, room),
+            onConflict: 'id',
+          );
+    } catch (e) {
+      debugPrint('upsertRoom(${room.id}): $e');
+      rethrow;
+    }
   }
 
   Future<void> upsertMany(String userId, List<SavedRoom> rooms) async {
     final client = _client;
     if (client == null || rooms.isEmpty) return;
-    await client.from('rooms').upsert(
-          rooms.map((r) => _toRow(userId, r)).toList(),
-        );
+    try {
+      await client.from('rooms').upsert(
+            rooms.map((r) => _toRow(userId, r)).toList(),
+            onConflict: 'id',
+          );
+    } catch (e) {
+      debugPrint('upsertMany(${rooms.length}): $e');
+      rethrow;
+    }
   }
 
   Future<void> deleteRoom(String userId, String roomId) async {

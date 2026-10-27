@@ -1193,7 +1193,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final widthCtrl = TextEditingController(text: '4.8');
     final heightCtrl = TextEditingController(text: '2.7');
     String? dimError;
-    final created = await showModalBottomSheet<bool>(
+    // Pop with params first — mutating AppState under an open sheet rebuilds
+    // InheritedWidgets and trips framework.dart _dependents.isEmpty.
+    final created = await showModalBottomSheet<({
+      String name,
+      double length,
+      double width,
+      double height,
+    })>(
       context: context,
       backgroundColor: AppColors.surface,
       isScrollControlled: true,
@@ -1307,13 +1314,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           });
                           return;
                         }
-                        state.createManualRoom(
+                        Navigator.pop(ctx, (
                           name: nameCtrl.text,
-                          lengthMeters: length,
-                          widthMeters: width,
-                          heightMeters: height,
-                        );
-                        Navigator.pop(ctx, true);
+                          length: length,
+                          width: width,
+                          height: height,
+                        ));
                       },
                       child: const Text('Create empty room'),
                     ),
@@ -1329,13 +1335,20 @@ class _HomeScreenState extends State<HomeScreen> {
     lengthCtrl.dispose();
     widthCtrl.dispose();
     heightCtrl.dispose();
-    if (created == true && context.mounted) {
-      state.setTab(2);
-      showAppSnackBar(
-        context,
-        message: 'Created ${state.currentRoomData.name}',
-      );
-    }
+    if (created == null || !context.mounted) return;
+    state.createManualRoom(
+      name: created.name,
+      lengthMeters: created.length,
+      widthMeters: created.width,
+      heightMeters: created.height,
+    );
+    await state.flushRoomsToCloud();
+    if (!context.mounted) return;
+    state.setTab(2);
+    showAppSnackBar(
+      context,
+      message: 'Created ${state.currentRoomData.name}',
+    );
   }
 }
 

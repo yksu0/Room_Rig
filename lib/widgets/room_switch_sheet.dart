@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -123,15 +125,17 @@ class _RoomSwitchSheetBody extends StatelessWidget {
     );
     ctrl.dispose();
     if (name == null || !context.mounted) return;
+    // Close the rooms sheet before mutating AppState (avoids inherited rebuild crash).
+    Navigator.pop(context);
     state.createManualRoom(
       name: name.isEmpty ? 'My Room' : name,
       lengthMeters: 3.6,
       widthMeters: 4.8,
       heightMeters: 2.7,
     );
+    unawaited(state.flushRoomsToCloud());
     state.requestOpenToolsOnRig();
     state.setTab(2);
-    if (context.mounted) Navigator.pop(context);
   }
 
   @override

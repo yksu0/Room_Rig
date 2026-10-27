@@ -183,15 +183,27 @@ class _AccountScreenState extends State<AccountScreen> {
             onPressed: _busy
                 ? null
                 : () async {
-                    await auth.signOut();
+                    setState(() => _busy = true);
+                    var synced = false;
+                    try {
+                      // Upload before session ends — sign-out wipes the device copy.
+                      synced =
+                          await context.read<AppState>().flushRoomsToCloud();
+                      if (!context.mounted) return;
+                      await auth.signOut();
+                    } finally {
+                      if (mounted) setState(() => _busy = false);
+                    }
                     if (!context.mounted) return;
                     Navigator.of(context).popUntil((r) => r.isFirst);
                     showAppSnackBar(
                       context,
-                      message:
-                          'Signed out. Rooms left this device but stay in your account. '
-                          'Shared photos or files are not removed from the phone; '
-                          'delete those yourself if needed.',
+                      message: synced
+                          ? 'Signed out. Rooms left this device but stay in your account. '
+                              'Shared photos or files are not removed from the phone; '
+                              'delete those yourself if needed.'
+                          : 'Signed out. Cloud sync failed — rooms may not restore on '
+                              'the next sign-in. Check network and try again while signed in.',
                       duration: const Duration(seconds: 4),
                     );
                   },

@@ -143,7 +143,10 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
     if (DateTime.now().difference(pausedAt) < AppState.sharedPhoneLockIdle) {
       return;
     }
-    unawaited(auth.signOut());
+    unawaited(() async {
+      await app.flushRoomsToCloud();
+      await auth.signOut();
+    }());
     showAppSnackBar(
       context,
       message:
