@@ -74,7 +74,7 @@ class _RigCustomizerScreenState extends State<RigCustomizerScreen>
   static const _liveDebounce = Duration(milliseconds: 300);
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  _RigViewMode _viewMode = _RigViewMode.model3D;
+  _RigViewMode _viewMode = _RigViewMode.twoD;
   _OptimizeGoal _optimizeGoal = _OptimizeGoal.balanced;
   double _cameraYawRad = 0;
   double _cameraPitchRad = 0.34;
