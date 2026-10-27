@@ -131,9 +131,12 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
       return;
     }
     if (state != AppLifecycleState.resumed) return;
+    if (!mounted) return;
+    // Drop any banner that lingered while backgrounded so tabs stay tappable.
+    clearAppSnackBars(context);
     final pausedAt = _pausedAt;
     _pausedAt = null;
-    if (pausedAt == null || !mounted) return;
+    if (pausedAt == null) return;
     final app = context.read<AppState>();
     final auth = context.read<AuthService>();
     if (!app.sharedPhoneLock || !auth.isSignedIn) return;
@@ -174,11 +177,18 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
         _authWasSignedIn = true;
         unawaited(app.handleSignedIn());
       } else if (!now && _authWasSignedIn) {
+        final intentional = auth.consumeIntentionalSignOut();
+        if (intentional) {
+          _signOutDebounce?.cancel();
+          _signOutDebounce = null;
+          _authWasSignedIn = false;
+          unawaited(app.handleSignedOut());
+          return;
+        }
         // Token refresh / brief auth blips can emit signed-out then signed-in.
-        // Debounce the device wipe so backgrounding the app does not reset
-        // My Rooms to an empty lot.
+        // Wait long enough for session restore after backgrounding.
         _signOutDebounce?.cancel();
-        _signOutDebounce = Timer(const Duration(milliseconds: 900), () {
+        _signOutDebounce = Timer(const Duration(seconds: 2), () {
           if (!mounted) return;
           if (auth.isSignedIn) return;
           _authWasSignedIn = false;

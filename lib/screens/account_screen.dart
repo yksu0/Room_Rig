@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_snack_bar.dart';
 import 'set_password_screen.dart';
 
 /// Signed-in profile: password, delete account, sign out.
@@ -60,13 +61,11 @@ class _AccountScreenState extends State<AccountScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (err != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+      showAppSnackBar(context, message: err);
       return;
     }
     Navigator.of(context).popUntil((r) => r.isFirst);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Account deleted.')),
-    );
+    showAppSnackBar(context, message: 'Account deleted.');
   }
 
   @override
@@ -187,14 +186,13 @@ class _AccountScreenState extends State<AccountScreen> {
                     await auth.signOut();
                     if (!context.mounted) return;
                     Navigator.of(context).popUntil((r) => r.isFirst);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
+                    showAppSnackBar(
+                      context,
+                      message:
                           'Signed out. Rooms left this device but stay in your account. '
                           'Shared photos or files are not removed from the phone; '
                           'delete those yourself if needed.',
-                        ),
-                      ),
+                      duration: const Duration(seconds: 4),
                     );
                   },
             child: const Text('Sign out'),

@@ -15,7 +15,7 @@ void showAppSnackBar(
   final messenger = ScaffoldMessenger.maybeOf(context);
   if (messenger == null) return;
   messenger
-    ..hideCurrentSnackBar()
+    ..clearSnackBars()
     ..showSnackBar(
       SnackBar(
         content: Text(message),
@@ -31,7 +31,7 @@ void showAppSnackBar(
     );
 }
 
-/// Clears a stuck banner so bottom / side nav stays tappable.
+/// Clears stuck banners so bottom / side nav stays tappable.
 void clearAppSnackBars(BuildContext context) {
-  ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+  ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
 }

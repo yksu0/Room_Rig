@@ -340,9 +340,9 @@ class AppState extends ChangeNotifier {
   /// Account-tagged rooms left on disk without a session (e.g. process kill).
   Future<void> _scrubOrphanOwnedRoomsIfGuest() async {
     if (isSignedIn) return;
-    // Supabase session is usually ready after initialize(), but avoid wiping
-    // My Rooms if auth notifies one tick after prefs hydrate.
-    await Future<void>.delayed(Duration.zero);
+    // Give auth a moment after process restore — wiping too early looks like
+    // "app reset" when the user only backgrounded Room Rig.
+    await Future<void>.delayed(const Duration(seconds: 2));
     if (isSignedIn) return;
     final orphans = _rooms.where((r) => !r.isGuestOwned).toList(growable: false);
     if (orphans.isEmpty) return;

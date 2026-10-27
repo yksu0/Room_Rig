@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/app_state.dart';
 import '../theme/app_theme.dart';
+import 'app_snack_bar.dart';
 
 Future<void> showRoomSwitchSheet(BuildContext context) {
   return showModalBottomSheet<void>(
@@ -48,7 +49,7 @@ class _RoomSwitchSheetBody extends StatelessWidget {
     if (context.mounted) {
       Navigator.pop(context);
       if (notice != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(notice)));
+        showAppSnackBar(context, message: notice);
       }
     }
   }

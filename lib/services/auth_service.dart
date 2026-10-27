@@ -17,6 +17,10 @@ class AuthService extends ChangeNotifier {
   bool _passwordRecoveryPending = false;
   bool _googleNativeReady = false;
 
+  /// True after an explicit Sign out / Delete account — wipe device immediately.
+  /// Transient auth blips (token refresh) leave this false so My Rooms survive.
+  bool _intentionalSignOut = false;
+
   User? get user => SupabaseBootstrap.clientOrNull?.auth.currentUser;
   Session? get session => SupabaseBootstrap.clientOrNull?.auth.currentSession;
   bool get isSignedIn => user != null;
@@ -101,10 +105,18 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Whether the next signed-out transition should wipe the device right away.
+  bool consumeIntentionalSignOut() {
+    final v = _intentionalSignOut;
+    _intentionalSignOut = false;
+    return v;
+  }
+
   Future<void> signOut() async {
     final client = SupabaseBootstrap.clientOrNull;
     if (client == null) return;
     _passwordRecoveryPending = false;
+    _intentionalSignOut = true;
     try {
       if (!kIsWeb && SupabaseConfig.hasGoogleWebClientId) {
         await GoogleSignIn.instance.signOut();
@@ -256,6 +268,7 @@ class AuthService extends ChangeNotifier {
         return msg;
       }
       _passwordRecoveryPending = false;
+      _intentionalSignOut = true;
       await client.auth.signOut();
       notifyListeners();
       return null;

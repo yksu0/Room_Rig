@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/app_state.dart';
 import '../../models/surface_mount.dart';
 import '../../theme/app_theme.dart';
+import '../app_snack_bar.dart';
 import '../auto_rig_lock_summary.dart';
 import '../room_icons.dart';
 import '../confirm_dialogs.dart';
@@ -237,14 +238,16 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                     color: AppColors.cyan,
                                     onTap: () {
                                       if (item.locked) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Unlock to duplicate')),
+                                        showAppSnackBar(
+                                          context,
+                                          message: 'Unlock to duplicate',
                                         );
                                         return;
                                       }
                                       if (!state.duplicateFurniture(item.id)) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Could not duplicate here')),
+                                        showAppSnackBar(
+                                          context,
+                                          message: 'Could not duplicate here',
                                         );
                                         return;
                                       }
@@ -269,21 +272,19 @@ class RigRoomItemsDrawer extends StatelessWidget {
                                         final name = item.name;
                                         state.deleteFurniture(item.id);
                                         if (!context.mounted) return;
-                                        ScaffoldMessenger.of(context)
-                                          ..hideCurrentSnackBar()
-                                          ..showSnackBar(
-                                            SnackBar(
-                                              content: Text('Deleted "$name"'),
-                                              behavior: SnackBarBehavior.floating,
-                                              duration: const Duration(seconds: 2),
-                                              action: SnackBarAction(
-                                                label: 'Undo',
-                                                onPressed: () {
-                                                  if (state.canUndoLayout) state.undoLayout();
-                                                },
-                                              ),
-                                            ),
-                                          );
+                                        showAppSnackBar(
+                                          context,
+                                          message: 'Deleted "$name"',
+                                          duration: const Duration(seconds: 2),
+                                          action: SnackBarAction(
+                                            label: 'Undo',
+                                            onPressed: () {
+                                              if (state.canUndoLayout) {
+                                                state.undoLayout();
+                                              }
+                                            },
+                                          ),
+                                        );
                                       },
                                     ),
                                   ],

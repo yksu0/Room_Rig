@@ -16,6 +16,7 @@ import '../services/layout_share_image.dart';
 import '../services/room_compare.dart';
 import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_snack_bar.dart';
 import '../widgets/chrome/adaptive_panel.dart';
 import '../widgets/confirm_dialogs.dart';
 import '../widgets/glass_card.dart';
@@ -76,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     final notice = state.loadSavedRoom(roomId);
     if (notice != null && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(notice)));
+      showAppSnackBar(context, message: notice);
     }
   }
 
@@ -111,8 +112,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (ok != true || !context.mounted) return;
     state.restoreOriginalLayout();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Original layout restored · scores are ROUGH EST. until Bench')),
+    showAppSnackBar(
+      context,
+      message: 'Original layout restored · scores are ROUGH EST. until Bench',
     );
   }
 
@@ -673,8 +675,9 @@ class _HomeScreenState extends State<HomeScreen> {
             onDuplicate: () {
               state.duplicateActiveRoom();
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Duplicated as ${state.currentRoomData.name}')),
+                showAppSnackBar(
+                  context,
+                  message: 'Duplicated as ${state.currentRoomData.name}',
                 );
               }
             },
@@ -698,8 +701,9 @@ class _HomeScreenState extends State<HomeScreen> {
               }
               state.duplicateActiveRoom();
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Duplicated as ${state.currentRoomData.name}')),
+                showAppSnackBar(
+                  context,
+                  message: 'Duplicated as ${state.currentRoomData.name}',
                 );
               }
             },
@@ -763,10 +767,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           final ok = state.checkpointActiveRoom('Manual save');
                           if (Navigator.canPop(ctx)) Navigator.pop(ctx);
                           if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(ok ? 'Checkpoint saved' : 'Nothing to checkpoint yet'),
-                            ),
+                          showAppSnackBar(
+                            context,
+                            message: ok
+                                ? 'Checkpoint saved'
+                                : 'Nothing to checkpoint yet',
                           );
                         },
                         child: const Text('Save snapshot'),
@@ -858,12 +863,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             final ok = state.restoreRoomRevision(rev.id);
                             if (Navigator.canPop(ctx)) Navigator.pop(ctx);
                             if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  ok ? 'Restored “${rev.label}”' : 'Could not restore checkpoint',
-                                ),
-                              ),
+                            showAppSnackBar(
+                              context,
+                              message: ok
+                                  ? 'Restored “${rev.label}”'
+                                  : 'Could not restore checkpoint',
                             );
                           },
                         );
@@ -881,10 +885,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _showCompareRoomsSheet(BuildContext context, AppState state) async {
     final rooms = state.savedRooms;
     if (rooms.length < 2) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Save or duplicate a room first — need two lots to compare'),
-        ),
+      showAppSnackBar(
+        context,
+        message: 'Save or duplicate a room first — need two lots to compare',
       );
       return;
     }
@@ -1098,9 +1101,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     } catch (e) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Export failed: $e')),
-      );
+      showAppSnackBar(context, message: 'Export failed: $e');
     }
   }
 
@@ -1330,8 +1331,9 @@ class _HomeScreenState extends State<HomeScreen> {
     heightCtrl.dispose();
     if (created == true && context.mounted) {
       state.setTab(2);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Created ${state.currentRoomData.name}')),
+      showAppSnackBar(
+        context,
+        message: 'Created ${state.currentRoomData.name}',
       );
     }
   }
