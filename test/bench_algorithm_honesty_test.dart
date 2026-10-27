@@ -18,6 +18,7 @@ void main() {
     double y = 1,
     double w = 1,
     double h = 1,
+    double lightingImpact = 0,
   }) {
     return FurnitureItem(
       id: id,
@@ -29,7 +30,7 @@ void main() {
       width: w,
       height: h,
       airflowImpact: 0,
-      lightingImpact: 0,
+      lightingImpact: lightingImpact,
       ergonomicsImpact: 0,
       cost: 0,
     );
@@ -50,6 +51,42 @@ void main() {
     expect(sim.metrics.glareRisk, 0);
     expect(sim.lights.any((l) => l.kind == 'ceiling'), isTrue);
     expect(sim.lights.any((l) => l.kind == 'lamp'), isTrue);
+  });
+
+  test('placed Ceiling Light drives the overhead source (not a ghost fill)', () {
+    final base = [
+      item(id: 'door', name: 'Door', icon: 'door', x: 0, y: 5),
+      item(id: 'desk', name: 'Desk', icon: 'desk', x: 3, y: 3, w: 2, h: 1),
+    ];
+    final without = LightingSimulator.build(furniture: base, optimized: false);
+    final withFixture = LightingSimulator.build(
+      furniture: [
+        ...base,
+        item(
+          id: 'ceiling_light',
+          name: 'Ceiling Light',
+          icon: 'ceilingLight',
+          x: 1.0,
+          y: 6.0,
+          lightingImpact: 0.8,
+        ),
+      ],
+      optimized: false,
+    );
+
+    final ceiling = withFixture.lights.where((l) => l.kind == 'ceiling').toList();
+    expect(ceiling, hasLength(1));
+    expect(ceiling.single.label, 'Ceiling Light');
+    expect(ceiling.single.x, closeTo(1.5, 0.01));
+    expect(ceiling.single.z, closeTo(6.5, 0.01));
+    expect(ceiling.single.intensity, greaterThan(without.lights
+        .firstWhere((l) => l.kind == 'ceiling')
+        .intensity));
+    expect(
+      withFixture.metrics.exposureScore,
+      isNot(without.metrics.exposureScore),
+      reason: 'adding a Ceiling Light must change the Lighting Bench score',
+    );
   });
 
   test('lighting daylight only scores when a window exists', () {

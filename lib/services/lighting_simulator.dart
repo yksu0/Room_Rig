@@ -186,20 +186,7 @@ class LightingSimulator {
 
   static List<LightingLight> _buildLights(List<FurnitureItem> furniture) {
     final lights = <LightingLight>[];
-
-    // Overhead fixture, assumed on. Below ~0.4 the fill lands under the 0.18
-    // shadow cutoff across most of the floor, which would report a normally lit
-    // room as half in shadow no matter how the furniture is arranged.
-    lights.add(
-      LightingLight(
-        x: roomWidth * ceilingLightU,
-        z: roomDepth * ceilingLightV,
-        y: roomHeight - 0.05,
-        intensity: 0.42,
-        kind: 'ceiling',
-        label: 'Ceiling',
-      ),
-    );
+    var hasCeilingFixture = false;
 
     for (final f in furniture) {
       final hay = '${f.id} ${f.name} ${f.iconName}'.toLowerCase();
@@ -217,6 +204,21 @@ class LightingSimulator {
             label: 'Window',
           ),
         );
+      } else if (_isCeilingLight(f, hay)) {
+        hasCeilingFixture = true;
+        // Stronger than the soft ambient fallback so Place / move / delete
+        // actually moves the Lighting Bench score.
+        final impact = f.lightingImpact.clamp(0.0, 1.0);
+        lights.add(
+          LightingLight(
+            x: cx,
+            z: cz,
+            y: roomHeight - 0.05,
+            intensity: (0.55 + 0.35 * impact).clamp(0.5, 0.95),
+            kind: 'ceiling',
+            label: f.name,
+          ),
+        );
       } else if (_isTaskLamp(f, hay)) {
         lights.add(
           LightingLight(
@@ -231,19 +233,45 @@ class LightingSimulator {
       }
     }
 
+    // Soft ambient overhead only when the lot has no ceiling fixture yet —
+    // keeps shadow metrics sane without ignoring placed Ceiling Lights.
+    if (!hasCeilingFixture) {
+      lights.add(
+        LightingLight(
+          x: roomWidth * ceilingLightU,
+          z: roomDepth * ceilingLightV,
+          y: roomHeight - 0.05,
+          intensity: 0.42,
+          kind: 'ceiling',
+          label: 'Ceiling',
+        ),
+      );
+    }
+
     // Never invent a window — windowless rooms score on ceiling + lamps only.
     return lights;
   }
 
+  static bool _isCeilingLight(FurnitureItem f, String hay) {
+    if (f.iconName == 'ceilingLight') return true;
+    if (hay.contains('ceiling') &&
+        (hay.contains('light') ||
+            hay.contains('lamp') ||
+            hay.contains('fixture'))) {
+      return true;
+    }
+    return false;
+  }
+
   static bool _isTaskLamp(FurnitureItem f, String hay) {
+    if (_isCeilingLight(f, hay)) return false;
     if (f.iconName == 'lamp' || f.iconName == 'floorLamp') {
       return true;
     }
     if (hay.contains('lamp') || hay.contains('bulb')) {
       return true;
     }
-    // Avoid matching every item with "light" in the name (e.g. ceiling fixture
-    // already injected separately; "skylight" should be a window).
+    // Avoid matching every item with "light" in the name (skylight → window).
     return false;
   }
 
