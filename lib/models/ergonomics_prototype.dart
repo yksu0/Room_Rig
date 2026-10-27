@@ -2,7 +2,7 @@
 // Demo layouts for the ergonomics benchmark prototype.
 import 'room_model.dart';
 
-/// Desk / chair / reach stories for Bench / Auto-Rig.
+/// Desk / chair / reach stories for Benchmark / Auto-Rig.
 class ErgonomicsPrototypeLayouts {
   ErgonomicsPrototypeLayouts._();
 

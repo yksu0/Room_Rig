@@ -18,7 +18,7 @@ class FurnitureItem {
   double gridY;
   final double width;
   final double height;
-  /// Yaw in degrees, snapped to 90° steps in the Rig editor.
+  /// Yaw in degrees, snapped to 90° steps in the Room editor.
   final double yawDegrees;
   final bool locked;
   final bool hidden;

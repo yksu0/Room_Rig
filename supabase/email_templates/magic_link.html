@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#0a0b0f;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#e6e8ef;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#0a0b0f;padding:32px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="520" cellspacing="0" cellpadding="0" style="background:#12141b;border:1px solid #232733;border-radius:16px;padding:32px;">
+            <tr>
+              <td style="font-size:12px;letter-spacing:3px;color:#3ad1ff;font-weight:800;">ROOM RIG</td>
+            </tr>
+            <tr>
+              <td style="padding-top:12px;font-size:22px;font-weight:800;color:#ffffff;">Your confirmation code</td>
+            </tr>
+            <tr>
+              <td style="padding-top:12px;font-size:14px;line-height:1.5;color:#aab0c0;">
+                Enter this code in the Room Rig app to confirm the request you just started
+                (for example: deleting your account). It expires in a few minutes.
+                If you did not ask for this, you can ignore this email — nothing changes.
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:28px 0;">
+                <div style="display:inline-block;font-size:32px;letter-spacing:10px;font-weight:800;color:#ffffff;background:#0a0b0f;border:1px solid #3ad1ff;border-radius:12px;padding:14px 22px;">{{ .Token }}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="font-size:12px;line-height:1.5;color:#6c7384;">
+                Prefer a link? <a href="{{ .ConfirmationURL }}" style="color:#3ad1ff;">Open Room Rig</a>.
+                Account deletion only completes after you enter the code in the app; the account is then
+                scheduled for permanent removal in 7 days and signing in again cancels it.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

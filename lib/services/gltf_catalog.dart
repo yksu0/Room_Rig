@@ -1,4 +1,4 @@
-// Maps Rig furniture icon names → CC0 GLB/glTF assets + sim / wall-cut /
+// Maps Room furniture icon names → CC0 GLB/glTF assets + sim / wall-cut /
 // Model-fit profiles.
 //
 // Sizing convention (one source of truth per kind):
@@ -112,14 +112,14 @@ class MeshProfile {
 
   double get openingHeightMeters => clearHeightMeters ?? heightMeters;
 
-  /// Orbit / Rig grid width in cells from metre targets (0.05-cell snap).
+  /// Orbit / Room grid width in cells from metre targets (0.05-cell snap).
   double? get footprintWidthCells {
     final m = clearWidthMeters ?? targetWidthMeters;
     if (m == null) return null;
     return GltfCatalog.cellsFromMeters(m);
   }
 
-  /// Orbit / Rig grid depth in cells from metre targets (0.05-cell snap).
+  /// Orbit / Room grid depth in cells from metre targets (0.05-cell snap).
   double? get footprintDepthCells {
     final m = targetDepthMeters;
     if (m == null) return null;
@@ -518,7 +518,7 @@ class GltfCatalog {
   static double defaultHeightMeters(String iconName) =>
       profileFor(iconName).heightMeters;
 
-  /// Snap metres → grid cells (0.05 resolution) for Orbit / Rig footprints.
+  /// Snap metres → grid cells (0.05 resolution) for Orbit / Room footprints.
   static double cellsFromMeters(double meters) {
     final raw = meters / RoomScale.cellMeters;
     return (raw * 20).round() / 20.0;

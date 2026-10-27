@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/app_state.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/services/layout_snap_guides.dart';
-import 'package:room_rig/widgets/bench_panel_scaffold.dart';
+import 'package:room_rig/widgets/benchmark_panel_scaffold.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -76,15 +76,6 @@ void main() {
     );
     expect(snap.gridX, closeTo(4.0, 0.001));
     expect(snap.guides.any((g) => g.axis == SnapGuideAxis.vertical), isTrue);
-  });
-
-  test('suggestedUpgrade points at the weakest category', () {
-    final state = AppState();
-    state.refreshSimulatedScores();
-    final tip = state.suggestedUpgrade();
-    expect(tip, isNotNull);
-    expect(tip!.name, isNotEmpty);
-    expect(tip.index, greaterThanOrEqualTo(0));
   });
 
   test('buildShareJson includes committed furniture', () {

@@ -1,4 +1,4 @@
-// Researched furniture placement rules for every Rig catalog + upgrade SKU.
+// Researched furniture placement rules for every Room catalog + upgrade SKU.
 //
 // Sources (practice / agency / environmental psychology — not app certification):
  // - OSHA Computer Workstations eTools: display at right angles to windows

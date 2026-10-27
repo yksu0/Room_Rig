@@ -11,6 +11,9 @@ Dashboard → [Authentication → Email Templates](https://supabase.com/dashboar
 | `confirm_email.html` | **Confirm signup** | `Confirm your Room Rig email` |
 | `reset_password.html` | **Reset password** | `Reset your Room Rig password` |
 | `change_password.html` | **Password changed** (security notification) | `Your Room Rig password was changed` |
+| `magic_link.html` | **Magic Link** | `Your Room Rig confirmation code` |
+
+`magic_link.html` must keep `{{ .Token }}` — the app's Delete-account flow sends a Magic Link email and verifies the **6-digit code** in-app (`verifyOTP(type: email)`), which also works for Google-only accounts. Without the token placeholder users only get a link and cannot finish the confirm step.
 
 For **Password changed**, enable the security notification toggle on that template (or Auth → notifications) so it actually sends.
 

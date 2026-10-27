@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/app_state.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/services/airflow_optimizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -33,10 +33,10 @@ void main() {
     state.applyFurnitureLayout(state.furniture, markOptimized: true);
     expect(state.furniture.any((f) => f.id == 'upg_fan'), isTrue);
     expect(state.upgrades.first['added'], isTrue);
-    expect(RigCatalog.isV1Item(state.furniture.firstWhere((f) => f.id == 'upg_fan')), isTrue);
+    expect(RoomCatalog.isV1Item(state.furniture.firstWhere((f) => f.id == 'upg_fan')), isTrue);
   });
 
-  test('Bench Apply Score Delta uses geometry-before not catalog impact tags', () {
+  test('Benchmark Apply Score Delta uses geometry-before not catalog impact tags', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
     state.acceptPresetAsReady();
@@ -48,7 +48,7 @@ void main() {
     state.moveFurniture(movable.id, movable.gridX + 0.5, movable.gridY);
     expect(state.scoresAreSimulated, isTrue);
 
-    // ROUGH rings are live geometry — same evaluator as Bench — not impact tags.
+    // ROUGH rings are live geometry — same evaluator as Benchmark — not impact tags.
     final simBefore = AirflowOptimizer.evaluate(state.committedFurniture).circulationScore;
     expect(state.airflowScore, closeTo(simBefore, 0.01));
 
@@ -67,14 +67,14 @@ void main() {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
     final before = state.airflowScore;
-    final lamp = RigCatalog.items.firstWhere((e) => e.baseId == 'lamp');
+    final lamp = RoomCatalog.items.firstWhere((e) => e.baseId == 'lamp');
     state.addCatalogFurniture(lamp, pending: true);
     expect(state.hasPendingPlacement, isTrue);
     // Ghost should not change base estimate while pending.
     expect(state.airflowScore, closeTo(before, 0.01));
   });
 
-  test('dragging or rotating a Place ghost does not clear BENCH OK', () {
+  test('dragging or rotating a Place ghost does not clear BENCHMARK OK', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
     state.acceptPresetAsReady();
@@ -82,7 +82,7 @@ void main() {
     expect(state.isOptimized, isTrue);
     expect(state.scoresAreSimulated, isFalse);
 
-    final lamp = RigCatalog.items.firstWhere((e) => e.baseId == 'lamp');
+    final lamp = RoomCatalog.items.firstWhere((e) => e.baseId == 'lamp');
     final id = state.addCatalogFurniture(lamp, pending: true)!;
     state.moveFurniture(id, state.furniture.firstWhere((f) => f.id == id).gridX + 1, 3);
     expect(state.isOptimized, isTrue, reason: 'ghost drag must not clear Applied');
@@ -98,7 +98,7 @@ void main() {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
     state.acceptPresetAsReady();
-    final lamp = RigCatalog.items.firstWhere((e) => e.baseId == 'lamp');
+    final lamp = RoomCatalog.items.firstWhere((e) => e.baseId == 'lamp');
     final id = state.addCatalogFurniture(lamp, pending: true)!;
     state.rotateFurniture(id, deltaDegrees: 90);
 

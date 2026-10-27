@@ -4,7 +4,7 @@ import '../models/room_model.dart';
 import '../models/surface_mount.dart';
 import '../theme/app_theme.dart';
 
-/// Whether Auto-Rig / Bench Improved will leave this piece where it is.
+/// Whether Auto-Rig / Benchmark Improved will leave this piece where it is.
 bool autoRigPinsItem(FurnitureItem item) =>
     item.locked || SurfaceMounts.isStructuralMount(item);
 
@@ -32,7 +32,7 @@ class AutoRigLockSummary extends StatelessWidget {
       return Padding(
         padding: EdgeInsets.symmetric(vertical: compact ? 4 : 8),
         child: Text(
-          'No furniture yet — add items on the Rig.',
+          'No furniture yet — add items on the Room.',
           style: TextStyle(
             color: AppColors.textMuted,
             fontSize: compact ? 11 : 12,
@@ -48,7 +48,7 @@ class AutoRigLockSummary extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'AUTO-RIG WILL NOT MOVE',
+          'AUTO-ROOM WILL NOT MOVE',
           style: TextStyle(
             color: AppColors.textMuted,
             fontSize: 9,
@@ -115,7 +115,7 @@ class AutoRigLockSummary extends StatelessWidget {
         ),
         SizedBox(height: compact ? 6 : 8),
         Text(
-          'Lock an item on the Rig to keep it fixed when you rearrange or run Bench Improved.',
+          'Lock an item on the Room to keep it fixed when you rearrange or run Benchmark Improved.',
           style: TextStyle(
             color: AppColors.textMuted,
             fontSize: compact ? 10 : 11,

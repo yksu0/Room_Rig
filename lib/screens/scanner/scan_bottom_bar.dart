@@ -338,7 +338,7 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
                 const SizedBox(width: 10),
                 Text(
                   canFinishScan
-                      ? 'FINISH — OPEN RIG'
+                      ? 'FINISH — OPEN ROOM'
                       : 'DETECTING... NEED ${(100 * requiredCoverageToFinish).toInt()}% + STABLE QUALITY',
                   style: TextStyle(
                     color: canFinishScan ? Colors.white : AppColors.textMuted,
@@ -355,7 +355,7 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
           TextButton(
             onPressed: onSkipDetection,
             child: Text(
-              'Skip items — open empty Rig',
+              'Skip items — open empty Room',
               style: TextStyle(
                 color: AppColors.cyan,
                 fontSize: 12,
@@ -380,13 +380,13 @@ class ScanActiveCaptureBottomBar extends StatelessWidget {
 
 class ScanCompleteBottomBar extends StatelessWidget {
   final VoidCallback onScanAgain;
-  final VoidCallback onOpenRig;
+  final VoidCallback onOpenRoom;
   final VoidCallback onExport;
 
   const ScanCompleteBottomBar({
     super.key,
     required this.onScanAgain,
-    required this.onOpenRig,
+    required this.onOpenRoom,
     required this.onExport,
   });
 
@@ -425,7 +425,7 @@ class ScanCompleteBottomBar extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         GestureDetector(
-          onTap: onOpenRig,
+          onTap: onOpenRoom,
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -440,7 +440,7 @@ class ScanCompleteBottomBar extends StatelessWidget {
                 SvgIcon(RoomSvg.tune, size: 18, color: AppColors.textSecondary),
                 const SizedBox(width: 8),
                 const Text(
-                  'OPEN RIG',
+                  'OPEN ROOM',
                   style: TextStyle(
                     color: AppColors.textSecondary,
                     fontWeight: FontWeight.w800,
@@ -484,7 +484,7 @@ class ScanBottomBar extends StatelessWidget {
   final VoidCallback? onFinishScan;
   final VoidCallback? onSkipDetection;
   final VoidCallback onCancelScan;
-  final VoidCallback onOpenRig;
+  final VoidCallback onOpenRoom;
   final VoidCallback onExportScanBundle;
 
   const ScanBottomBar({
@@ -509,7 +509,7 @@ class ScanBottomBar extends StatelessWidget {
     required this.onFinishScan,
     this.onSkipDetection,
     required this.onCancelScan,
-    required this.onOpenRig,
+    required this.onOpenRoom,
     required this.onExportScanBundle,
   });
 
@@ -547,7 +547,7 @@ class ScanBottomBar extends StatelessWidget {
           : scanComplete
           ? ScanCompleteBottomBar(
               onScanAgain: onRequestStartScan,
-              onOpenRig: onOpenRig,
+              onOpenRoom: onOpenRoom,
               onExport: onExportScanBundle,
             )
           : GestureDetector(

@@ -380,7 +380,7 @@ class MultiObjectiveOptimizer {
     ];
   }
 
-  /// Best scored candidate (Bench / one-shot callers).
+  /// Best scored candidate (Benchmark / one-shot callers).
   static MultiObjectiveResult optimize({
     required List<FurnitureItem> furniture,
     required int gridCols,

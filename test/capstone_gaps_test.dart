@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:room_rig/models/app_state.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_scale.dart';
 import 'package:room_rig/models/scan_layout_model.dart';
 import 'package:room_rig/services/layout_collision.dart';
@@ -104,7 +104,7 @@ void main() {
 
   test('pending catalog item is a centre ghost until Place', () {
     final state = AppState();
-    final lamp = RigCatalog.items.firstWhere((e) => e.baseId == 'lamp');
+    final lamp = RoomCatalog.items.firstWhere((e) => e.baseId == 'lamp');
     final id = state.addCatalogFurniture(lamp, pending: true);
     expect(id, isNotNull);
     expect(state.hasPendingPlacement, isTrue);
@@ -117,7 +117,7 @@ void main() {
     expect(state.hasPendingPlacement, isFalse);
     expect(state.furniture.any((f) => f.id == id), isTrue);
 
-    final fan = RigCatalog.items.firstWhere((e) => e.baseId == 'fan');
+    final fan = RoomCatalog.items.firstWhere((e) => e.baseId == 'fan');
     final ghostId = state.addCatalogFurniture(fan, pending: true);
     expect(ghostId, isNotNull);
     state.cancelPendingPlacement();

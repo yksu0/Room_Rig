@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 /// Breakpoints for mobile-first Room Rig that grows into a real desktop site.
 ///
 /// Portrait phones: bottom tabs, sheets, stacked chrome.
-/// Landscape phones / wide windows: left app nav + Rig/Bench rails (Chrome-like).
+/// Landscape phones / wide windows: left app nav + Room/Benchmark rails (Chrome-like).
 class AppLayout {
   AppLayout._();
 
@@ -13,17 +13,17 @@ class AppLayout {
   /// Phone landscape can use the wide shell once width clears this.
   static const double landscapeShellMinWidth = 600;
 
-  /// Left tools rail on Rig (View + Tools) — full desktop.
+  /// Left tools rail on Room (View + Tools) — full desktop.
   static const double toolsRailWidth = 300;
 
-  /// Right inspect rail on Rig — full desktop.
+  /// Right inspect rail on Room — full desktop.
   static const double inspectRailWidth = 320;
 
   /// Compact rails for phone landscape so the center viewport still fits.
   static const double toolsRailWidthCompact = 220;
   static const double inspectRailWidthCompact = 236;
 
-  /// Readable Hub / Bench text column when full-bleed would be too sparse.
+  /// Readable Hub / Benchmark text column when full-bleed would be too sparse.
   static const double readingMaxWidth = 1200;
 
   /// Wide Chrome/desktop width, or phone/tablet landscape shell.

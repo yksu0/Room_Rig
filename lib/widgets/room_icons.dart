@@ -263,6 +263,18 @@ class RoomSvg {
   <line x1="12" y1="10" x2="12" y2="11.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.5"/>
 </svg>''';
 
+  /// Room tab — a floor plan: outer walls, an interior partition with a door
+  /// swing, and a bed footprint in one corner.
+  static const String floorPlan = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="3" y="3" width="18" height="18" rx="1" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  <line x1="13" y1="3" x2="13" y2="11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="13" y1="15" x2="13" y2="21" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M13 15 A4 4 0 0 1 17 11" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity="0.6"/>
+  <rect x="5.5" y="12.5" width="5" height="6.5" rx="0.6" stroke="currentColor" stroke-width="1.3" fill="currentColor" opacity="0.16"/>
+  <line x1="5.5" y1="14.5" x2="10.5" y2="14.5" stroke="currentColor" stroke-width="1.1" opacity="0.6"/>
+</svg>''';
+
   static const String upgrade = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <path d="M12 3 L19 10 L15 10 L15 21 L9 21 L9 10 L5 10 Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="currentColor" opacity="0.12"/>

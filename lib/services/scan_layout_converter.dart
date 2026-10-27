@@ -1,11 +1,11 @@
 import 'dart:math';
 
-import '../models/rig_catalog.dart';
+import '../models/room_catalog.dart';
 import '../models/room_model.dart';
 import '../models/scan_layout_model.dart';
 import 'scan_pipeline.dart';
 
-/// Converts fused scan geometry into editable [FurnitureItem]s for Rig / Bench.
+/// Converts fused scan geometry into editable [FurnitureItem]s for Room / Benchmark.
 class ScanLayoutConverter {
   static const double defaultCellMeters = 0.6;
   static const double minKeepConfidence = 0.28;
@@ -251,9 +251,9 @@ class ScanLayoutConverter {
     );
   }
 
-  /// Mid-market ₱ from [RigCatalog] when the icon matches; else a modest default.
+  /// Mid-market ₱ from [RoomCatalog] when the icon matches; else a modest default.
   static double _costFor(String icon) {
-    for (final e in RigCatalog.items) {
+    for (final e in RoomCatalog.items) {
       if (e.iconName == icon || e.baseId == icon) return e.cost;
     }
     return 2500;
@@ -348,7 +348,7 @@ class ScanLayoutConverter {
       return 'pc';
     }
     if (hay.contains('monitor') || hay.contains('display')) return 'monitor';
-    // COCO smoke → Rig catalog icons (honest remap, not a custom detector).
+    // COCO smoke → Room catalog icons (honest remap, not a custom detector).
     if (hay.contains('potted plant') || hay.contains('plant')) return 'plant';
     if (hay.contains('couch')) return 'sofa';
     if (hay.contains('dining table') || hay.contains('desk')) return 'desk';

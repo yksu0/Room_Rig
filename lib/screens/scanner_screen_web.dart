@@ -29,7 +29,7 @@ class ScannerScreen extends StatefulWidget {
 class _ScannerScreenState extends State<ScannerScreen> {
   static const double _requiredCoverageToFinish = 0.68;
   static const int _requiredStableQualityFrames = 5;
-  static const int _scanTabIndex = 1;
+  static const int _scanTabIndex = scanTabIndex;
 
   ScanPipeline? _pipeline;
   SimulatedScanInputProvider? _input;
@@ -280,13 +280,13 @@ class _ScannerScreenState extends State<ScannerScreen> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Scan saved · $confPct% confidence — edit placements on Rig'),
+        content: Text('Scan saved · $confPct% confidence — edit placements on Room'),
         backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
         behavior: SnackBarBehavior.floating,
         action: SnackBarAction(
-          label: 'OPEN RIG',
+          label: 'OPEN ROOM',
           textColor: Colors.black,
-          onPressed: () => state.setTab(2),
+          onPressed: () => state.setTab(roomTabIndex),
         ),
       ),
     );

@@ -1,5 +1,6 @@
 // lib/widgets/onboarding_sheet.dart
 import 'package:flutter/material.dart';
+import '../models/app_tabs.dart';
 import '../models/upgrade_catalog.dart';
 import '../theme/app_theme.dart';
 import 'room_icons.dart';
@@ -20,30 +21,30 @@ class OnboardingSheet extends StatelessWidget {
       (
         RoomSvg.home,
         'Create or Scan',
-        'Start with an empty room, or Scan to measure your space. Then open Rig to arrange.',
+        'Start with an empty room, or Scan to measure your space. Then open Room to arrange.',
         AppColors.green,
-        0,
+        hubTabIndex,
       ),
       (
-        RoomSvg.tune,
-        'Arrange in Rig',
+        RoomSvg.floorPlan,
+        'Arrange in Room',
         '2D · Orbit · Check. Tools and Inspect open as adaptive panels so the canvas stays clear.',
         AppColors.cyan,
-        2,
+        roomTabIndex,
       ),
       (
         RoomSvg.speedometer,
-        'Bench & Apply',
-        'Simulate My Room → Improved, then Apply. Hub flips to ${HubScoreLabels.benchOk}. Edits show ${HubScoreLabels.roughEst} until Bench again.',
+        'Benchmark & Apply',
+        'Simulate My Room → Improved, then Apply. Hub flips to ${HubScoreLabels.benchmarkOk}. Edits show ${HubScoreLabels.roughEst} until Benchmark again.',
         AppColors.amber,
-        3,
+        benchmarkTabIndex,
       ),
       (
         RoomSvg.scan,
         'Scan when you can',
         'Camera measure seeds real size. You can also Create first and Scan later.',
         AppColors.textMuted,
-        1,
+        scanTabIndex,
       ),
     ];
 

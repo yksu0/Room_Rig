@@ -1,5 +1,5 @@
 // lib/services/layout_orientation.dart
-// Shared facing rules for Auto-Rig / Bench optimizers.
+// Shared facing rules for Auto-Rig / Benchmark optimizers.
 //
 // Practice defaults (not certification claims):
 // - Seating faces a focal point (desk, TV) or into the room (Merrell-style

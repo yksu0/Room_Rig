@@ -1,4 +1,4 @@
-// Fact-check guards: comfort heuristics behave as documented and move Bench signals.
+// Fact-check guards: comfort heuristics behave as documented and move Benchmark signals.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/services/comfort_heuristics.dart';

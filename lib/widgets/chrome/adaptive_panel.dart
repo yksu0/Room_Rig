@@ -10,7 +10,7 @@ import '../room_model_scene_pointer_guard.dart';
 import '../room_model_scene_stub.dart'
     if (dart.library.html) '../room_model_scene_web.dart' as platform;
 
-/// Named chrome regions shared by Rig and Bench (supporting-pane roles).
+/// Named chrome regions shared by Room and Benchmark (supporting-pane roles).
 enum ChromeRegion { view, tools, inspect, results, compare, snapshot }
 
 extension ChromeRegionLabel on ChromeRegion {
@@ -63,7 +63,7 @@ class AdaptivePanelLayout {
   /// Medium width lower bound in logical pixels (Material ~600dp).
   static const double mediumMinWidth = 600;
 
-  /// Desktop Rig hosts View/Tools/Inspect as persistent rails.
+  /// Desktop Room hosts View/Tools/Inspect as persistent rails.
   static bool useExpandedRails(BoxConstraints constraints) {
     return constraints.maxWidth >= mediumMinWidth;
   }

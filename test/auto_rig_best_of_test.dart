@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/surface_mount.dart';
-import 'package:room_rig/services/bench_layouts.dart';
+import 'package:room_rig/services/benchmark_layouts.dart';
 import 'package:room_rig/services/layout_optimizer_common.dart';
 import 'package:room_rig/services/multi_objective_optimizer.dart';
 
@@ -43,8 +43,8 @@ void main() {
     }
 
     expect(
-      BenchLayoutBuilder.fingerprintOf(a.first.furniture),
-      BenchLayoutBuilder.fingerprintOf(b.first.furniture),
+      BenchmarkLayoutBuilder.fingerprintOf(a.first.furniture),
+      BenchmarkLayoutBuilder.fingerprintOf(b.first.furniture),
     );
     expect(a.first.score, closeTo(b.first.score, 0.01));
   });
@@ -65,8 +65,8 @@ void main() {
       weights: weights,
     );
     expect(
-      BenchLayoutBuilder.fingerprintOf(best.furniture),
-      BenchLayoutBuilder.fingerprintOf(ranked.first.furniture),
+      BenchmarkLayoutBuilder.fingerprintOf(best.furniture),
+      BenchmarkLayoutBuilder.fingerprintOf(ranked.first.furniture),
     );
   });
 
@@ -79,7 +79,7 @@ void main() {
       weights: weights,
     );
     expect(ranked.length, greaterThanOrEqualTo(2));
-    final fps = ranked.map((r) => BenchLayoutBuilder.fingerprintOf(r.furniture)).toSet();
+    final fps = ranked.map((r) => BenchmarkLayoutBuilder.fingerprintOf(r.furniture)).toSet();
     expect(fps.length, ranked.length);
   });
 

@@ -78,11 +78,11 @@ class ScanModelAvailability {
 
   /// Longer bullets for the pre-scan sheet.
   static const honestyBullets = <String>[
-    'Scan measures the room footprint (AR corner marks or manual L×W), then opens Rig empty.',
+    'Scan measures the room footprint (AR corner marks or manual L×W), then opens Room empty.',
     'A rectangular room has 8 corners (4 floor + 4 ceiling). Aim for those; L-shapes: mark extra wall corners.',
-    'On Android, Prefer ARCore for lock + corner marks. Furniture comes from Rig — not live YOLO on the measure path.',
+    'On Android, Prefer ARCore for lock + corner marks. Furniture comes from Room — not live YOLO on the measure path.',
     'Optional: Use PC remote detect to run YOLO on your desktop GPU (same Wi‑Fi). Falls back to on-device TFLite if the PC is offline.',
     'Blocked corners: mark the nearest visible wall/ceiling point, then edit length × width × height on Confirm.',
-    'Primary product loop is Hub → Rig → Bench → Upgrades; Scan only seeds room size.',
+    'Primary product loop is Hub → Room → Benchmark; Scan only seeds room size.',
   ];
 }

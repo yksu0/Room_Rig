@@ -1,5 +1,5 @@
 import 'room_model.dart';
-import 'rig_catalog.dart';
+import 'room_catalog.dart';
 import 'scan_layout_model.dart';
 
 /// A named checkpoint of a room's furniture over time.
@@ -39,7 +39,7 @@ class RoomRevision {
       savedAt: DateTime.tryParse(json['savedAt'] as String? ?? '')?.toLocal() ??
           DateTime.fromMillisecondsSinceEpoch(0),
       furniture: furnitureRaw is List
-          ? RigCatalog.retainV1(
+          ? RoomCatalog.retainV1(
               furnitureRaw
                   .whereType<Map>()
                   .map((e) => FurnitureItem.fromJson(e.cast<String, dynamic>()))

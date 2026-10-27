@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:room_rig/models/app_state.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/surface_mount.dart';
-import 'package:room_rig/screens/rig_customizer_screen.dart';
+import 'package:room_rig/screens/room_customizer_screen.dart';
 
 FurnitureItem _item({
   required String id,
@@ -374,15 +374,15 @@ void main() {
     });
   });
 
-  group('rig canvas', () {
-    Future<AppState> pumpRig(WidgetTester tester) async {
+  group('room canvas', () {
+    Future<AppState> pumpRoom(WidgetTester tester) async {
       final state = AppState();
       await tester.binding.setSurfaceSize(const Size(1400, 960));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
         ChangeNotifierProvider.value(
           value: state,
-          child: const MaterialApp(home: RigCustomizerScreen()),
+          child: const MaterialApp(home: RoomCustomizerScreen()),
         ),
       );
       await tester.pump(const Duration(milliseconds: 50));
@@ -390,13 +390,13 @@ void main() {
     }
 
     testWidgets('wall fittings render against their wall, not as floor cells', (tester) async {
-      await pumpRig(tester);
+      await pumpRoom(tester);
       await tester.tap(find.text('2D').first);
       await tester.pumpAndSettle();
 
-      final plan = tester.getRect(find.byKey(const ValueKey('rig2d_bed')));
-      final window = tester.getRect(find.byKey(const ValueKey('rig2d_window')));
-      final door = tester.getRect(find.byKey(const ValueKey('rig2d_door')));
+      final plan = tester.getRect(find.byKey(const ValueKey('room2d_bed')));
+      final window = tester.getRect(find.byKey(const ValueKey('room2d_window')));
+      final door = tester.getRect(find.byKey(const ValueKey('room2d_door')));
 
       // The bed is a floor cell somewhere in the middle; the window hugs the
       // top edge and the door hugs the left edge of the same canvas.
@@ -406,15 +406,15 @@ void main() {
     }, skip: true); // Model WebView needs a WebViewPlatform fake in tests.
 
     testWidgets('tapping the wall AC in 3D selects it', (tester) async {
-      final state = await pumpRig(tester);
+      final state = await pumpRoom(tester);
 
       await tester.tap(find.text('Orbit').first);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('rig3d_canvas')), findsOneWidget);
+      expect(find.byKey(const ValueKey('room3d_canvas')), findsOneWidget);
       state.clearSelection();
       await tester.pumpAndSettle();
 
-      final rect = tester.getRect(find.byKey(const ValueKey('rig3d_canvas')));
+      final rect = tester.getRect(find.byKey(const ValueKey('room3d_canvas')));
       var found = false;
       for (double fx = 0.50; fx <= 0.98 && !found; fx += 0.02) {
         for (double fy = 0.05; fy <= 0.55 && !found; fy += 0.02) {

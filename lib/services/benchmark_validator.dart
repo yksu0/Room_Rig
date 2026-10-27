@@ -10,17 +10,17 @@ import 'layout_collision.dart';
 import 'lighting_optimizer.dart';
 import 'spatial_analyzer.dart';
 
-enum BenchCheckStatus { pass, warn, fail }
+enum BenchmarkCheckStatus { pass, warn, fail }
 
-class BenchCheck {
+class BenchmarkCheck {
   final String id;
   final String label;
   final String detail;
-  final BenchCheckStatus status;
+  final BenchmarkCheckStatus status;
   final double value;
   final double threshold;
 
-  const BenchCheck({
+  const BenchmarkCheck({
     required this.id,
     required this.label,
     required this.detail,
@@ -32,7 +32,7 @@ class BenchCheck {
 
 class BenchmarkValidation {
   final String mode; // airflow | lighting | ergonomics | overall
-  final List<BenchCheck> checks;
+  final List<BenchmarkCheck> checks;
   final bool passed;
   final double score;
 
@@ -43,13 +43,13 @@ class BenchmarkValidation {
     required this.score,
   });
 
-  int get passCount => checks.where((c) => c.status == BenchCheckStatus.pass).length;
-  int get failCount => checks.where((c) => c.status == BenchCheckStatus.fail).length;
+  int get passCount => checks.where((c) => c.status == BenchmarkCheckStatus.pass).length;
+  int get failCount => checks.where((c) => c.status == BenchmarkCheckStatus.fail).length;
 
   /// True when overlaps or blocked openings fail the layout geometry check.
   bool get hasHardLayoutConflicts {
     for (final c in checks) {
-      if (c.id == 'conflicts' && c.status == BenchCheckStatus.fail) return true;
+      if (c.id == 'conflicts' && c.status == BenchmarkCheckStatus.fail) return true;
     }
     return false;
   }
@@ -86,11 +86,11 @@ class BenchmarkValidator {
       return const BenchmarkValidation(
         mode: 'overall',
         checks: [
-          BenchCheck(
+          BenchmarkCheck(
             id: 'empty',
             label: 'Layout populated',
             detail: 'No furniture in the active room layout',
-            status: BenchCheckStatus.fail,
+            status: BenchmarkCheckStatus.fail,
             value: 0,
             threshold: 1,
           ),
@@ -122,35 +122,35 @@ class BenchmarkValidator {
             c.kind == LayoutConflictKind.blockedOpening)
         .length;
 
-    final checks = <BenchCheck>[];
+    final checks = <BenchmarkCheck>[];
 
     void addAir() {
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'circulation',
           label: 'Circulation',
           detail: air.circulationScore >= airflowPass
               ? 'Air mixes (exit ${air.exitChannelScore.round()}, work cool ${air.workZoneCooling.round()}, HVAC clear ${air.hvacClearance.round()})'
               : 'Too much stagnant air — circulation ${air.circulationScore.round()} / ${airflowPass.round()}',
           status: air.circulationScore >= airflowPass
-              ? BenchCheckStatus.pass
+              ? BenchmarkCheckStatus.pass
               : (air.circulationScore >= airflowPass - 10
-                  ? BenchCheckStatus.warn
-                  : BenchCheckStatus.fail),
+                  ? BenchmarkCheckStatus.warn
+                  : BenchmarkCheckStatus.fail),
           value: air.circulationScore,
           threshold: airflowPass,
         ),
       );
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'dead_zones',
           label: 'Dead air',
           detail: air.deadZoneRatio <= deadZoneMax
               ? 'Stagnant pockets cover ≤${(deadZoneMax * 100).round()}% of the mid-plane'
               : '${(air.deadZoneRatio * 100).round()}% of the mid-plane is barely moving',
           status: air.deadZoneRatio <= deadZoneMax
-              ? BenchCheckStatus.pass
-              : BenchCheckStatus.fail,
+              ? BenchmarkCheckStatus.pass
+              : BenchmarkCheckStatus.fail,
           value: air.deadZoneRatio * 100,
           threshold: deadZoneMax * 100,
         ),
@@ -159,31 +159,31 @@ class BenchmarkValidator {
 
     void addLight() {
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'exposure',
           label: 'Exposure',
           detail: light.exposureScore >= lightingPass
               ? 'Useful light at work spots (task ${(light.taskIllumination * 100).round()}%, side-light ${(light.sideLightScore * 100).round()}%)'
               : 'Desk lighting / daylight exposure is too low',
           status: light.exposureScore >= lightingPass
-              ? BenchCheckStatus.pass
+              ? BenchmarkCheckStatus.pass
               : (light.exposureScore >= lightingPass - 10
-                  ? BenchCheckStatus.warn
-                  : BenchCheckStatus.fail),
+                  ? BenchmarkCheckStatus.warn
+                  : BenchmarkCheckStatus.fail),
           value: light.exposureScore,
           threshold: lightingPass,
         ),
       );
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'glare',
           label: 'Glare risk',
           detail: light.glareRisk <= glareMax
               ? 'Desk is offset from harsh window glare'
               : 'Desk faces the window too directly — glare risk',
           status: light.glareRisk <= glareMax
-              ? BenchCheckStatus.pass
-              : BenchCheckStatus.warn,
+              ? BenchmarkCheckStatus.pass
+              : BenchmarkCheckStatus.warn,
           value: light.glareRisk * 100,
           threshold: glareMax * 100,
         ),
@@ -192,31 +192,31 @@ class BenchmarkValidator {
 
     void addErgo() {
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'comfort',
           label: 'Comfort',
           detail: ergo.comfortScore >= ergonomicsPass
               ? 'Clearances, walks, door view ${(ergo.doorProspect * 100).round()}%, bed privacy ${(ergo.bedPrivacy * 100).round()}%'
               : 'Desk/chair/path comfort is below the pass mark',
           status: ergo.comfortScore >= ergonomicsPass
-              ? BenchCheckStatus.pass
+              ? BenchmarkCheckStatus.pass
               : (ergo.comfortScore >= ergonomicsPass - 10
-                  ? BenchCheckStatus.warn
-                  : BenchCheckStatus.fail),
+                  ? BenchmarkCheckStatus.warn
+                  : BenchmarkCheckStatus.fail),
           value: ergo.comfortScore,
           threshold: ergonomicsPass,
         ),
       );
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'paths',
           label: 'Walk distance & turns',
           detail: ergo.pathScore >= pathMin
               ? 'Frequent routes stay short with fewer zigzags'
               : 'High-traffic paths are blocked, long, or full of turns',
           status: ergo.pathScore >= pathMin
-              ? BenchCheckStatus.pass
-              : BenchCheckStatus.fail,
+              ? BenchmarkCheckStatus.pass
+              : BenchmarkCheckStatus.fail,
           value: ergo.pathScore * 100,
           threshold: pathMin * 100,
         ),
@@ -225,13 +225,13 @@ class BenchmarkValidator {
 
     void addGeometry() {
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'conflicts',
           label: 'Layout conflicts',
           detail: hardConflicts == 0
               ? 'No overlaps or blocked openings'
               : '$hardConflicts hard conflict${hardConflicts == 1 ? '' : 's'} in the layout',
-          status: hardConflicts == 0 ? BenchCheckStatus.pass : BenchCheckStatus.fail,
+          status: hardConflicts == 0 ? BenchmarkCheckStatus.pass : BenchmarkCheckStatus.fail,
           value: hardConflicts.toDouble(),
           threshold: conflictMax.toDouble(),
         ),
@@ -241,49 +241,49 @@ class BenchmarkValidator {
     void addSpatial() {
       final s = spatial!;
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'walkable',
           label: 'Walkable floor',
           detail: s.walkableRatio >= walkableMin
               ? '${(s.walkableRatio * 100).round()}% of the floor is walkable'
               : 'Only ${(s.walkableRatio * 100).round()}% walkable — aisles are too tight',
           status: s.walkableRatio >= walkableMin
-              ? BenchCheckStatus.pass
+              ? BenchmarkCheckStatus.pass
               : (s.walkableRatio >= walkableMin - 0.08
-                  ? BenchCheckStatus.warn
-                  : BenchCheckStatus.fail),
+                  ? BenchmarkCheckStatus.warn
+                  : BenchmarkCheckStatus.fail),
           value: s.walkableRatio * 100,
           threshold: walkableMin * 100,
         ),
       );
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'aisle',
           label: 'Largest aisle',
           detail: s.largestAisleCells >= aisleMinCells
               ? 'Largest walkway is about ${RoomScale.formatCellsAsMeters(s.largestAisleCells)}'
               : 'Largest walkway is under ${RoomScale.formatCellsAsMeters(aisleMinCells)} — too tight',
           status: s.largestAisleCells >= aisleMinCells
-              ? BenchCheckStatus.pass
+              ? BenchmarkCheckStatus.pass
               : (s.largestAisleCells >= aisleMinCells - 0.25
-                  ? BenchCheckStatus.warn
-                  : BenchCheckStatus.fail),
+                  ? BenchmarkCheckStatus.warn
+                  : BenchmarkCheckStatus.fail),
           value: s.largestAisleCells,
           threshold: aisleMinCells,
         ),
       );
       checks.add(
-        BenchCheck(
+        BenchmarkCheck(
           id: 'utilization',
           label: 'Floor utilization',
           detail: s.utilizationScore >= spatialUtilPass
               ? 'Floor use is in a workable range — not too empty or packed'
               : 'Floor is under-used or over-packed for comfortable walkways',
           status: s.utilizationScore >= spatialUtilPass
-              ? BenchCheckStatus.pass
+              ? BenchmarkCheckStatus.pass
               : (s.utilizationScore >= spatialUtilPass - 10
-                  ? BenchCheckStatus.warn
-                  : BenchCheckStatus.fail),
+                  ? BenchmarkCheckStatus.warn
+                  : BenchmarkCheckStatus.fail),
           value: s.utilizationScore,
           threshold: spatialUtilPass,
         ),
@@ -322,8 +322,8 @@ class BenchmarkValidator {
       _ => (air.circulationScore + light.exposureScore + ergo.comfortScore) / 3,
     };
 
-    final passed = checks.every((c) => c.status != BenchCheckStatus.fail) &&
-        checks.any((c) => c.status == BenchCheckStatus.pass);
+    final passed = checks.every((c) => c.status != BenchmarkCheckStatus.fail) &&
+        checks.any((c) => c.status == BenchmarkCheckStatus.pass);
 
     return BenchmarkValidation(
       mode: mode,

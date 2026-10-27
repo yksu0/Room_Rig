@@ -4,7 +4,7 @@ import '../models/scan_layout_model.dart';
 import 'scan_guidance.dart';
 import 'scan_pipeline.dart';
 
-/// Staged Scan: lock tracking → mark footprint → confirm size → Rig.
+/// Staged Scan: lock tracking → mark footprint → confirm size → Room.
 /// [capture] is retained for optional future furniture pass; default path never enters it.
 enum ScanSessionPhase { lockTracking, markFootprint, confirmSize, capture }
 
@@ -401,8 +401,8 @@ class ScanSetupController {
           stepLabel: '3 / 3  CONFIRM SIZE',
           headline: 'Confirm room size',
           detail: d == null
-              ? 'Enter length × width, then continue to Rig.'
-              : 'Approx ${d.lengthMeters.toStringAsFixed(1)} × ${d.widthMeters.toStringAsFixed(1)} m — edit if a corner was blocked, then open Rig.',
+              ? 'Enter length × width, then continue to Room.'
+              : 'Approx ${d.lengthMeters.toStringAsFixed(1)} × ${d.widthMeters.toStringAsFixed(1)} m — edit if a corner was blocked, then open Room.',
         );
       case ScanSessionPhase.capture:
         return const ScanSetupSnapshot(
@@ -411,7 +411,7 @@ class ScanSetupController {
           canAdvance: true,
           stepLabel: 'SCAN',
           headline: 'Optional capture',
-          detail: 'Furniture capture is optional — default path goes to Rig after size.',
+          detail: 'Furniture capture is optional — default path goes to Room after size.',
         );
     }
   }

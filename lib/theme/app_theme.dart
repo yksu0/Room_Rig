@@ -17,7 +17,7 @@ class AppSpace {
   /// Standard screen inset (compact phones).
   static const double screen = 20;
 
-  /// Gap between major Hub / Bench sections.
+  /// Gap between major Hub / Benchmark sections.
   static const double section = 28;
 
   /// Comfortable card inner padding.
@@ -378,7 +378,7 @@ class AppTheme {
   }
 }
 
-/// Eyebrow + optional trailing for Hub / Bench section blocks.
+/// Eyebrow + optional trailing for Hub / Benchmark section blocks.
 class AppSectionHeader extends StatelessWidget {
   final String label;
   final Widget? trailing;

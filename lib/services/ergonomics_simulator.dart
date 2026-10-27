@@ -1,5 +1,5 @@
 // lib/services/ergonomics_simulator.dart
-// Comfort metrics + frequent walk paths for Bench / Auto-Rig.
+// Comfort metrics + frequent walk paths for Benchmark / Auto-Rig.
 import 'dart:math';
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
@@ -406,7 +406,7 @@ class ErgonomicsSimulator {
     );
     final hvacClearance = ComfortHeuristics.hvacClearanceScore(furniture);
 
-    // HVAC keep-clear bands for the Bench overlay (wall AC / vents).
+    // HVAC keep-clear bands for the Benchmark overlay (wall AC / vents).
     for (final f in furniture) {
       if (!(SurfaceMounts.isVent(f) ||
           SurfaceMounts.isIntake(f) ||

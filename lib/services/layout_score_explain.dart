@@ -1,4 +1,4 @@
-// Human-readable before/after lines for Auto-Rig / Bench Apply.
+// Human-readable before/after lines for Auto-Rig / Benchmark Apply.
 import 'airflow_simulator.dart';
 import 'ergonomics_simulator.dart';
 import 'lighting_simulator.dart';

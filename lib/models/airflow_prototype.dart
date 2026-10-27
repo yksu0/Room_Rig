@@ -31,7 +31,7 @@ class AirflowPrototypeLayouts {
     return _applyPositions(source, positions);
   }
 
-  /// Tuned against the 6×8 voxel sim so the sample room passes its own bench.
+  /// Tuned against the 6×8 voxel sim so the sample room passes its own benchmark.
   static List<FurnitureItem> optimized(List<FurnitureItem> source) {
     final positions = <String, ({double x, double y})>{
       'ac': (x: 5.0, y: 2.0),

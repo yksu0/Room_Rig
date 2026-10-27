@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/surface_mount.dart';
 import 'package:room_rig/services/item_placement_rules.dart';
@@ -14,14 +14,14 @@ void main() {
     final furniture = List<FurnitureItem>.from(room.furniture);
     if (!furniture.any((f) => f.iconName == 'pc')) {
       furniture.add(
-        RigCatalog.items
+        RoomCatalog.items
             .firstWhere((e) => e.baseId == 'pc')
             .toFurniture(id: 'pc', gridX: 2, gridY: 2),
       );
     }
     if (!furniture.any((f) => f.iconName == 'monitor')) {
       furniture.add(
-        RigCatalog.items
+        RoomCatalog.items
             .firstWhere((e) => e.baseId == 'monitor')
             .toFurniture(id: 'monitor', gridX: 2, gridY: 2),
       );

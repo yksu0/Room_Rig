@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../models/app_state.dart';
 import '../theme/app_theme.dart';
 import 'app_snack_bar.dart';
+import 'guest_signup_gate.dart';
 
 Future<void> showRoomSwitchSheet(BuildContext context) {
   return showModalBottomSheet<void>(
@@ -84,6 +85,9 @@ class _RoomSwitchSheetBody extends StatelessWidget {
   }
 
   Future<void> _newRoom(BuildContext context, AppState state) async {
+    // Guests own exactly one room — the gate pushes Sign up over this sheet.
+    if (!await ensureCanCreateRoom(context)) return;
+    if (!context.mounted) return;
     if (state.hasLayoutWork) {
       final ok = await showDialog<bool>(
         context: context,
@@ -134,8 +138,8 @@ class _RoomSwitchSheetBody extends StatelessWidget {
       heightMeters: 2.7,
     );
     unawaited(state.flushRoomsToCloud());
-    state.requestOpenToolsOnRig();
-    state.setTab(2);
+    state.requestOpenToolsOnRoom();
+    state.setTab(roomTabIndex);
   }
 
   @override

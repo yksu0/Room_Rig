@@ -6,32 +6,32 @@ import 'glass_card.dart';
 
 /// Verdict derived from the checks themselves, so the badge can never disagree
 /// with the rows underneath it.
-enum BenchVerdict { pass, needsWork, fail }
+enum BenchmarkVerdict { pass, needsWork, fail }
 
 extension BenchmarkValidationVerdict on BenchmarkValidation {
-  BenchVerdict get verdict {
-    if (failCount > 0) return BenchVerdict.fail;
-    if (checks.every((c) => c.status == BenchCheckStatus.pass)) return BenchVerdict.pass;
-    return BenchVerdict.needsWork;
+  BenchmarkVerdict get verdict {
+    if (failCount > 0) return BenchmarkVerdict.fail;
+    if (checks.every((c) => c.status == BenchmarkCheckStatus.pass)) return BenchmarkVerdict.pass;
+    return BenchmarkVerdict.needsWork;
   }
 }
 
-/// Shared PASS / NEEDS WORK / FAIL pill used by every bench results header.
-class BenchResultBadge extends StatelessWidget {
+/// Shared PASS / NEEDS WORK / FAIL pill used by every benchmark results header.
+class BenchmarkResultBadge extends StatelessWidget {
   final BenchmarkValidation validation;
 
-  const BenchResultBadge({super.key, required this.validation});
+  const BenchmarkResultBadge({super.key, required this.validation});
 
-  static Color colorFor(BenchVerdict v) => switch (v) {
-        BenchVerdict.pass => AppColors.green,
-        BenchVerdict.needsWork => AppColors.amber,
-        BenchVerdict.fail => AppColors.red,
+  static Color colorFor(BenchmarkVerdict v) => switch (v) {
+        BenchmarkVerdict.pass => AppColors.green,
+        BenchmarkVerdict.needsWork => AppColors.amber,
+        BenchmarkVerdict.fail => AppColors.red,
       };
 
-  static String labelFor(BenchVerdict v) => switch (v) {
-        BenchVerdict.pass => 'PASS',
-        BenchVerdict.needsWork => 'NEEDS WORK',
-        BenchVerdict.fail => 'FAIL',
+  static String labelFor(BenchmarkVerdict v) => switch (v) {
+        BenchmarkVerdict.pass => 'PASS',
+        BenchmarkVerdict.needsWork => 'NEEDS WORK',
+        BenchmarkVerdict.fail => 'FAIL',
       };
 
   @override
@@ -60,7 +60,7 @@ class BenchmarkValidationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final verdict = validation.verdict;
-    final badgeColor = BenchResultBadge.colorFor(verdict);
+    final badgeColor = BenchmarkResultBadge.colorFor(verdict);
     return GlassCard(
       borderColor: badgeColor.withValues(alpha: 0.35),
       child: Column(
@@ -69,7 +69,7 @@ class BenchmarkValidationCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                verdict == BenchVerdict.pass ? Icons.verified_rounded : Icons.rule_rounded,
+                verdict == BenchmarkVerdict.pass ? Icons.verified_rounded : Icons.rule_rounded,
                 color: badgeColor,
                 size: 20,
               ),
@@ -80,7 +80,7 @@ class BenchmarkValidationCard extends StatelessWidget {
                   style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 14),
                 ),
               ),
-              BenchResultBadge(validation: validation),
+              BenchmarkResultBadge(validation: validation),
             ],
           ),
           const SizedBox(height: 6),
@@ -97,15 +97,15 @@ class BenchmarkValidationCard extends StatelessWidget {
 }
 
 class _CheckRow extends StatelessWidget {
-  final BenchCheck check;
+  final BenchmarkCheck check;
   const _CheckRow({required this.check});
 
   @override
   Widget build(BuildContext context) {
     final (color, icon) = switch (check.status) {
-      BenchCheckStatus.pass => (AppColors.green, Icons.check_circle_outline),
-      BenchCheckStatus.warn => (AppColors.amber, Icons.warning_amber_rounded),
-      BenchCheckStatus.fail => (AppColors.red, Icons.cancel_outlined),
+      BenchmarkCheckStatus.pass => (AppColors.green, Icons.check_circle_outline),
+      BenchmarkCheckStatus.warn => (AppColors.amber, Icons.warning_amber_rounded),
+      BenchmarkCheckStatus.fail => (AppColors.red, Icons.cancel_outlined),
     };
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),

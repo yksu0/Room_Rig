@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:room_rig/main.dart';
 import 'package:room_rig/models/app_state.dart';
 import 'package:room_rig/models/upgrade_catalog.dart';
-import 'package:room_rig/services/bench_layouts.dart';
+import 'package:room_rig/services/benchmark_layouts.dart';
 
 /// Full no-camera QA path from the roadmap — runs without a phone.
 void main() {
@@ -23,7 +23,7 @@ void main() {
     }
   }
 
-  testWidgets('QA demo path: Demo → Rig drag → Bench Simulate → Apply → BENCH OK', (tester) async {
+  testWidgets('QA demo path: Demo → Room drag → Benchmark Simulate → Apply → BENCHMARK OK', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1200, 2400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -53,14 +53,14 @@ void main() {
     await pumpFrames(tester, count: 8);
 
     expect(find.text('PROFESSOR DEMO'), findsOneWidget);
-    await tester.tap(find.text('LOAD PRESET & OPEN RIG'));
+    await tester.tap(find.text('LOAD PRESET & OPEN ROOM'));
     await pumpFrames(tester, count: 8);
 
     expect(state.currentTab, 2);
     expect(state.roomIsReady, isTrue);
     expect(state.activeRoomLayout?.scanSource, 'demo');
 
-    // --- Rig: valid (non-overlapping) edit so Hub goes ROUGH EST ---
+    // --- Room: valid (non-overlapping) edit so Hub goes ROUGH EST ---
     final shelf = state.furniture.firstWhere((f) => f.id == 'shelf');
     state.beginFurnitureGesture();
     state.moveFurniture(shelf.id, 4.0, 5.0);
@@ -68,14 +68,14 @@ void main() {
     await tester.pump();
     expect(state.scoresAreSimulated, isTrue);
 
-    // --- Bench: Simulate ---
-    await tester.tap(find.text('Bench'));
+    // --- Benchmark: Simulate ---
+    await tester.tap(find.text('Benchmark'));
     await pumpFrames(tester, count: 8);
     expect(state.currentTab, 3);
 
-    expect(find.text('RUN VOXEL AIRFLOW BENCH'), findsOneWidget);
-    await tester.ensureVisible(find.text('RUN VOXEL AIRFLOW BENCH'));
-    await tester.tap(find.text('RUN VOXEL AIRFLOW BENCH'));
+    expect(find.text('RUN VOXEL AIRFLOW BENCHMARK'), findsOneWidget);
+    await tester.ensureVisible(find.text('RUN VOXEL AIRFLOW BENCHMARK'));
+    await tester.tap(find.text('RUN VOXEL AIRFLOW BENCHMARK'));
     await tester.pump();
     for (var i = 0; i < 30; i++) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -87,7 +87,7 @@ void main() {
     await tester.tap(find.text('APPLY IMPROVED LAYOUT'));
     await pumpFrames(tester, count: 12);
 
-    if (find.text('Apply to Rig?').evaluate().isNotEmpty) {
+    if (find.text('Apply to Room?').evaluate().isNotEmpty) {
       await tester.tap(find.widgetWithText(FilledButton, 'Apply'));
       await pumpFrames(tester, count: 10);
     } else if (find.text('Cannot apply layout').evaluate().isNotEmpty) {
@@ -95,8 +95,8 @@ void main() {
     } else {
       // Button may be disabled (no-op). Still complete Hub badge via improved layout.
       final room = state.currentRoomData;
-      final layouts = BenchLayoutBuilder.build(
-        mode: BenchMode.airflow,
+      final layouts = BenchmarkLayoutBuilder.build(
+        mode: BenchmarkMode.airflow,
         roomFurniture: state.committedFurniture,
         gridCols: room.gridCols,
         gridRows: room.gridRows,
@@ -111,7 +111,7 @@ void main() {
     await tester.tap(find.text('Hub'));
     await pumpFrames(tester, count: 8);
     expect(state.currentTab, 0);
-    expect(find.text(HubScoreLabels.benchOk), findsWidgets);
+    expect(find.text(HubScoreLabels.benchmarkOk), findsWidgets);
     expect(find.text(HubScoreLabels.roughEst), findsNothing);
   });
 }

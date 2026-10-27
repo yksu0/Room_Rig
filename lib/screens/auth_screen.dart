@@ -11,9 +11,20 @@ import '../widgets/password_visibility_field.dart';
 
 /// Email/password sign-in. Guest continues without an account.
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key, this.onContinueAsGuest});
+  const AuthScreen({
+    super.key,
+    this.onContinueAsGuest,
+    this.initialSignUp = false,
+    this.reason,
+  });
 
   final VoidCallback? onContinueAsGuest;
+
+  /// Open on the Create-account form (Profile "Sign up" / guest room gate).
+  final bool initialSignUp;
+
+  /// Optional one-line explanation shown above the form (e.g. guest limit).
+  final String? reason;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -23,7 +34,7 @@ class _AuthScreenState extends State<AuthScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
-  var _signUp = false;
+  late var _signUp = widget.initialSignUp;
   var _busy = false;
   String? _error;
 
@@ -89,6 +100,17 @@ class _AuthScreenState extends State<AuthScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          if (widget.reason != null) ...[
+            Text(
+              widget.reason!,
+              style: const TextStyle(
+                color: AppColors.cyan,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           Text(
             cloud
                 ? 'Save rooms to your account. Guests stay on this device only.'

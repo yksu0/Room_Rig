@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:room_rig/models/app_state.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/surface_mount.dart';
 import 'package:room_rig/services/benchmark_validator.dart';
@@ -101,7 +101,7 @@ void main() {
     final furniture = base.furniture.map((f) => f.copyWith()).toList();
     final used = furniture.map((f) => f.id).toSet();
 
-    for (final entry in RigCatalog.items) {
+    for (final entry in RoomCatalog.items) {
       var id = entry.baseId;
       var n = 2;
       while (used.contains(id)) {
@@ -123,7 +123,7 @@ void main() {
       used.add(id);
     }
 
-    expect(furniture.length, greaterThan(RigCatalog.items.length));
+    expect(furniture.length, greaterThan(RoomCatalog.items.length));
     final before = furniture.map((f) => f.copyWith()).toList();
     final result = MultiObjectiveOptimizer.optimize(
       furniture: before,
@@ -149,7 +149,7 @@ void main() {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
     state.acceptPresetAsReady();
-    for (final entry in RigCatalog.items) {
+    for (final entry in RoomCatalog.items) {
       state.addCatalogFurniture(entry);
     }
     final beforeIds = state.furniture.map((f) => f.id).toSet();
@@ -159,7 +159,7 @@ void main() {
   });
 
   test('add each catalog item alone then Auto-Rig', () {
-    for (final entry in RigCatalog.items) {
+    for (final entry in RoomCatalog.items) {
       final state = AppState();
       state.selectPreset(RoomPreset.homeOffice);
       state.acceptPresetAsReady();
@@ -207,7 +207,7 @@ void main() {
 
     final added = <String>[];
     for (final entry in const ['tv', 'space_heater', 'floor_lamp', 'wardrobe', 'plant']) {
-      final catalog = RigCatalog.items.firstWhere((e) => e.baseId == entry);
+      final catalog = RoomCatalog.items.firstWhere((e) => e.baseId == entry);
       final id = state.addCatalogFurniture(catalog);
       if (id != null) added.add(id);
       final before = state.furniture.map((f) => f.copyWith()).toList();

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/widgets/furniture_shapes.dart';
 
@@ -66,7 +66,7 @@ void main() {
   });
 
   test('retainV1 drops kitchen leftovers but keeps placed upgrades', () {
-    final kept = RigCatalog.retainV1([
+    final kept = RoomCatalog.retainV1([
       FurnitureItem(id: 'chair', name: 'Chair', iconName: 'chair', category: 'ergonomics', gridX: 0, gridY: 0),
       FurnitureItem(id: 'kitchen', name: 'Kitchen Counter', iconName: 'kitchen', category: 'neutral', gridX: 0, gridY: 0),
       FurnitureItem(id: 'upg_purifier', name: 'Smart Air Purifier', iconName: 'purifier', category: 'airflow', gridX: 1, gridY: 1),

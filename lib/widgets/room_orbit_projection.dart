@@ -1,5 +1,5 @@
 // lib/widgets/room_orbit_projection.dart
-// Pinhole camera used by the Rig's pseudo-3D room view. Kept separate from the
+// Pinhole camera used by the Room's pseudo-3D room view. Kept separate from the
 // screen so the projection (and its floor-plane inverse, which drag-to-move
 // depends on) can be exercised directly.
 import 'dart:math' as math;

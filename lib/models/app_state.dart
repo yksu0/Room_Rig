@@ -5,12 +5,13 @@ import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_tabs.dart';
 import 'item_detection.dart';
-import 'rig_catalog.dart';
+import 'room_catalog.dart';
 import 'room_model.dart';
 import 'room_scale.dart';
 import 'sim_room_bounds.dart';
-import 'bench_compare_source.dart';
+import 'benchmark_compare_source.dart';
 import 'saved_room.dart';
 import 'surface_mount.dart';
 import 'scan_layout_model.dart';
@@ -18,7 +19,7 @@ import 'room_revision.dart';
 import 'upgrade_catalog.dart';
 import '../services/airflow_optimizer.dart';
 import '../services/airflow_simulator.dart';
-import '../services/bench_layouts.dart';
+import '../services/benchmark_layouts.dart';
 import '../services/benchmark_validator.dart';
 import '../services/ergonomics_optimizer.dart';
 import '../services/ergonomics_simulator.dart';
@@ -35,6 +36,8 @@ import '../services/spatial_analyzer.dart';
 import '../services/supabase_bootstrap.dart';
 import '../utils/scan_export_cleanup.dart';
 
+export 'app_tabs.dart';
+
 class AppState extends ChangeNotifier {
   SimRoomBounds get simBounds => SimRoomBounds.fromRoomData(currentRoomData);
   static const _persistedLayoutKey = 'room_rig.persisted_layout';
@@ -47,23 +50,32 @@ class AppState extends ChangeNotifier {
 
   final RoomRepository _roomRepo = RoomRepository();
 
-  /// When true, Rig should open the Tools panel once (post-create/scan/preset).
-  bool _openToolsOnRig = false;
-  bool get consumeOpenToolsOnRig {
-    final v = _openToolsOnRig;
-    _openToolsOnRig = false;
+  /// When true, Room should open the Tools panel once (post-create/scan/preset).
+  bool _openToolsOnRoom = false;
+  bool get consumeOpenToolsOnRoom {
+    final v = _openToolsOnRoom;
+    _openToolsOnRoom = false;
     return v;
   }
 
-  void requestOpenToolsOnRig() {
-    _openToolsOnRig = true;
+  void requestOpenToolsOnRoom() {
+    _openToolsOnRoom = true;
   }
 
-  /// Signed-in user may be offered to upload guest rooms once.
+  /// Guest drafts found at sign-in. Standard path force-claims them into the
+  /// account (see [handleSignedIn]); the prompt flag only stays for the rare
+  /// case where the claim upload itself failed and the user must retry.
   bool _awaitingGuestImportPrompt = false;
   bool get awaitingGuestImportPrompt => _awaitingGuestImportPrompt;
   List<SavedRoom> _guestRoomsPendingImport = const [];
   int get guestRoomsPendingImportCount => _guestRoomsPendingImport.length;
+
+  /// Guests own and edit exactly one room; more requires an account.
+  static const int guestRoomLimit = 1;
+
+  /// False when a guest already has their one room (hard sign-up gate).
+  bool get canCreateAnotherRoom =>
+      isSignedIn || _rooms.length < guestRoomLimit;
 
   bool get isSignedIn {
     final client = SupabaseBootstrap.clientOrNull;
@@ -100,8 +112,8 @@ class AppState extends ChangeNotifier {
   }
 
   void setTab(int tab) {
-    // Unfinished Place ghosts must not ride into Hub stash / Bench / other tabs.
-    if (_currentTab == 2 && tab != 2) {
+    // Unfinished Place ghosts must not ride into Hub stash / Benchmark / other tabs.
+    if (_currentTab == roomTabIndex && tab != roomTabIndex) {
       if (hasPendingPlacement) {
         cancelPendingPlacement(notify: false);
         _tabNotice = 'Place cancelled — unfinished item removed';
@@ -109,10 +121,10 @@ class AppState extends ChangeNotifier {
       endFurnitureGesture();
     }
     _currentTab = tab;
-    if (tab != 1 && _arMeasurePassthrough) {
+    if (tab != scanTabIndex && _arMeasurePassthrough) {
       _arMeasurePassthrough = false;
     }
-    if (tab == 0) {
+    if (tab == hubTabIndex) {
       // Mid-scan seed layouts must not overwrite My Rooms snapshots.
       if (!isScanSessionActive) {
         _stashActiveRoom();
@@ -209,8 +221,8 @@ class AppState extends ChangeNotifier {
     return _scanComplete || source == 'manual' || source == 'demo';
   }
 
-  /// When dirty, Hub rings use live geometry sims; BENCH OK locks last Apply/Auto-Rig.
-  /// A Bench Apply (`isOptimized`) keeps BENCH OK even if other modes stay dirty
+  /// When dirty, Hub rings use live geometry sims; BENCHMARK OK locks last Apply/Auto-Rig.
+  /// A Benchmark Apply (`isOptimized`) keeps BENCHMARK OK even if other modes stay dirty
   /// after a single-domain lock (airflow Apply does not clear lighting/ergo).
   bool get scoresAreSimulated =>
       !_isOptimized &&
@@ -225,7 +237,7 @@ class AppState extends ChangeNotifier {
       _furniture.any((f) => f.id.startsWith('upg_'));
 
   /// Recompute optimizer-based scores for Hub/Upgrades display.
-  /// Does not mark metrics clean — only Bench Apply / Auto-Rig should flip BENCH OK.
+  /// Does not mark metrics clean — only Benchmark Apply / Auto-Rig should flip BENCHMARK OK.
   void refreshSimulatedScores() {
     if (_furniture.isEmpty) return;
     _refreshLayoutScores(markClean: false);
@@ -265,13 +277,13 @@ class AppState extends ChangeNotifier {
   String _activeRoomId = 'room_default';
   final List<SavedRoom> _rooms = [];
 
-  /// Legacy pinned baseline (still persisted; primary UX is [benchCompareLeft/Right]).
-  List<FurnitureItem>? _benchBaselineFurniture;
-  String? _benchBaselineLabel;
-  DateTime? _benchBaselineAt;
+  /// Legacy pinned baseline (still persisted; primary UX is [benchmarkCompareLeft/Right]).
+  List<FurnitureItem>? _benchmarkBaselineFurniture;
+  String? _benchmarkBaselineLabel;
+  DateTime? _benchmarkBaselineAt;
 
-  BenchCompareSource _benchCompareLeft = const BenchCompareSource.currentRig();
-  BenchCompareSource _benchCompareRight = const BenchCompareSource.autoRig();
+  BenchmarkCompareSource _benchmarkCompareLeft = const BenchmarkCompareSource.currentRoom();
+  BenchmarkCompareSource _benchmarkCompareRight = const BenchmarkCompareSource.autoRig();
 
   /// Bumped when the user mutates session state so a late prefs hydrate cannot
   /// overwrite in-memory Place ghosts / demo work.
@@ -441,12 +453,12 @@ class AppState extends ChangeNotifier {
     _pendingPlacementId = null;
     _pendingUpgradeIndex = null;
     _roomShape = 'Rectangular';
-    _clearBenchBaseline();
+    _clearBenchmarkBaseline();
   }
 
   void _loadPreset(RoomPreset preset) {
     final data = RoomPresets.getPreset(preset);
-    var items = RigCatalog.retainV1(List.from(data.furniture.map((f) => f.copyWith())));
+    var items = RoomCatalog.retainV1(List.from(data.furniture.map((f) => f.copyWith())));
     // Seat monitor / PC / lamp on the work desk immediately — not only after Improve.
     items = LayoutOptimizerCommon.mountDeskTopItems(
       items,
@@ -461,7 +473,7 @@ class AppState extends ChangeNotifier {
     _originalScores = null;
     _pendingPlacementId = null;
     _pendingUpgradeIndex = null;
-    _clearBenchBaseline();
+    _clearBenchmarkBaseline();
   }
 
   List<FurnitureItem> get furniture => _furniture;
@@ -701,7 +713,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Promote a fused scan object into editable layout furniture.
-  bool promoteScanObject(String id, {RigCatalogEntry? catalogEntry}) {
+  bool promoteScanObject(String id, {RoomCatalogEntry? catalogEntry}) {
     final layout = _activeRoomLayout;
     if (layout == null) return false;
     final objIdx = layout.objects.indexWhere((o) => o.id == id);
@@ -753,8 +765,8 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  /// Replace a scan object label with a real catalog rig item at the same spot.
-  bool replaceScanObjectWithCatalog(String id, RigCatalogEntry entry) {
+  /// Replace a scan object label with a real catalog room item at the same spot.
+  bool replaceScanObjectWithCatalog(String id, RoomCatalogEntry entry) {
     return promoteScanObject(id, catalogEntry: entry);
   }
 
@@ -828,7 +840,7 @@ class AppState extends ChangeNotifier {
   bool get hasPendingPlacement => _pendingPlacementId != null;
   bool isPendingPlacement(String id) => _pendingPlacementId == id;
 
-  /// Furniture that counts for Bench / Auto-Rig — unfinished Place ghosts are excluded.
+  /// Furniture that counts for Benchmark / Auto-Rig — unfinished Place ghosts are excluded.
   List<FurnitureItem> get committedFurniture {
     final pending = _pendingPlacementId;
     if (pending == null) return furniture;
@@ -837,7 +849,7 @@ class AppState extends ChangeNotifier {
 
   /// Places a catalog blueprint. [pending] drops a ghost in the room centre
   /// until [confirmPendingPlacement]; otherwise it occupies the first free cell.
-  String? addCatalogFurniture(RigCatalogEntry entry, {bool pending = false}) {
+  String? addCatalogFurniture(RoomCatalogEntry entry, {bool pending = false}) {
     _abandonInFlightHydrate();
     final room = currentRoomData;
     final id = _uniqueScanId(entry.baseId, _furniture.map((f) => f.id).toSet());
@@ -952,7 +964,7 @@ class AppState extends ChangeNotifier {
   }) {
     final w = width.clamp(0.5, 4.0);
     final h = height.clamp(0.5, 4.0);
-    final entry = RigCatalogEntry(
+    final entry = RoomCatalogEntry(
       baseId: 'custom',
       name: name.trim().isEmpty ? 'Custom' : name.trim(),
       iconName: 'shelf',
@@ -1021,12 +1033,12 @@ class AppState extends ChangeNotifier {
     _pendingPlacementId = null;
     _pendingUpgradeIndex = null;
     clearLayoutHistory();
-    requestOpenToolsOnRig();
+    requestOpenToolsOnRoom();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
 
-  /// Empty rectangle with a door + window so Bench still has sources.
+  /// Empty rectangle with a door + window so Benchmark still has sources.
   void createManualRoom({
     required String name,
     required double lengthMeters,
@@ -1112,9 +1124,9 @@ class AppState extends ChangeNotifier {
     _pendingPlacementId = null;
     _pendingUpgradeIndex = null;
     _roomShape = 'Rectangular';
-    _clearBenchBaseline();
+    _clearBenchmarkBaseline();
     clearLayoutHistory();
-    requestOpenToolsOnRig();
+    requestOpenToolsOnRoom();
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
@@ -1221,7 +1233,7 @@ class AppState extends ChangeNotifier {
 
   void _applySavedRoom(SavedRoom room) {
     _activeRoomId = room.id;
-    _furniture = RigCatalog.retainV1(_cloneFurniture(room.furniture));
+    _furniture = RoomCatalog.retainV1(_cloneFurniture(room.furniture));
     _activeRoomLayout = room.layout.withFurniture(_furniture);
     _scanComplete = room.scanComplete;
     _scanProgress = room.scanProgress;
@@ -1231,11 +1243,11 @@ class AppState extends ChangeNotifier {
     _originalScores = room.originalScores == null
         ? null
         : Map<String, double>.from(room.originalScores!);
-    _benchBaselineFurniture = room.benchBaselineFurniture == null
+    _benchmarkBaselineFurniture = room.benchmarkBaselineFurniture == null
         ? null
-        : _cloneFurniture(room.benchBaselineFurniture!);
-    _benchBaselineLabel = room.benchBaselineLabel;
-    _benchBaselineAt = room.benchBaselineAt;
+        : _cloneFurniture(room.benchmarkBaselineFurniture!);
+    _benchmarkBaselineLabel = room.benchmarkBaselineLabel;
+    _benchmarkBaselineAt = room.benchmarkBaselineAt;
     final match = RoomPreset.values.where((p) => p.name == room.presetName);
     if (match.isNotEmpty) _selectedPreset = match.first;
     _selectedItemId = null;
@@ -1283,11 +1295,11 @@ class AppState extends ChangeNotifier {
       scoresClean: !scoresAreSimulated,
       isOptimized: _isOptimized,
       ownerUserId: uid,
-      benchBaselineFurniture: _benchBaselineFurniture == null
+      benchmarkBaselineFurniture: _benchmarkBaselineFurniture == null
           ? null
-          : _cloneFurniture(_benchBaselineFurniture!),
-      benchBaselineLabel: _benchBaselineLabel,
-      benchBaselineAt: _benchBaselineAt,
+          : _cloneFurniture(_benchmarkBaselineFurniture!),
+      benchmarkBaselineLabel: _benchmarkBaselineLabel,
+      benchmarkBaselineAt: _benchmarkBaselineAt,
     );
     if (existingIdx >= 0) {
       _rooms[existingIdx] = snap;
@@ -1379,8 +1391,12 @@ class AppState extends ChangeNotifier {
 
     final alreadyImported = await _hasImportedGuestRooms(uid);
     if (!alreadyImported && guestSnapshot.isNotEmpty) {
+      // Force-claim: the guest's one room belongs to whoever just signed in
+      // on this device. No optional upload dialog on the standard path.
       _guestRoomsPendingImport = guestSnapshot;
-      _awaitingGuestImportPrompt = true;
+      _awaitingGuestImportPrompt = false;
+      await importGuestRoomsToCloud();
+      return; // importGuestRoomsToCloud persists + notifies.
     } else {
       _awaitingGuestImportPrompt = false;
       _guestRoomsPendingImport = const [];
@@ -1442,11 +1458,13 @@ class AppState extends ChangeNotifier {
     try {
       await _roomRepo.upsertMany(uid, toUpload);
       await _markImportedGuestRooms(uid);
+      _awaitingGuestImportPrompt = false;
+      _guestRoomsPendingImport = const [];
     } catch (e) {
+      // Claimed locally; cloud copy missing. Surface the retry prompt once.
       debugPrint('importGuestRoomsToCloud: $e');
+      _awaitingGuestImportPrompt = true;
     }
-    _awaitingGuestImportPrompt = false;
-    _guestRoomsPendingImport = const [];
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
   }
@@ -1557,49 +1575,49 @@ class AppState extends ChangeNotifier {
     return List.unmodifiable(_rooms[idx].revisions);
   }
 
-  /// Frozen Bench left layout (legacy; prefer [resolveBenchCompareFurniture]).
-  List<FurnitureItem> get benchBaselineFurniture =>
-      _benchBaselineFurniture == null
+  /// Frozen Benchmark left layout (legacy; prefer [resolveBenchmarkCompareFurniture]).
+  List<FurnitureItem> get benchmarkBaselineFurniture =>
+      _benchmarkBaselineFurniture == null
           ? const []
-          : List.unmodifiable(_benchBaselineFurniture!);
+          : List.unmodifiable(_benchmarkBaselineFurniture!);
 
-  bool get hasBenchBaseline =>
-      _benchBaselineFurniture != null && _benchBaselineFurniture!.isNotEmpty;
+  bool get hasBenchmarkBaseline =>
+      _benchmarkBaselineFurniture != null && _benchmarkBaselineFurniture!.isNotEmpty;
 
-  String? get benchBaselineLabel => _benchBaselineLabel;
-  DateTime? get benchBaselineAt => _benchBaselineAt;
+  String? get benchmarkBaselineLabel => _benchmarkBaselineLabel;
+  DateTime? get benchmarkBaselineAt => _benchmarkBaselineAt;
 
-  BenchCompareSource get benchCompareLeft => _benchCompareLeft;
-  BenchCompareSource get benchCompareRight => _benchCompareRight;
+  BenchmarkCompareSource get benchmarkCompareLeft => _benchmarkCompareLeft;
+  BenchmarkCompareSource get benchmarkCompareRight => _benchmarkCompareRight;
 
-  void setBenchCompareLeft(BenchCompareSource source) {
-    if (source == _benchCompareLeft) return;
-    _benchCompareLeft = source;
+  void setBenchmarkCompareLeft(BenchmarkCompareSource source) {
+    if (source == _benchmarkCompareLeft) return;
+    _benchmarkCompareLeft = source;
     notifyListeners();
   }
 
-  void setBenchCompareRight(BenchCompareSource source) {
-    if (source == _benchCompareRight) return;
-    _benchCompareRight = source;
+  void setBenchmarkCompareRight(BenchmarkCompareSource source) {
+    if (source == _benchmarkCompareRight) return;
+    _benchmarkCompareRight = source;
     notifyListeners();
   }
 
-  void _clearBenchBaseline({bool notify = false}) {
-    _benchBaselineFurniture = null;
-    _benchBaselineLabel = null;
-    _benchBaselineAt = null;
-    _benchCompareLeft = const BenchCompareSource.currentRig();
-    _benchCompareRight = const BenchCompareSource.autoRig();
+  void _clearBenchmarkBaseline({bool notify = false}) {
+    _benchmarkBaselineFurniture = null;
+    _benchmarkBaselineLabel = null;
+    _benchmarkBaselineAt = null;
+    _benchmarkCompareLeft = const BenchmarkCompareSource.currentRoom();
+    _benchmarkCompareRight = const BenchmarkCompareSource.autoRig();
     if (notify) notifyListeners();
   }
 
-  String benchCompareSourceLabel(BenchCompareSource source) {
+  String benchmarkCompareSourceLabel(BenchmarkCompareSource source) {
     switch (source.kind) {
-      case BenchCompareKind.currentRig:
-        return 'Current Rig';
-      case BenchCompareKind.autoRig:
+      case BenchmarkCompareKind.currentRoom:
+        return 'Current Room';
+      case BenchmarkCompareKind.autoRig:
         return 'Auto-Rig';
-      case BenchCompareKind.checkpoint:
+      case BenchmarkCompareKind.checkpoint:
         final id = source.checkpointId;
         for (final r in activeRoomRevisions) {
           if (r.id == id) return r.label;
@@ -1609,16 +1627,16 @@ class AppState extends ChangeNotifier {
   }
 
   /// Furniture for a compare side. [autoRig] returns null (caller runs optimizer).
-  List<FurnitureItem>? resolveBenchCompareFurniture(BenchCompareSource source) {
+  List<FurnitureItem>? resolveBenchmarkCompareFurniture(BenchmarkCompareSource source) {
     switch (source.kind) {
-      case BenchCompareKind.currentRig:
+      case BenchmarkCompareKind.currentRoom:
         return committedFurniture
             .where((f) => !f.hidden)
             .map((f) => f.copyWith())
             .toList(growable: false);
-      case BenchCompareKind.autoRig:
+      case BenchmarkCompareKind.autoRig:
         return null;
-      case BenchCompareKind.checkpoint:
+      case BenchmarkCompareKind.checkpoint:
         final id = source.checkpointId;
         for (final r in activeRoomRevisions) {
           if (r.id == id) {
@@ -1636,23 +1654,23 @@ class AppState extends ChangeNotifier {
   }
 
   /// Seed inventory for Auto-Rig when that side is selected (prefer the other side).
-  List<FurnitureItem> benchAutoRigSeedFurniture({required bool forRight}) {
-    final other = forRight ? _benchCompareLeft : _benchCompareRight;
+  List<FurnitureItem> benchmarkAutoRigSeedFurniture({required bool forRight}) {
+    final other = forRight ? _benchmarkCompareLeft : _benchmarkCompareRight;
     if (other.isAutoRig) {
       return committedFurniture
           .where((f) => !f.hidden)
           .map((f) => f.copyWith())
           .toList(growable: false);
     }
-    return resolveBenchCompareFurniture(other) ??
+    return resolveBenchmarkCompareFurniture(other) ??
         committedFurniture
             .where((f) => !f.hidden)
             .map((f) => f.copyWith())
             .toList(growable: false);
   }
 
-  /// After Apply: optionally snapshot the new Rig as a checkpoint.
-  void keepAppliedAsBenchBaseline() {
+  /// After Apply: optionally snapshot the new Room as a checkpoint.
+  void keepAppliedAsBenchmarkBaseline() {
     checkpointActiveRoom('After Apply');
   }
 
@@ -1776,7 +1794,7 @@ class AppState extends ChangeNotifier {
     }
 
     _furniture[idx] = current.copyWith(gridX: resolved.gridX, gridY: resolved.gridY);
-    // Place ghosts are not committed — dragging them must not clear BENCH OK.
+    // Place ghosts are not committed — dragging them must not clear BENCHMARK OK.
     if (id != _pendingPlacementId) {
       _markScoresDirty();
     }
@@ -2064,7 +2082,7 @@ class AppState extends ChangeNotifier {
       gridCols: cols,
       gridRows: rows,
     );
-    _furniture = RigCatalog.retainV1(_furniture);
+    _furniture = RoomCatalog.retainV1(_furniture);
     _activeRoomLayout = finalized.withFurniture(_furniture);
     _scanComplete = true;
     final coverage = finalized.coverageGrid.ratio();
@@ -2091,7 +2109,7 @@ class AppState extends ChangeNotifier {
     clearLayoutHistory();
     // Checkpoint stashes + persists once (includes "After scan" revision).
     checkpointActiveRoom('After scan');
-    requestOpenToolsOnRig();
+    requestOpenToolsOnRoom();
     unawaited(_persistSuccessfulScanSession());
   }
 
@@ -2116,7 +2134,7 @@ class AppState extends ChangeNotifier {
         );
       } else {
         _activeRoomLayout = layout;
-        _furniture = RigCatalog.retainV1(
+        _furniture = RoomCatalog.retainV1(
           ScanLayoutConverter.toFurniture(
             layout,
             gridCols: RoomScale.colsFrom(layout),
@@ -2239,7 +2257,7 @@ class AppState extends ChangeNotifier {
 
     final furnitureRaw = decoded['furniture'];
     if (furnitureRaw is List && furnitureRaw.isNotEmpty) {
-      _furniture = RigCatalog.retainV1(
+      _furniture = RoomCatalog.retainV1(
         furnitureRaw
             .whereType<Map>()
             .map((e) => FurnitureItem.fromJson(e.cast<String, dynamic>()))
@@ -2247,7 +2265,7 @@ class AppState extends ChangeNotifier {
       );
       _activeRoomLayout = restored.withFurniture(_furniture);
     } else if (restored.objects.isNotEmpty) {
-      _furniture = RigCatalog.retainV1(
+      _furniture = RoomCatalog.retainV1(
         ScanLayoutConverter.toFurniture(
           restored,
           gridCols: RoomScale.colsFrom(restored),
@@ -2323,25 +2341,25 @@ class AppState extends ChangeNotifier {
 
   void setAirflowSlider(double v) {
     _airflowSlider = v.clamp(0.0, 1.0);
-    _resetBenchAlternate();
+    _resetBenchmarkAlternate();
     notifyListeners();
   }
 
   void setLightingSlider(double v) {
     _lightingSlider = v.clamp(0.0, 1.0);
-    _resetBenchAlternate();
+    _resetBenchmarkAlternate();
     notifyListeners();
   }
 
   void setErgonomicsSlider(double v) {
     _ergonomicsSlider = v.clamp(0.0, 1.0);
-    _resetBenchAlternate();
+    _resetBenchmarkAlternate();
     notifyListeners();
   }
 
   void setSpatialSlider(double v) {
     _spatialSlider = v.clamp(0.0, 1.0);
-    _resetBenchAlternate();
+    _resetBenchmarkAlternate();
     notifyListeners();
   }
 
@@ -2355,7 +2373,7 @@ class AppState extends ChangeNotifier {
     _lightingSlider = lighting.clamp(0.0, 1.0);
     _ergonomicsSlider = ergonomics.clamp(0.0, 1.0);
     if (spatial != null) _spatialSlider = spatial.clamp(0.0, 1.0);
-    _resetBenchAlternate();
+    _resetBenchmarkAlternate();
     notifyListeners();
   }
 
@@ -2374,7 +2392,7 @@ class AppState extends ChangeNotifier {
         setOptimizeWeights(airflow: 0.35, lighting: 0.35, ergonomics: 0.45, spatial: 0.95);
         break;
       default:
-        // Match Bench "Improved" balanced mix (0.7 / 0.7 / 0.7).
+        // Match Benchmark "Improved" balanced mix (0.7 / 0.7 / 0.7).
         setOptimizeWeights(airflow: 0.7, lighting: 0.7, ergonomics: 0.7, spatial: 0.55);
     }
   }
@@ -2451,7 +2469,7 @@ class AppState extends ChangeNotifier {
         ErgonomicsOptimizer.evaluate(committedFurniture, bounds: simBounds).comfortScore.clamp(0, 100);
   }
 
-  /// Locked Bench/Auto-Rig sim when clean; otherwise live geometry (not impact tags).
+  /// Locked Benchmark/Auto-Rig sim when clean; otherwise live geometry (not impact tags).
   double get airflowScore {
     final sim = _airflowMetrics;
     if (sim != null && !_airflowMetricsDirty) {
@@ -2511,7 +2529,7 @@ class AppState extends ChangeNotifier {
   String? _overallScoreFp;
   double? _overallScoreCache;
 
-  /// Same composite as Auto-Rig / Bench rank ([MultiObjectiveOptimizer.scoreLayout]).
+  /// Same composite as Auto-Rig / Benchmark rank ([MultiObjectiveOptimizer.scoreLayout]).
   double get overallScore {
     final fp =
         '${_committedPoseFingerprint()}|${optimizeWeights.cacheKey}|${currentRoomData.gridCols}x${currentRoomData.gridRows}';
@@ -2627,7 +2645,7 @@ class AppState extends ChangeNotifier {
     _ergonomicsMetricsDirty = true;
     _lastOptimizeReasons = const [];
     _clearAutoRigCandidateCache();
-    // Drop the snapshot so Hub/Rig no longer offer a stale Restore.
+    // Drop the snapshot so Hub/Room no longer offer a stale Restore.
     _originalFurniture = null;
     _originalScores = null;
     _syncUpgradesFromFurniture();
@@ -2650,7 +2668,7 @@ class AppState extends ChangeNotifier {
   /// Auto-Rig: scored best-of-N under the current weight mix.
   /// [goal] optionally applies a weight preset before solving.
   ///
-  /// Rearranges **only items already on the Rig** — never invents catalog stock.
+  /// Rearranges **only items already on the Room** — never invents catalog stock.
   /// If inventory still matches the Restore snapshot, searches from that pose so
   /// “Try alternate” cycles the same ranked pool; after add/remove, searches the
   /// live furniture list instead (so deleted pieces stay gone).
@@ -2736,12 +2754,12 @@ class AppState extends ChangeNotifier {
     runOptimization(goal: 'ergonomics');
   }
 
-  /// Bench → Rig: copy a benchmark furniture list into the Rig editor.
+  /// Benchmark → Room: copy a benchmark furniture list into the Room editor.
   /// Replaces the layout with [items], keeping the room the user is actually
-  /// in. The Bench now derives its layouts from this furniture, so applying one
+  /// in. The Benchmark now derives its layouts from this furniture, so applying one
   /// is a rearrange of their own room — it must not swap their preset back to
   /// the gaming setup or throw away a completed scan.
-  /// Previous furniture after Bench Apply — Rig shows a short before/after ghost.
+  /// Previous furniture after Benchmark Apply — Room shows a short before/after ghost.
   List<FurnitureItem>? _applyGhostBefore;
   DateTime? _applyGhostUntil;
   List<FurnitureItem>? get applyGhostBefore => _applyGhostBefore;
@@ -2762,7 +2780,7 @@ class AppState extends ChangeNotifier {
   void applyFurnitureLayout(
     List<FurnitureItem> items, {
     bool markOptimized = false,
-    /// When set, only this Bench mode clears its dirty flag (others stay ROUGH EST.).
+    /// When set, only this Benchmark mode clears its dirty flag (others stay ROUGH EST.).
     /// Use `airflow` | `lighting` | `ergonomics` | `spatial`. Null = lock all three sims.
     String? lockMode,
   }) {
@@ -2790,7 +2808,7 @@ class AppState extends ChangeNotifier {
     if (markOptimized) _captureOriginalIfNeeded();
 
     final room = currentRoomData;
-    _furniture = RigCatalog.retainV1(
+    _furniture = RoomCatalog.retainV1(
       items
           .map(
             (f) => SurfaceMounts.snapToWall(
@@ -2830,7 +2848,7 @@ class AppState extends ChangeNotifier {
     _syncUpgradesFromFurniture();
     if (markOptimized) {
       // Single persist via checkpoint (includes revision).
-      checkpointActiveRoom('Bench applied');
+      checkpointActiveRoom('Benchmark applied');
     } else {
       unawaited(_persistActiveRoomLayout());
       notifyListeners();
@@ -2881,34 +2899,34 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Which layout the Bench should switch to next time it builds. The Rig's
+  /// Which layout the Benchmark should switch to next time it builds. The Room's
   /// "Sim Prototype" button uses this to show the reference room instead of
   /// overwriting the user's furniture with it. The token makes it a one-shot
   /// request, so the panels can honour it once and then let the user pick
   /// freely again.
-  BenchLayoutKind _benchLayoutFocus = BenchLayoutKind.myRoom;
-  int _benchLayoutFocusToken = 0;
+  BenchmarkLayoutKind _benchmarkLayoutFocus = BenchmarkLayoutKind.myRoom;
+  int _benchmarkLayoutFocusToken = 0;
 
-  /// Which ranked Auto-Rig candidate Bench Improved is previewing (shared).
-  int _benchAlternateCursor = 0;
+  /// Which ranked Auto-Rig candidate Benchmark Improved is previewing (shared).
+  int _benchmarkAlternateCursor = 0;
 
-  BenchLayoutKind get benchLayoutFocus => _benchLayoutFocus;
-  int get benchLayoutFocusToken => _benchLayoutFocusToken;
-  int get benchAlternateCursor => _benchAlternateCursor;
+  BenchmarkLayoutKind get benchmarkLayoutFocus => _benchmarkLayoutFocus;
+  int get benchmarkLayoutFocusToken => _benchmarkLayoutFocusToken;
+  int get benchmarkAlternateCursor => _benchmarkAlternateCursor;
 
-  void focusBenchLayout(BenchLayoutKind kind) {
-    _benchLayoutFocus = kind;
-    _benchLayoutFocusToken++;
+  void focusBenchmarkLayout(BenchmarkLayoutKind kind) {
+    _benchmarkLayoutFocus = kind;
+    _benchmarkLayoutFocusToken++;
     notifyListeners();
   }
 
-  void _resetBenchAlternate() {
-    _benchAlternateCursor = 0;
+  void _resetBenchmarkAlternate() {
+    _benchmarkAlternateCursor = 0;
   }
 
-  /// Cycle Bench Improved to the next ranked Auto-Rig layout (same weight mix).
-  void cycleBenchAlternate() {
-    _benchAlternateCursor += 1;
+  /// Cycle Benchmark Improved to the next ranked Auto-Rig layout (same weight mix).
+  void cycleBenchmarkAlternate() {
+    _benchmarkAlternateCursor += 1;
     notifyListeners();
   }
 
@@ -2948,7 +2966,7 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  // Upgrade catalog — installing places a real item on the Rig layout.
+  // Upgrade catalog — installing places a real item on the Room layout.
   // Source of truth: [UpgradeCatalog] (demo prices + authored boost tags).
   final List<Map<String, dynamic>> upgrades = UpgradeCatalog.mutableShop();
 
@@ -2960,7 +2978,7 @@ class AppState extends ChangeNotifier {
   double get upgradeLightingBonus => _upgradeLightingBonus;
   double get upgradeErgonomicsBonus => _upgradeErgonomicsBonus;
 
-  /// Installs or removes the upgrade as a real Rig furniture item.
+  /// Installs or removes the upgrade as a real Room furniture item.
   /// Returns false if there is no free cell to place it.
   bool toggleUpgrade(int index, {bool pending = false}) {
     if (index < 0 || index >= upgrades.length) return false;
@@ -3014,7 +3032,7 @@ class AppState extends ChangeNotifier {
 
     _rememberFurniture();
     _recalcUpgrades();
-    // Layout mutation — never flip Hub to BENCH OK from Upgrades alone.
+    // Layout mutation — never flip Hub to BENCHMARK OK from Upgrades alone.
     _markScoresDirty();
     _refreshLayoutScores(markClean: false);
     unawaited(_persistActiveRoomLayout());
@@ -3099,7 +3117,7 @@ class AppState extends ChangeNotifier {
       ..writeln('')
       ..writeln('Scores')
       ..writeln(
-        '  Status: ${scoresAreSimulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk}',
+        '  Status: ${scoresAreSimulated ? HubScoreLabels.roughEst : HubScoreLabels.benchmarkOk}',
       )
       ..writeln('  Note: ${HubScoreLabels.honestyNote}')
       ..writeln('  Overall: ${overallScore.toStringAsFixed(0)}  (grade $scoreGrade)')
@@ -3158,32 +3176,12 @@ class AppState extends ChangeNotifier {
         'ergonomics': ergonomicsScore,
         'spatial': spatialScore,
         'grade': scoreGrade,
-        'benchOk': !scoresAreSimulated,
+        'benchmarkOk': !scoresAreSimulated,
       },
       'furniture': [
         for (final f in committedFurniture) f.toJson(),
       ],
     };
     return const JsonEncoder.withIndent('  ').convert(payload);
-  }
-
-  /// First uninstalled upgrade that targets the weakest score category under 70.
-  ({String category, String name, int index})? suggestedUpgrade() {
-    final scores = <String, double>{
-      'airflow': airflowScore,
-      'lighting': lightingScore,
-      'ergonomics': ergonomicsScore,
-    };
-    final weakest = scores.entries.reduce((a, b) => a.value <= b.value ? a : b);
-    if (weakest.value >= 70) return null;
-    final idx = upgrades.indexWhere(
-      (u) => u['type'] == weakest.key && !(u['added'] as bool),
-    );
-    if (idx < 0) return null;
-    return (
-      category: weakest.key,
-      name: upgrades[idx]['name'] as String,
-      index: idx,
-    );
   }
 }

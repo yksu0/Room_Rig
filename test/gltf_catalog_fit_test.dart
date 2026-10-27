@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/surface_mount.dart';
 import 'package:room_rig/services/gltf_catalog.dart';
@@ -167,8 +167,8 @@ void main() {
     }
   });
 
-  test('Rig catalog footprints match orbitFootprint for every entry', () {
-    for (final e in RigCatalog.items) {
+  test('Room catalog footprints match orbitFootprint for every entry', () {
+    for (final e in RoomCatalog.items) {
       final fp = GltfCatalog.orbitFootprint(e.iconName);
       expect(e.width, closeTo(fp.width, 0.001), reason: '${e.baseId} width');
       expect(e.height, closeTo(fp.depth, 0.001), reason: '${e.baseId} depth');

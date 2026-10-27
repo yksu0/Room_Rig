@@ -39,7 +39,7 @@ class RoomStatusStrip extends StatelessWidget {
           child: Row(
             children: [
               _chip(
-                simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk,
+                simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchmarkOk,
                 simulated ? AppColors.amber : AppColors.green,
                 fs,
               ),
@@ -105,7 +105,7 @@ class RoomStatusStrip extends StatelessWidget {
   }
 }
 
-/// Corner badge for Model stage — mirrors Hub ROUGH EST / BENCH OK honesty.
+/// Corner badge for Model stage — mirrors Hub ROUGH EST / BENCHMARK OK honesty.
 class ModelHonestyBadge extends StatelessWidget {
   const ModelHonestyBadge({super.key});
 
@@ -114,7 +114,7 @@ class ModelHonestyBadge extends StatelessWidget {
     final state = context.watch<AppState>();
     final simulated = state.scoresAreSimulated;
     final color = simulated ? AppColors.amber : AppColors.green;
-    final label = simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk;
+    final label = simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchmarkOk;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: AppColors.bg.withValues(alpha: 0.72),

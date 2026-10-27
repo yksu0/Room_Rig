@@ -3,7 +3,9 @@
 Free-tier orgs are limited to **2 active projects**. Creating `room-rig` failed because both existing projects are in use. Free a slot (pause/delete an unused project) or upgrade, then:
 
 1. Create project `room-rig` (region `ap-southeast-1` recommended).
-2. Run SQL in [migrations/20261018120000_room_rig_init.sql](migrations/20261018120000_room_rig_init.sql) (SQL editor or CLI).
+2. Run SQL in [migrations/20261018120000_room_rig_init.sql](migrations/20261018120000_room_rig_init.sql), then [migrations/20261027120000_profiles_avatar_soft_delete.sql](migrations/20261027120000_profiles_avatar_soft_delete.sql) (SQL editor or CLI). The second one adds `profiles.avatar_url` / `deletion_requested_at`, the public `avatars` Storage bucket, and the `profiles_due_for_purge` view.
+   - Deploy `functions/purge-deleted-accounts` and schedule it daily (Edge Functions → Schedules, cron `0 3 * * *`). It hard-deletes accounts 7 days after the in-app OTP-confirmed delete; signing in within the window cancels.
+   - Email Templates → **Magic Link**: paste `email_templates/magic_link.html` (keeps `{{ .Token }}` so the in-app 6-digit confirm works).
 3. Auth → Email enabled; Confirm email **off** until Brevo SMTP works, then turn **on**.
 4. Auth → URL Configuration (hosted project — required for Android auth handoff):
    - Site URL: `https://roomrig.vercel.app` (or `http://localhost:7357` while web-only testing).
@@ -34,7 +36,19 @@ flutter run -d web-server --web-port 7357 `
   --dart-define=GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
 ```
 
-Without keys the app runs **guest-only** (local My Rooms).
+Without keys the app runs **guest-only** (local My Rooms). Guests own exactly **one** room; creating a second one is a hard sign-up gate, and the guest room is force-claimed into the account on first sign-in.
+
+## Social layer (not built yet — constraints to keep)
+
+No social UI ships today. The Profile page and schema are shaped so the Benchmark social layer can land without migrations that break existing rows:
+
+- Users publish **full layouts** (not just scores); others can clone or compare against them.
+- Ratings are **up/down + tagged criteria** (airflow / lighting / ergonomics / spatial), one row per rater per layout.
+- **Admin-authored baselines** first; community top-3 monthly later.
+- Publishing or rating requires `profiles.display_name` **and** `profiles.avatar_url` (both already editable on Profile).
+- Moderation hooks (report / hide) are a later step; keep author ids on every public row so they are possible.
+
+Table sketches live as comments at the bottom of `migrations/20261027120000_profiles_avatar_soft_delete.sql`.
 
 ## Production (Vercel)
 

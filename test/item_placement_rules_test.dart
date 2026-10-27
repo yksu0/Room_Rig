@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/services/item_placement_rules.dart';
 import 'package:room_rig/services/multi_objective_optimizer.dart';
@@ -9,7 +9,7 @@ void main() {
   const weights = MultiObjectiveWeights(airflow: 0.7, lighting: 0.7, ergonomics: 0.7);
 
   test('every catalog + upgrade id has an arrangement note', () {
-    for (final entry in RigCatalog.items) {
+    for (final entry in RoomCatalog.items) {
       final note = ItemPlacementRules.arrangementNote(entry.baseId);
       expect(note, isNotEmpty, reason: entry.baseId);
       expect(note.toLowerCase(), isNot(contains('iso 9241')));

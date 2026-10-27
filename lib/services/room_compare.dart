@@ -1,6 +1,6 @@
 import '../models/room_model.dart';
 import '../models/saved_room.dart';
-import '../widgets/bench_panel_scaffold.dart';
+import '../widgets/benchmark_panel_scaffold.dart';
 
 /// Side-by-side comparison of two saved lots.
 class RoomCompareResult {
@@ -25,7 +25,7 @@ class RoomCompare {
   RoomCompare._();
 
   static Map<String, double> estimateScores(List<FurnitureItem> furniture) {
-    // Hub-only rough compare from authored impacts — not Bench CFD / lux / ergo fields.
+    // Hub-only rough compare from authored impacts — not Benchmark CFD / lux / ergo fields.
     double sum(String field) {
       var total = 55.0;
       for (final f in furniture) {

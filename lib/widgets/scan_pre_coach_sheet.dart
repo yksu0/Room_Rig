@@ -21,7 +21,7 @@ class ScanPreCoachResult {
 
 enum _SizeMode { arMeasure, enterManual }
 
-/// Short pre-scan tips — honest about approximate Scan vs Rig/Bench core loop.
+/// Short pre-scan tips — honest about approximate Scan vs Room/Benchmark core loop.
 /// Returns null if cancelled.
 ///
 /// Size source is exclusive: ARCore measure **or** typed L×W — never neither
@@ -151,7 +151,7 @@ Future<ScanPreCoachResult?> showScanPreCoachSheet(
                       selected: sizeMode == _SizeMode.arMeasure,
                       title: 'Use ARCore to measure',
                       subtitle:
-                          'Lock tracking, mark floor corners, confirm size, then open Rig',
+                          'Lock tracking, mark floor corners, confirm size, then open Room',
                       onTap: () => selectMode(_SizeMode.arMeasure),
                     ),
                     const SizedBox(height: 8),

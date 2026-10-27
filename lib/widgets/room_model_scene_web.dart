@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 
-/// Every Model iframe ever created (Rig + Bench can both mount via IndexedStack).
+/// Every Model iframe ever created (Room + Benchmark can both mount via IndexedStack).
 final List<html.IFrameElement> _iframes = [];
 html.IFrameElement? _iframe;
 bool _registered = false;

@@ -1,5 +1,5 @@
 // lib/models/saved_room.dart
-import 'rig_catalog.dart';
+import 'room_catalog.dart';
 import 'room_model.dart';
 import 'room_revision.dart';
 import 'scan_layout_model.dart';
@@ -20,7 +20,7 @@ class SavedRoom {
   final Map<String, double>? originalScores;
   final List<RoomRevision> revisions;
 
-  /// True when Hub can show BENCH OK (Bench Apply / Auto-Rig last wrote scores).
+  /// True when Hub can show BENCHMARK OK (Benchmark Apply / Auto-Rig last wrote scores).
   final bool scoresClean;
 
   /// True when the live layout is still the last applied/optimized arrangement.
@@ -29,10 +29,10 @@ class SavedRoom {
   /// Auth user id when this lot was saved while signed in; null = guest/device-only.
   final String? ownerUserId;
 
-  /// Pinned Bench compare baseline (left side). Null until first Bench open / Set baseline.
-  final List<FurnitureItem>? benchBaselineFurniture;
-  final String? benchBaselineLabel;
-  final DateTime? benchBaselineAt;
+  /// Pinned Benchmark compare baseline (left side). Null until first Benchmark open / Set baseline.
+  final List<FurnitureItem>? benchmarkBaselineFurniture;
+  final String? benchmarkBaselineLabel;
+  final DateTime? benchmarkBaselineAt;
 
   const SavedRoom({
     required this.id,
@@ -49,9 +49,9 @@ class SavedRoom {
     this.scoresClean = false,
     this.isOptimized = false,
     this.ownerUserId,
-    this.benchBaselineFurniture,
-    this.benchBaselineLabel,
-    this.benchBaselineAt,
+    this.benchmarkBaselineFurniture,
+    this.benchmarkBaselineLabel,
+    this.benchmarkBaselineAt,
   });
 
   /// True guest / device-only lots — safe to offer for upload after sign-in.
@@ -71,12 +71,12 @@ class SavedRoom {
     bool? scoresClean,
     bool? isOptimized,
     String? ownerUserId,
-    List<FurnitureItem>? benchBaselineFurniture,
-    String? benchBaselineLabel,
-    DateTime? benchBaselineAt,
+    List<FurnitureItem>? benchmarkBaselineFurniture,
+    String? benchmarkBaselineLabel,
+    DateTime? benchmarkBaselineAt,
     bool clearOriginal = false,
     bool clearOwner = false,
-    bool clearBenchBaseline = false,
+    bool clearBenchmarkBaseline = false,
   }) {
     return SavedRoom(
       id: id,
@@ -95,15 +95,15 @@ class SavedRoom {
       scoresClean: scoresClean ?? this.scoresClean,
       isOptimized: isOptimized ?? this.isOptimized,
       ownerUserId: clearOwner ? null : (ownerUserId ?? this.ownerUserId),
-      benchBaselineFurniture: clearBenchBaseline
+      benchmarkBaselineFurniture: clearBenchmarkBaseline
           ? null
-          : (benchBaselineFurniture ?? this.benchBaselineFurniture),
-      benchBaselineLabel: clearBenchBaseline
+          : (benchmarkBaselineFurniture ?? this.benchmarkBaselineFurniture),
+      benchmarkBaselineLabel: clearBenchmarkBaseline
           ? null
-          : (benchBaselineLabel ?? this.benchBaselineLabel),
-      benchBaselineAt: clearBenchBaseline
+          : (benchmarkBaselineLabel ?? this.benchmarkBaselineLabel),
+      benchmarkBaselineAt: clearBenchmarkBaseline
           ? null
-          : (benchBaselineAt ?? this.benchBaselineAt),
+          : (benchmarkBaselineAt ?? this.benchmarkBaselineAt),
     );
   }
 
@@ -125,13 +125,13 @@ class SavedRoom {
         if (originalScores != null) 'originalScores': originalScores,
         if (revisions.isNotEmpty)
           'revisions': revisions.map((r) => r.toJson()).toList(growable: false),
-        if (benchBaselineFurniture != null)
-          'benchBaselineFurniture': benchBaselineFurniture!
+        if (benchmarkBaselineFurniture != null)
+          'benchmarkBaselineFurniture': benchmarkBaselineFurniture!
               .map((f) => f.toJson())
               .toList(growable: false),
-        if (benchBaselineLabel != null) 'benchBaselineLabel': benchBaselineLabel,
-        if (benchBaselineAt != null)
-          'benchBaselineAt': benchBaselineAt!.toUtc().toIso8601String(),
+        if (benchmarkBaselineLabel != null) 'benchmarkBaselineLabel': benchmarkBaselineLabel,
+        if (benchmarkBaselineAt != null)
+          'benchmarkBaselineAt': benchmarkBaselineAt!.toUtc().toIso8601String(),
       };
 
   factory SavedRoom.fromJson(Map<String, dynamic> json) {
@@ -139,9 +139,9 @@ class SavedRoom {
     final originalRaw = json['originalFurniture'];
     final scoresRaw = json['originalScores'];
     final revisionsRaw = json['revisions'];
-    final baselineRaw = json['benchBaselineFurniture'];
+    final baselineRaw = json['benchmarkBaselineFurniture'];
     final originalFurniture = originalRaw is List
-        ? RigCatalog.retainV1(
+        ? RoomCatalog.retainV1(
             originalRaw
                 .whereType<Map>()
                 .map((e) => FurnitureItem.fromJson(e.cast<String, dynamic>()))
@@ -159,7 +159,7 @@ class SavedRoom {
         (json['layout'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
       furniture: furnitureRaw is List
-          ? RigCatalog.retainV1(
+          ? RoomCatalog.retainV1(
               furnitureRaw
                   .whereType<Map>()
                   .map((e) => FurnitureItem.fromJson(e.cast<String, dynamic>()))
@@ -185,17 +185,17 @@ class SavedRoom {
       isOptimized: json['isOptimized'] as bool? ??
           (scoresClean && originalFurniture != null),
       ownerUserId: json['ownerUserId'] as String?,
-      benchBaselineFurniture: baselineRaw is List
-          ? RigCatalog.retainV1(
+      benchmarkBaselineFurniture: baselineRaw is List
+          ? RoomCatalog.retainV1(
               baselineRaw
                   .whereType<Map>()
                   .map((e) => FurnitureItem.fromJson(e.cast<String, dynamic>()))
                   .toList(),
             )
           : null,
-      benchBaselineLabel: json['benchBaselineLabel'] as String?,
-      benchBaselineAt:
-          DateTime.tryParse(json['benchBaselineAt'] as String? ?? '')?.toLocal(),
+      benchmarkBaselineLabel: json['benchmarkBaselineLabel'] as String?,
+      benchmarkBaselineAt:
+          DateTime.tryParse(json['benchmarkBaselineAt'] as String? ?? '')?.toLocal(),
     );
   }
 }

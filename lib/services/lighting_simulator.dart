@@ -1,5 +1,5 @@
 // lib/services/lighting_simulator.dart
-// Coarse illuminance grid for lighting Bench / Auto-Rig scoring.
+// Coarse illuminance grid for lighting Benchmark / Auto-Rig scoring.
 import 'dart:math';
 import '../models/room_model.dart';
 import '../models/room_scale.dart';
@@ -64,7 +64,7 @@ class LightingOccluder {
   final String id;
 
   /// 0 = fully opaque (hard shadow), 1 = clear. Glass windows use ~0.8 so light
-  /// refracts/attenuates instead of vanishing (coarse Bench approximation).
+  /// refracts/attenuates instead of vanishing (coarse Benchmark approximation).
   final double transmit;
 
   const LightingOccluder({
@@ -119,7 +119,7 @@ class LightingSimulator {
   static int get nx => _bounds.lightingNx;
   static int get nz => _bounds.lightingNz;
 
-  /// Where the overhead fixture hangs, as a fraction of the room. The Rig views
+  /// Where the overhead fixture hangs, as a fraction of the room. The Room views
   /// draw the fixture from these so the plan agrees with what is being lit.
   static const ceilingLightU = 0.5;
   static const ceilingLightV = 0.45;
@@ -207,7 +207,7 @@ class LightingSimulator {
       } else if (_isCeilingLight(f, hay)) {
         hasCeilingFixture = true;
         // Stronger than the soft ambient fallback so Place / move / delete
-        // actually moves the Lighting Bench score.
+        // actually moves the Lighting score.
         final impact = f.lightingImpact.clamp(0.0, 1.0);
         lights.add(
           LightingLight(

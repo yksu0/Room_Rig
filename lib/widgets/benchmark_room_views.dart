@@ -1,0 +1,1244 @@
+// lib/widgets/benchmark_room_views.dart
+// Room-style 2D / 3D room previews for the benchmark prototype.
+import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import '../models/door_swing.dart';
+import '../models/room_model.dart';
+import '../models/room_scale.dart';
+import '../models/surface_mount.dart';
+import '../services/furniture_sprites.dart';
+import 'room_orbit_projection.dart';
+import 'room_plan_geometry.dart';
+import '../theme/app_theme.dart';
+import 'dash_path.dart';
+import 'furniture_shapes.dart';
+import 'room_customizer/room_orbit_3d_painter.dart';
+
+Color categoryColor(String cat) {
+  switch (cat) {
+    case 'airflow':
+      return AppColors.airflowColor;
+    case 'lighting':
+      return AppColors.lightingColor;
+    case 'ergonomics':
+      return AppColors.ergonomicsColor;
+    default:
+      return AppColors.textMuted;
+  }
+}
+
+String shortFurnitureLabel(FurnitureItem item) {
+  final id = item.id.toLowerCase();
+  if (id == 'ac' || id.startsWith('ac_')) return 'AC';
+  if (id.contains('portable_ac')) return 'PAC';
+  if (id.contains('evaporative')) return 'COOL';
+  if (id == 'pc' || id.startsWith('pc_')) return 'PC';
+  if (id.contains('nas') || id.contains('server')) return 'NAS';
+  if (id.contains('console')) return 'GAME';
+  if (id.contains('heater')) return 'HEAT';
+  if (id.contains('radiator')) return 'RAD';
+  if (id.contains('fridge')) return 'FRDG';
+  if (id.contains('desk_fan')) return 'DFAN';
+  switch (item.id) {
+    case 'window':
+      return 'WIN';
+    case 'door':
+      return 'DOOR';
+    case 'desk':
+      return 'DESK';
+    case 'chair':
+      return 'SEAT';
+    case 'bed':
+      return 'BED';
+    case 'shelf':
+    case 'bookshelf':
+      return 'SHELF';
+    case 'lamp':
+      return 'LAMP';
+    case 'fan':
+      return 'FAN';
+    default:
+      final n = item.name.toUpperCase();
+      return n.length <= 5 ? n : n.substring(0, 4);
+  }
+}
+
+/// Shared 2D room rect (aspect-correct) + furniture hit testing for Benchmark demos.
+class BenchmarkRoom2DGeometry {
+  static const legendW = 86.0;
+  static const pad = 10.0;
+
+  static Rect roomRectFor({
+    required Size size,
+    required int gridCols,
+    required int gridRows,
+    bool reserveLegend = false,
+  }) {
+    return RoomPlanGeometry.roomRectFor(
+      size: size,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      pad: pad,
+      horizontalReserve: reserveLegend ? legendW + 8 : 0,
+    );
+  }
+
+  /// Aspect-correct rect for sim field painters (no side legend gutter).
+  static Rect fieldRectFor({
+    required Size size,
+    required int gridCols,
+    required int gridRows,
+    double pad = 12,
+  }) {
+    return RoomPlanGeometry.roomRectFor(
+      size: size,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      pad: pad,
+      horizontalReserve: 0,
+    );
+  }
+
+  /// Smallest item under the tap wins (so tiny AC/PC stay selectable over a bed).
+  static FurnitureItem? hitTest({
+    required Offset local,
+    required Size size,
+    required int gridCols,
+    required int gridRows,
+    required List<FurnitureItem> furniture,
+  }) {
+    if (gridCols <= 0 || gridRows <= 0) return null;
+    final roomRect = roomRectFor(size: size, gridCols: gridCols, gridRows: gridRows);
+    return RoomPlanGeometry.hitTestFloor(
+      local: local,
+      roomRect: roomRect,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      furniture: furniture,
+    );
+  }
+}
+
+/// One-line demo copy when tapping an item in Benchmark 2D.
+String benchmarkInspectBlurb(FurnitureItem item, {required String mode}) {
+  final id = item.id.toLowerCase();
+  switch (mode) {
+    case 'lighting':
+      if (id.contains('window')) return 'Primary daylight source — keep the path to the desk clear.';
+      if (id.contains('lamp')) return 'Task light — place near the desk, not behind blockers.';
+      if (id.contains('desk')) return 'Task zone — needs daylight + lamp without shelf shadows.';
+      if (id.contains('shelf') || id.contains('book')) return 'Tall storage can cast shadows into the work area.';
+      return '${item.name} — lighting impact in this layout.';
+    case 'ergonomics':
+      if (id.contains('desk')) return 'Primary work surface — chair should sit in reach of this desk.';
+      if (id.contains('chair')) return 'Seating — keep clearance behind and a clear path to the desk.';
+      if (id.contains('door')) return 'Entry — leave an approach aisle so you can walk in comfortably.';
+      if (id.contains('monitor')) return 'Screen height / reach — belongs on the desk zone.';
+      return '${item.name} — ergonomics clearance in this layout.';
+    case 'airflow':
+    default:
+      if (id.contains('intake')) return 'Outdoor-air supply — pressurizes the room so windows leak out.';
+      if (id.contains('exhaust')) return 'Extract fan — pulls room air out so windows leak in to replace it.';
+      if (id.contains('ac')) return 'Cold supply — recirculates indoor air. Does not push air out the window.';
+      if (id.contains('fan')) return 'Circulation assist — aims into open floor, not into a cluttered corner.';
+      if (id.contains('pc')) return 'Heat source — better inside the cooled sweep so exhaust mixes with supply.';
+      if (id.contains('bed')) return 'Large blocker — keep on the perimeter, out of the AC throw cone.';
+      if (id.contains('shelf') || id.contains('book')) return 'Blocks residual airflow — better in a dead corner.';
+      if (id.contains('window')) return 'Passive gap — seeps a fraction of any intake/exhaust mismatch, like a PC case slot.';
+      if (id.contains('door')) return 'Entry opening — keep the approach path clear of clutter.';
+      return '${item.name} — airflow role in this layout.';
+  }
+}
+
+class BenchmarkRoom2DPainter extends CustomPainter {
+  final int gridCols;
+  final int gridRows;
+  final List<FurnitureItem> furniture;
+  final String? selectedId;
+
+  BenchmarkRoom2DPainter({
+    required this.gridCols,
+    required this.gridRows,
+    required this.furniture,
+    this.selectedId,
+  }) : super(repaint: FurnitureSprites.revision);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final roomRect = BenchmarkRoom2DGeometry.roomRectFor(
+      size: size,
+      gridCols: gridCols,
+      gridRows: gridRows,
+    );
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(roomRect, const Radius.circular(12)),
+      Paint()..color = AppColors.surfaceAlt.withValues(alpha: 0.92),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(roomRect, const Radius.circular(12)),
+      Paint()
+        ..color = AppColors.cyan.withValues(alpha: 0.35)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+
+    final cellW = roomRect.width / gridCols;
+    final cellH = roomRect.height / gridRows;
+    final gridPaint = Paint()
+      ..color = AppColors.border.withValues(alpha: 0.45)
+      ..strokeWidth = 0.55;
+    for (int c = 1; c < gridCols; c++) {
+      final dx = roomRect.left + cellW * c;
+      canvas.drawLine(Offset(dx, roomRect.top), Offset(dx, roomRect.bottom), gridPaint);
+    }
+    for (int r = 1; r < gridRows; r++) {
+      final dy = roomRect.top + cellH * r;
+      canvas.drawLine(Offset(roomRect.left, dy), Offset(roomRect.right, dy), gridPaint);
+    }
+
+    BenchmarkFurnitureRenderer.paint2D(
+      canvas,
+      roomRect: roomRect,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      furniture: furniture,
+      selectedId: selectedId,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant BenchmarkRoom2DPainter old) =>
+      old.furniture != furniture ||
+      old.gridCols != gridCols ||
+      old.gridRows != gridRows ||
+      old.selectedId != selectedId;
+}
+
+class BenchmarkRoom3DPainter extends CustomPainter {
+  final double roomWidth;
+  final double roomDepth;
+  final double roomHeight;
+  final int gridCols;
+  final int gridRows;
+  final double yaw;
+  final double pitch;
+  final double distance;
+  final double? lookAtX;
+  final double? lookAtZ;
+  final List<FurnitureItem> furniture;
+
+  BenchmarkRoom3DPainter({
+    required this.roomWidth,
+    required this.roomDepth,
+    required this.roomHeight,
+    required this.gridCols,
+    required this.gridRows,
+    required this.yaw,
+    required this.pitch,
+    required this.distance,
+    this.lookAtX,
+    this.lookAtZ,
+    required this.furniture,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Same orbit meshes / wall fittings as Room.
+    RoomOrbit3DPainter(
+      roomWidth: roomWidth,
+      roomDepth: roomDepth,
+      roomHeight: roomHeight,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      yaw: yaw,
+      pitch: pitch,
+      distance: distance,
+      lookAtX: lookAtX,
+      lookAtZ: lookAtZ,
+      items: BenchmarkFurnitureRenderer.renderItems(
+        furniture: furniture,
+        gridCols: gridCols,
+        gridRows: gridRows,
+      ),
+    ).paint(canvas, size);
+  }
+
+  @override
+  bool shouldRepaint(covariant BenchmarkRoom3DPainter old) =>
+      old.yaw != yaw ||
+      old.pitch != pitch ||
+      old.distance != distance ||
+      old.lookAtX != lookAtX ||
+      old.lookAtZ != lookAtZ ||
+      old.furniture != furniture;
+
+  @override
+  bool? hitTest(Offset position) => true;
+}
+
+class _BenchmarkOverlay {
+  final double depth;
+  final void Function(Canvas canvas) paint;
+  _BenchmarkOverlay(this.depth, this.paint);
+}
+
+class _V3 {
+  final double x, y, z;
+  const _V3(this.x, this.y, this.z);
+  _V3 operator -(_V3 o) => _V3(x - o.x, y - o.y, z - o.z);
+}
+
+class BenchmarkWireCam {
+  final double roomWidth, roomDepth, roomHeight, yaw, pitch, distance;
+  BenchmarkWireCam({
+    required this.roomWidth,
+    required this.roomDepth,
+    required this.roomHeight,
+    required this.yaw,
+    required this.pitch,
+    required this.distance,
+  });
+
+  double get pivotX => roomWidth * 0.5;
+  double get pivotZ => roomDepth * 0.5;
+}
+
+class _Face {
+  final List<_V3> vertices;
+  final Color color;
+  _Face(this.vertices, this.color);
+}
+
+class _PFace {
+  final List<Offset> points;
+  final double depth;
+  final Color color;
+  _PFace({required this.points, required this.depth, required this.color});
+}
+
+_V3 _cross(_V3 a, _V3 b) =>
+    _V3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
+
+double _dot(_V3 a, _V3 b) => a.x * b.x + a.y * b.y + a.z * b.z;
+
+_V3 _normalize(_V3 v) {
+  final m = math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+  if (m <= 0.0001) return const _V3(0, 0, 1);
+  return _V3(v.x / m, v.y / m, v.z / m);
+}
+
+(Offset, double)? _project(_V3 p, Size size, BenchmarkWireCam cam) {
+  final center = _V3(cam.pivotX, cam.roomHeight * 0.45, cam.pivotZ);
+  final horizontal = cam.distance * math.cos(cam.pitch);
+  final eye = _V3(
+    center.x + horizontal * math.sin(cam.yaw),
+    center.y + cam.distance * math.sin(cam.pitch),
+    center.z + horizontal * math.cos(cam.yaw),
+  );
+  final forward = _normalize(center - eye);
+  final right = _normalize(_cross(forward, const _V3(0, 1, 0)));
+  final up = _normalize(_cross(right, forward));
+  final rel = p - eye;
+  final cx = _dot(rel, right);
+  final cy = _dot(rel, up);
+  final cz = _dot(rel, forward);
+  if (cz <= 0.06) return null;
+  const fov = 55 * math.pi / 180;
+  final focal = (size.width * 0.5) / math.tan(fov * 0.5);
+  return (Offset(size.width * 0.5 + (cx / cz) * focal, size.height * 0.58 - (cy / cz) * focal), cz);
+}
+
+_PFace? _projectFace(_Face face, Size size, BenchmarkWireCam cam) {
+  final points = <Offset>[];
+  double depth = 0;
+  for (final v in face.vertices) {
+    final p = _project(v, size, cam);
+    if (p == null) return null;
+    points.add(p.$1);
+    depth += p.$2;
+  }
+  return _PFace(points: points, depth: depth / face.vertices.length, color: face.color);
+}
+
+/// Room-style furniture silhouettes for all Benchmark 2D/3D views.
+class BenchmarkFurnitureRenderer {
+  BenchmarkFurnitureRenderer._();
+
+  /// Room-parity orbit items for Benchmark 3D (same meshes / wall fittings).
+  static List<RoomRenderItem> renderItems({
+    required List<FurnitureItem> furniture,
+    required int gridCols,
+    required int gridRows,
+    String? selectedId,
+  }) {
+    return [
+      for (final item in furniture)
+        if (!item.hidden)
+          furnitureRenderItem(
+            item: item,
+            gridCols: gridCols,
+            gridRows: gridRows,
+            furniture: furniture,
+            color: categoryColor(item.category),
+            selected: selectedId != null && item.id == selectedId,
+          ),
+    ];
+  }
+
+  static void paint2D(
+    Canvas canvas, {
+    required Rect roomRect,
+    required int gridCols,
+    required int gridRows,
+    required List<FurnitureItem> furniture,
+    String? selectedId,
+  }) {
+    final cellW = roomRect.width / gridCols;
+    final cellH = roomRect.height / gridRows;
+    final ordered = [...furniture]..sort((a, b) => (b.width * b.height).compareTo(a.width * a.height));
+    final wallItems = <FurnitureItem>[];
+    final ceilingItems = <FurnitureItem>[];
+
+    for (final item in ordered) {
+      if (item.hidden) continue;
+      final mount = SurfaceMounts.of(
+        item,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        furniture: furniture,
+      );
+      if (mount.isWall && mount.span != null) {
+        wallItems.add(item);
+        continue;
+      }
+      if (mount.isCeiling) {
+        ceilingItems.add(item);
+        continue;
+      }
+
+      final selected = selectedId != null && item.id == selectedId;
+      final x = roomRect.left + item.gridX * cellW;
+      final y = roomRect.top + item.gridY * cellH;
+      final w = item.width * cellW;
+      final h = item.height * cellH;
+      final color = categoryColor(item.category);
+      // Match Room: glyph fills the collision footprint (tiny inset for stroke only).
+      final cell = Rect.fromLTWH(
+        x + 1,
+        y + 1,
+        (w - 2).clamp(4, roomRect.width),
+        (h - 2).clamp(4, roomRect.height),
+      );
+      if (selected) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(cell.inflate(2), const Radius.circular(7)),
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.55)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.4,
+        );
+      }
+
+      final usedSprite = FurnitureSprites.paintPlanSprite(
+        canvas,
+        cell,
+        iconName: item.iconName,
+        color: color,
+        yawDegrees: item.yawDegrees,
+        selected: selected,
+      );
+      if (!usedSprite) {
+        canvas.save();
+        canvas.translate(cell.left, cell.top);
+        FurnitureShapes.paintPlan(
+          canvas,
+          cell.size,
+          FurnitureShapes.kindOf(item),
+          color,
+          selected: selected,
+          yawDegrees: item.yawDegrees,
+        );
+        canvas.restore();
+      }
+
+      if (!FurnitureShapes.showsFacing(FurnitureShapes.kindOf(item))) continue;
+      final cx = x + w * 0.5;
+      final cy = y + h * 0.5;
+      final rad = item.yawDegrees * math.pi / 180.0;
+      final dirX = math.sin(rad);
+      final dirY = math.cos(rad);
+      final reach = math.min(w, h) * 0.42;
+      final tip = Offset(cx + dirX * reach, cy + dirY * reach);
+      final back = Offset(cx + dirX * reach * 0.12, cy + dirY * reach * 0.12);
+      final px = -dirY;
+      final py = dirX;
+      final left = Offset(back.dx + px * reach * 0.32, back.dy + py * reach * 0.32);
+      final right = Offset(back.dx - px * reach * 0.32, back.dy - py * reach * 0.32);
+      final arrow = Path()
+        ..moveTo(tip.dx, tip.dy)
+        ..lineTo(left.dx, left.dy)
+        ..lineTo(right.dx, right.dy)
+        ..close();
+      canvas.drawPath(
+        arrow,
+        Paint()..color = (selected ? Colors.white : color).withValues(alpha: 0.95),
+      );
+    }
+
+    for (final item in ceilingItems) {
+      _paintCeilingFixture2D(canvas, roomRect, cellW, cellH, item, selectedId == item.id);
+    }
+    for (final item in wallItems) {
+      _paintWallFitting2D(
+        canvas,
+        roomRect,
+        cellW,
+        cellH,
+        gridCols,
+        gridRows,
+        item,
+        selectedId == item.id,
+      );
+    }
+  }
+
+  /// Open wireframe shell — interior stays visible (matches Lighting benchmark).
+  static void paintRoomWireframe(
+    Canvas canvas,
+    Size size,
+    BenchmarkWireCam cam, {
+    required double roomWidth,
+    required double roomDepth,
+    required int gridCols,
+    required int gridRows,
+  }) {
+    final corners = [
+      const _V3(0, 0, 0),
+      _V3(roomWidth, 0, 0),
+      _V3(roomWidth, 0, roomDepth),
+      _V3(0, 0, roomDepth),
+      _V3(0, cam.roomHeight, 0),
+      _V3(roomWidth, cam.roomHeight, 0),
+      _V3(roomWidth, cam.roomHeight, roomDepth),
+      _V3(0, cam.roomHeight, roomDepth),
+    ];
+    final projected = corners.map((v) => _project(v, size, cam)).toList();
+    final edge = Paint()
+      ..color = AppColors.border.withValues(alpha: 0.85)
+      ..strokeWidth = 1.2;
+    void line(int a, int b) {
+      final pa = projected[a];
+      final pb = projected[b];
+      if (pa == null || pb == null) return;
+      canvas.drawLine(pa.$1, pb.$1, edge);
+    }
+
+    line(0, 1);
+    line(1, 2);
+    line(2, 3);
+    line(3, 0);
+    line(4, 5);
+    line(5, 6);
+    line(6, 7);
+    line(7, 4);
+    line(0, 4);
+    line(1, 5);
+    line(2, 6);
+    line(3, 7);
+
+    final gridPaint = Paint()
+      ..color = AppColors.border.withValues(alpha: 0.45)
+      ..strokeWidth = 0.8;
+    for (int c = 0; c <= gridCols; c++) {
+      final a = _project(_V3(c.toDouble(), 0.001, 0), size, cam);
+      final b = _project(_V3(c.toDouble(), 0.001, roomDepth), size, cam);
+      if (a != null && b != null) canvas.drawLine(a.$1, b.$1, gridPaint);
+    }
+    for (int r = 0; r <= gridRows; r++) {
+      final a = _project(_V3(0, 0.001, r.toDouble()), size, cam);
+      final b = _project(_V3(roomWidth, 0.001, r.toDouble()), size, cam);
+      if (a != null && b != null) canvas.drawLine(a.$1, b.$1, gridPaint);
+    }
+  }
+
+  static void paint3D(
+    Canvas canvas,
+    Size size,
+    BenchmarkWireCam cam, {
+    required int gridCols,
+    required int gridRows,
+    required double roomHeight,
+    required List<FurnitureItem> furniture,
+  }) {
+    final furnitureFaces = <_PFace>[];
+    final overlays = <_BenchmarkOverlay>[];
+
+    for (final item in furniture) {
+      final mount = SurfaceMounts.of(
+        item,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        roomHeight: roomHeight,
+        furniture: furniture,
+      );
+
+      if (mount.isWall && mount.span != null) {
+        _addWallFitting3D(furnitureFaces, overlays, item, mount, size, cam);
+        continue;
+      }
+      if (mount.isCeiling) {
+        _addCeilingFixture3D(overlays, item, mount, size, cam);
+        continue;
+      }
+
+      final color = categoryColor(item.category);
+      final kind = FurnitureShapes.kindOf(item);
+      final yBase = mount.isDesk ? mount.bottomY : 0.0;
+      for (final face in FurnitureShapes.facesFor(
+        FurnitureShapes.boxes(
+          kind: kind,
+          x: item.gridX,
+          z: item.gridY,
+          width: item.width,
+          depth: item.height,
+          color: color,
+          yBase: yBase,
+          yawDegrees: item.yawDegrees,
+        ),
+      )) {
+        final pf = _projectFace(
+          _Face(
+            [for (final v in face.vertices) _V3(v.x, v.y, v.z)],
+            face.color,
+          ),
+          size,
+          cam,
+        );
+        if (pf != null) furnitureFaces.add(pf);
+      }
+
+      if (!FurnitureShapes.showsFacing(kind)) continue;
+
+      final yChev = yBase + 0.02;
+      final cx = item.gridX + item.width * 0.5;
+      final cz = item.gridY + item.height * 0.5;
+      final rad = item.yawDegrees * math.pi / 180.0;
+      final dirX = math.sin(rad);
+      final dirZ = math.cos(rad);
+      final reach = math.max(item.width, item.height) * 0.55 + 0.2;
+      final tip = _project(_V3(cx + dirX * reach, yChev, cz + dirZ * reach), size, cam);
+      final backX = cx + dirX * reach * 0.35;
+      final backZ = cz + dirZ * reach * 0.35;
+      final px = -dirZ;
+      final pz = dirX;
+      final left = _project(_V3(backX + px * 0.16, yChev, backZ + pz * 0.16), size, cam);
+      final right = _project(_V3(backX - px * 0.16, yChev, backZ - pz * 0.16), size, cam);
+      if (tip != null && left != null && right != null) {
+        overlays.add(_BenchmarkOverlay(tip.$2 - 0.01, (c) {
+          final path = Path()
+            ..moveTo(tip.$1.dx, tip.$1.dy)
+            ..lineTo(left.$1.dx, left.$1.dy)
+            ..lineTo(right.$1.dx, right.$1.dy)
+            ..close();
+          c.drawPath(path, Paint()..color = color.withValues(alpha: 0.9));
+        }));
+      }
+    }
+
+    furnitureFaces.sort((a, b) => b.depth.compareTo(a.depth));
+    for (final f in furnitureFaces) {
+      final path = Path()..addPolygon(f.points, true);
+      canvas.drawPath(path, Paint()..color = f.color);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.25)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.8,
+      );
+    }
+
+    overlays.sort((a, b) => b.depth.compareTo(a.depth));
+    for (final o in overlays) {
+      o.paint(canvas);
+    }
+  }
+
+  static void _paintWallFitting2D(
+    Canvas canvas,
+    Rect roomRect,
+    double cellW,
+    double cellH,
+    int gridCols,
+    int gridRows,
+    FurnitureItem item,
+    bool selected,
+  ) {
+    final mount = SurfaceMounts.of(item, gridCols: gridCols, gridRows: gridRows);
+    final span = mount.span!;
+    final color = switch (mount.style) {
+      MountStyle.window => AppColors.lightingColor,
+      MountStyle.vent => AppColors.airflowColor,
+      MountStyle.intake => AppColors.green,
+      MountStyle.exhaust => AppColors.orange,
+      MountStyle.door => AppColors.textSecondary,
+      _ => categoryColor(item.category),
+    };
+
+    final along = switch (span.wall) {
+      RoomWall.north || RoomWall.south => math.max((span.x1 - span.x0) * cellW, 20),
+      RoomWall.west || RoomWall.east => math.max((span.z1 - span.z0) * cellH, 20),
+    };
+    final inward = mount.style == MountStyle.door
+        ? math.max(28.0, along * 0.94 + 6)
+        : 14.0;
+
+    late Rect band;
+    switch (span.wall) {
+      case RoomWall.north:
+        band = Rect.fromLTRB(
+          roomRect.left + span.x0 * cellW,
+          roomRect.top,
+          roomRect.left + span.x1 * cellW,
+          roomRect.top + inward,
+        );
+      case RoomWall.south:
+        band = Rect.fromLTRB(
+          roomRect.left + span.x0 * cellW,
+          roomRect.bottom - inward,
+          roomRect.left + span.x1 * cellW,
+          roomRect.bottom,
+        );
+      case RoomWall.west:
+        band = Rect.fromLTRB(
+          roomRect.left,
+          roomRect.top + span.z0 * cellH,
+          roomRect.left + inward,
+          roomRect.top + span.z1 * cellH,
+        );
+      case RoomWall.east:
+        band = Rect.fromLTRB(
+          roomRect.right - inward,
+          roomRect.top + span.z0 * cellH,
+          roomRect.right,
+          roomRect.top + span.z1 * cellH,
+        );
+    }
+
+    // Flush strip on the wall edge (square corners — no floating card gap).
+    final strip = switch (span.wall) {
+      RoomWall.north => Rect.fromLTRB(band.left, band.top, band.right, band.top + 5),
+      RoomWall.south => Rect.fromLTRB(band.left, band.bottom - 5, band.right, band.bottom),
+      RoomWall.west => Rect.fromLTRB(band.left, band.top, band.left + 5, band.bottom),
+      RoomWall.east => Rect.fromLTRB(band.right - 5, band.top, band.right, band.bottom),
+    };
+    canvas.drawRect(strip, Paint()..color = color.withValues(alpha: selected ? 0.45 : 0.28));
+    final wallStroke = Paint()
+      ..color = color.withValues(alpha: selected ? 1.0 : 0.85)
+      ..strokeWidth = selected ? 2.4 : 1.8
+      ..strokeCap = StrokeCap.square;
+    switch (span.wall) {
+      case RoomWall.north:
+        canvas.drawLine(Offset(band.left, band.top + 0.5), Offset(band.right, band.top + 0.5), wallStroke);
+      case RoomWall.south:
+        canvas.drawLine(Offset(band.left, band.bottom - 0.5), Offset(band.right, band.bottom - 0.5), wallStroke);
+      case RoomWall.west:
+        canvas.drawLine(Offset(band.left + 0.5, band.top), Offset(band.left + 0.5, band.bottom), wallStroke);
+      case RoomWall.east:
+        canvas.drawLine(Offset(band.right - 0.5, band.top), Offset(band.right - 0.5, band.bottom), wallStroke);
+    }
+
+    final stroke = Paint()
+      ..color = color.withValues(alpha: 0.85)
+      ..strokeWidth = 1.2;
+    if (mount.style == MountStyle.window) {
+      canvas.drawLine(
+        Offset(band.center.dx, strip.top + 1),
+        Offset(band.center.dx, strip.bottom - 1),
+        stroke,
+      );
+      canvas.drawLine(
+        Offset(band.left + 2, strip.center.dy),
+        Offset(band.right - 2, strip.center.dy),
+        stroke,
+      );
+    } else if (mount.style == MountStyle.door) {
+      // Quarter-circle swing scaled to opening length.
+      final hinge = switch (span.wall) {
+        RoomWall.north => Offset(band.left + 2, band.top + 0.5),
+        RoomWall.south => Offset(band.left + 2, band.bottom - 0.5),
+        RoomWall.west => Offset(band.left + 0.5, band.top + 2),
+        RoomWall.east => Offset(band.right - 0.5, band.top + 2),
+      };
+      final radius = math.min(along * 0.9, inward - 3);
+      final arc = Path()..moveTo(hinge.dx, hinge.dy);
+      for (var i = 0; i <= 24; i++) {
+        final a = (i / 24) * math.pi / 2;
+        late Offset pt;
+        switch (span.wall) {
+          case RoomWall.north:
+            pt = Offset(hinge.dx + radius * math.cos(a), hinge.dy + radius * math.sin(a));
+          case RoomWall.south:
+            pt = Offset(hinge.dx + radius * math.cos(a), hinge.dy - radius * math.sin(a));
+          case RoomWall.west:
+            pt = Offset(hinge.dx + radius * math.sin(a), hinge.dy + radius * math.cos(a));
+          case RoomWall.east:
+            pt = Offset(hinge.dx - radius * math.sin(a), hinge.dy + radius * math.cos(a));
+        }
+        if (i == 0) {
+          arc.moveTo(pt.dx, pt.dy);
+        } else {
+          arc.lineTo(pt.dx, pt.dy);
+        }
+      }
+      canvas.drawPath(
+        arc,
+        Paint()
+          ..color = color.withValues(alpha: selected ? 0.7 : 0.45)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+      canvas.drawCircle(hinge, 2.0, Paint()..color = color);
+    } else if (mount.style == MountStyle.vent ||
+        mount.style == MountStyle.intake ||
+        mount.style == MountStyle.exhaust) {
+      for (var i = 1; i <= 2; i++) {
+        final t = i / 3;
+        if (band.width >= band.height) {
+          final y = strip.top + strip.height * t;
+          canvas.drawLine(Offset(band.left + 2, y), Offset(band.right - 2, y), stroke);
+        } else {
+          final x = strip.left + strip.width * t;
+          canvas.drawLine(Offset(x, band.top + 2), Offset(x, band.bottom - 2), stroke);
+        }
+      }
+    }
+  }
+
+  static void _paintCeilingFixture2D(
+    Canvas canvas,
+    Rect roomRect,
+    double cellW,
+    double cellH,
+    FurnitureItem item,
+    bool selected,
+  ) {
+    final c = Offset(
+      roomRect.left + (item.gridX + item.width / 2) * cellW,
+      roomRect.top + (item.gridY + item.height / 2) * cellH,
+    );
+    final color = AppColors.lightingColor;
+    canvas.drawCircle(c, selected ? 10 : 8, Paint()..color = color.withValues(alpha: 0.22));
+    canvas.drawCircle(
+      c,
+      selected ? 10 : 8,
+      Paint()
+        ..color = color.withValues(alpha: 0.9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = selected ? 2 : 1.4,
+    );
+    canvas.drawCircle(c, 2.5, Paint()..color = color);
+  }
+
+  static void _addWallFitting3D(
+    List<_PFace> faces,
+    List<_BenchmarkOverlay> overlays,
+    FurnitureItem item,
+    SurfaceMount mount,
+    Size size,
+    BenchmarkWireCam cam,
+  ) {
+    final span = mount.span!;
+    final color = switch (mount.style) {
+      MountStyle.window => AppColors.lightingColor,
+      MountStyle.vent => AppColors.airflowColor,
+      MountStyle.intake => AppColors.green,
+      MountStyle.exhaust => AppColors.orange,
+      MountStyle.door => AppColors.textSecondary,
+      _ => categoryColor(item.category),
+    };
+    final inset = mount.protrusion;
+    final leaf = [
+      _V3(span.x0 + span.inwardX * inset, mount.bottomY, span.z0 + span.inwardZ * inset),
+      _V3(span.x1 + span.inwardX * inset, mount.bottomY, span.z1 + span.inwardZ * inset),
+      _V3(span.x1 + span.inwardX * inset, mount.topY, span.z1 + span.inwardZ * inset),
+      _V3(span.x0 + span.inwardX * inset, mount.topY, span.z0 + span.inwardZ * inset),
+    ];
+    final face = _projectFace(_Face(leaf, color.withValues(alpha: 0.34)), size, cam);
+    if (face == null) return;
+    faces.add(face);
+
+    if (mount.style == MountStyle.window) {
+      final midY = (mount.bottomY + mount.topY) / 2;
+      final vTop = _project(_alongWall(span, 0.5, mount.topY, inset), size, cam);
+      final vBot = _project(_alongWall(span, 0.5, mount.bottomY, inset), size, cam);
+      final hA = _project(_alongWall(span, 0.0, midY, inset), size, cam);
+      final hB = _project(_alongWall(span, 1.0, midY, inset), size, cam);
+      final sillA = _project(_alongWall(span, 0.0, mount.bottomY, inset + 0.12), size, cam);
+      final sillB = _project(_alongWall(span, 1.0, mount.bottomY, inset + 0.12), size, cam);
+      overlays.add(_BenchmarkOverlay(face.depth - 0.01, (c) {
+        final p = Paint()
+          ..color = color.withValues(alpha: 0.7)
+          ..strokeWidth = 1.2;
+        if (vTop != null && vBot != null) c.drawLine(vTop.$1, vBot.$1, p);
+        if (hA != null && hB != null) c.drawLine(hA.$1, hB.$1, p);
+        if (sillA != null && sillB != null) {
+          c.drawLine(
+            sillA.$1,
+            sillB.$1,
+            Paint()
+              ..color = color.withValues(alpha: 0.9)
+              ..strokeWidth = 2.6,
+          );
+        }
+      }));
+    } else if (mount.style == MountStyle.door) {
+      final swing = DoorSwingGeometry.fromSpan(span);
+      final hinge = _project(_V3(swing.hingeX, 0.02, swing.hingeZ), size, cam);
+      final closed = swing.pointAt(0);
+      final open = swing.pointAt(1);
+      final closedP = _project(_V3(closed.$1, 0.02, closed.$2), size, cam);
+      final openP = _project(_V3(open.$1, 0.02, open.$2), size, cam);
+      final arc = <Offset>[];
+      for (final p in swing.arcPoints(steps: 28)) {
+        final proj = _project(_V3(p.$1, 0.02, p.$2), size, cam);
+        if (proj == null) {
+          arc.clear();
+          break;
+        }
+        arc.add(proj.$1);
+      }
+      final dashed = <Offset>[];
+      for (final p in swing.dashedArcPoints(steps: 28)) {
+        final proj = _project(_V3(p.$1, 0.02, p.$2), size, cam);
+        if (proj == null) {
+          dashed.clear();
+          break;
+        }
+        dashed.add(proj.$1);
+      }
+      final handle = _project(_alongWall(span, 0.82, mount.topY * 0.45, inset + 0.04), size, cam);
+      overlays.add(_BenchmarkOverlay(face.depth - 0.01, (c) {
+        if (hinge != null && closedP != null && openP != null && arc.length >= 2) {
+          final sector = Path()
+            ..moveTo(hinge.$1.dx, hinge.$1.dy)
+            ..lineTo(closedP.$1.dx, closedP.$1.dy);
+          for (final pt in arc.skip(1)) {
+            sector.lineTo(pt.dx, pt.dy);
+          }
+          sector.close();
+          c.drawPath(
+            sector,
+            Paint()..color = color.withValues(alpha: 0.12),
+          );
+          final stroke = Paint()
+            ..color = color.withValues(alpha: 0.65)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.25;
+          final arcPath = Path()..moveTo(arc.first.dx, arc.first.dy);
+          for (final pt in arc.skip(1)) {
+            arcPath.lineTo(pt.dx, pt.dy);
+          }
+          c.drawPath(arcPath, stroke);
+          c.drawLine(hinge.$1, closedP.$1, stroke);
+          c.drawLine(hinge.$1, openP.$1, stroke);
+          if (dashed.length > 1) {
+            drawDashedPolyline(
+              c,
+              dashed,
+              Paint()
+                ..color = color.withValues(alpha: 0.35)
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 1.1,
+            );
+          }
+        }
+        if (handle != null) {
+          c.drawCircle(handle.$1, 2.4, Paint()..color = AppColors.amber);
+        }
+      }));
+    } else if (mount.style == MountStyle.vent ||
+        mount.style == MountStyle.intake ||
+        mount.style == MountStyle.exhaust) {
+      overlays.add(_BenchmarkOverlay(face.depth - 0.01, (c) {
+        for (var i = 1; i <= 3; i++) {
+          final t = i / 4;
+          final a = _project(_alongWall(span, 0.12, mount.bottomY + mount.height * t, inset + 0.02), size, cam);
+          final b = _project(_alongWall(span, 0.88, mount.bottomY + mount.height * t, inset + 0.02), size, cam);
+          if (a != null && b != null) {
+            c.drawLine(
+              a.$1,
+              b.$1,
+              Paint()
+                ..color = color.withValues(alpha: 0.75)
+                ..strokeWidth = 1.1,
+            );
+          }
+        }
+      }));
+    }
+  }
+
+  static void _addCeilingFixture3D(
+    List<_BenchmarkOverlay> overlays,
+    FurnitureItem item,
+    SurfaceMount mount,
+    Size size,
+    BenchmarkWireCam cam,
+  ) {
+    final cx = item.gridX + item.width / 2;
+    final cz = item.gridY + item.height / 2;
+    final y = mount.bottomY;
+    final center = _project(_V3(cx, y, cz), size, cam);
+    if (center == null) return;
+    overlays.add(_BenchmarkOverlay(center.$2, (c) {
+      c.drawCircle(center.$1, 10, Paint()..color = AppColors.lightingColor.withValues(alpha: 0.28));
+      c.drawCircle(
+        center.$1,
+        10,
+        Paint()
+          ..color = AppColors.lightingColor.withValues(alpha: 0.9)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.6,
+      );
+      c.drawCircle(center.$1, 3, Paint()..color = AppColors.lightingColor);
+    }));
+  }
+
+  static _V3 _alongWall(WallSpan span, double t, double y, double inset) {
+    return _V3(
+      span.x0 + (span.x1 - span.x0) * t + span.inwardX * inset,
+      y,
+      span.z0 + (span.z1 - span.z0) * t + span.inwardZ * inset,
+    );
+  }
+
+  /// Wireframe room + Room orbit furniture meshes (shared by all Benchmark 3D views).
+  static void paint3DScene(
+    Canvas canvas,
+    Size size, {
+    required double roomWidth,
+    required double roomDepth,
+    required double roomHeight,
+    required int gridCols,
+    required int gridRows,
+    required double yaw,
+    required double pitch,
+    required double distance,
+    required double? lookAtX,
+    required double? lookAtZ,
+    required List<FurnitureItem> furniture,
+    String? selectedId,
+  }) {
+    RoomOrbit3DPainter(
+      roomWidth: roomWidth,
+      roomDepth: roomDepth,
+      roomHeight: roomHeight,
+      gridCols: gridCols,
+      gridRows: gridRows,
+      yaw: yaw,
+      pitch: pitch,
+      distance: distance,
+      lookAtX: lookAtX,
+      lookAtZ: lookAtZ,
+      items: renderItems(
+        furniture: furniture,
+        gridCols: gridCols,
+        gridRows: gridRows,
+        selectedId: selectedId,
+      ),
+    ).paint(canvas, size);
+  }
+}
+
+/// Camera pose for Benchmark 3D painters — owned by [BenchmarkOrbitShell] during orbit.
+class BenchmarkOrbitCamera {
+  final double yaw;
+  final double pitch;
+  final double distance;
+  final double lookAtX;
+  final double lookAtZ;
+
+  const BenchmarkOrbitCamera({
+    required this.yaw,
+    required this.pitch,
+    required this.distance,
+    required this.lookAtX,
+    required this.lookAtZ,
+  });
+}
+
+/// Shared Benchmark 3D camera — matches Room orbit (ScaleGestureRecognizer + internal state).
+class BenchmarkOrbitShell extends StatefulWidget {
+  final Widget Function(BenchmarkOrbitCamera camera) builder;
+  final bool enabled;
+  final double initialYaw;
+  final double initialPitch;
+  final double initialDistance;
+  final double initialLookAtX;
+  final double initialLookAtZ;
+  final double roomWidth;
+  final double roomDepth;
+  final double roomHeight;
+  final double minDistance;
+  final double maxDistance;
+  final int resetNonce;
+  final VoidCallback? onDoubleTap;
+  final ValueChanged<bool>? onDragChanged;
+  final void Function(
+    double yaw,
+    double pitch,
+    double distance,
+    double lookAtX,
+    double lookAtZ,
+  )? onChanged;
+
+  const BenchmarkOrbitShell({
+    super.key,
+    required this.builder,
+    this.enabled = true,
+    this.initialYaw = 0,
+    this.initialPitch = 0.34,
+    this.initialDistance = 15,
+    this.initialLookAtX = 3,
+    this.initialLookAtZ = 4,
+    this.roomWidth = 6,
+    this.roomDepth = 8,
+    this.roomHeight = RoomScale.defaultHeightMeters,
+    this.onChanged,
+    this.onDoubleTap,
+    this.onDragChanged,
+    this.resetNonce = 0,
+    this.minDistance = 6,
+    this.maxDistance = 32,
+  });
+
+  @override
+  State<BenchmarkOrbitShell> createState() => _BenchmarkOrbitShellState();
+}
+
+class _BenchmarkOrbitShellState extends State<BenchmarkOrbitShell> {
+  late double _yaw;
+  late double _pitch;
+  late double _distance;
+  late double _lookAtX;
+  late double _lookAtZ;
+  double _scaleStartDistance = 15;
+  bool _orbiting = false;
+  int _lastResetNonce = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _applyInitials();
+  }
+
+  void _applyInitials() {
+    _yaw = widget.initialYaw;
+    _pitch = widget.initialPitch;
+    _distance = widget.initialDistance;
+    _lookAtX = widget.initialLookAtX;
+    _lookAtZ = widget.initialLookAtZ;
+    _scaleStartDistance = _distance;
+    _lastResetNonce = widget.resetNonce;
+  }
+
+  @override
+  void didUpdateWidget(BenchmarkOrbitShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.resetNonce != _lastResetNonce) {
+      _applyInitials();
+    } else if (!_orbiting &&
+        (oldWidget.initialYaw != widget.initialYaw ||
+            oldWidget.initialPitch != widget.initialPitch ||
+            oldWidget.initialDistance != widget.initialDistance)) {
+      _applyInitials();
+    }
+  }
+
+  BenchmarkOrbitCamera get _camera => BenchmarkOrbitCamera(
+        yaw: _yaw,
+        pitch: _pitch,
+        distance: _distance,
+        lookAtX: _lookAtX,
+        lookAtZ: _lookAtZ,
+      );
+
+  void _notifyOptional() {
+    widget.onChanged?.call(_yaw, _pitch, _distance, _lookAtX, _lookAtZ);
+  }
+
+  CameraPose _pose(double distance) => CameraPose(
+        roomWidth: widget.roomWidth,
+        roomDepth: widget.roomDepth,
+        roomHeight: widget.roomHeight,
+        yaw: _yaw,
+        pitch: _pitch,
+        distance: distance,
+        lookAtX: _lookAtX,
+        lookAtZ: _lookAtZ,
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final content = widget.builder(_camera);
+    if (!widget.enabled) return SizedBox.expand(child: content);
+
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => widget.onDragChanged?.call(true),
+      onPointerUp: (_) => widget.onDragChanged?.call(false),
+      onPointerCancel: (_) => widget.onDragChanged?.call(false),
+      onPointerSignal: (signal) {
+        if (signal is PointerScrollEvent) {
+          setState(() {
+            _distance = (_distance + signal.scrollDelta.dy * 0.02)
+                .clamp(widget.minDistance, widget.maxDistance);
+          });
+          _notifyOptional();
+        }
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onDoubleTap: () {
+          setState(_applyInitials);
+          _notifyOptional();
+          widget.onDoubleTap?.call();
+        },
+        onScaleStart: (_) {
+          _orbiting = true;
+          _scaleStartDistance = _distance;
+          widget.onDragChanged?.call(true);
+        },
+        onScaleUpdate: (details) {
+          setState(() {
+            if (details.pointerCount >= 2) {
+              final next = _scaleStartDistance / details.scale.clamp(0.15, 6.0);
+              _distance = next.clamp(widget.minDistance, widget.maxDistance);
+              final pose = _pose(_distance);
+              final (right, fwd) = RoomProjection.floorPanAxes(pose);
+              final pan = _distance * 0.00165;
+              final dx = -details.focalPointDelta.dx * pan;
+              final dz = details.focalPointDelta.dy * pan;
+              _lookAtX = (pose.pivotX + right.x * dx + fwd.x * dz)
+                  .clamp(-2.0, widget.roomWidth + 2.0);
+              _lookAtZ = (pose.pivotZ + right.z * dx + fwd.z * dz)
+                  .clamp(-2.0, widget.roomDepth + 2.0);
+            } else {
+              _yaw = (_yaw + details.focalPointDelta.dx * 0.008).clamp(-math.pi, math.pi);
+              _pitch = (_pitch - details.focalPointDelta.dy * 0.006).clamp(-0.1, 1.0);
+            }
+          });
+        },
+        onScaleEnd: (_) {
+          _orbiting = false;
+          widget.onDragChanged?.call(false);
+          _notifyOptional();
+        },
+        child: SizedBox.expand(child: content),
+      ),
+    );
+  }
+}

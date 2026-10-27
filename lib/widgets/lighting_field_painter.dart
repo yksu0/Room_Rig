@@ -5,7 +5,7 @@ import '../models/room_model.dart';
 import '../services/lighting_simulator.dart';
 import '../services/furniture_sprites.dart';
 import '../theme/app_theme.dart';
-import 'bench_room_views.dart';
+import 'benchmark_room_views.dart';
 
 enum LightingVizMode { topDown2D, orbit3D }
 
@@ -68,7 +68,7 @@ class LightingFieldPainter extends CustomPainter {
     final gridCols = snapshot.roomWidth.round().clamp(1, 64);
     final gridRows = snapshot.roomDepth.round().clamp(1, 64);
     final rect = overlayRect ??
-        BenchRoom2DGeometry.fieldRectFor(
+        BenchmarkRoom2DGeometry.fieldRectFor(
           size: size,
           gridCols: gridCols,
           gridRows: gridRows,
@@ -122,7 +122,7 @@ class LightingFieldPainter extends CustomPainter {
     }
 
     if (paintScene) {
-      BenchFurnitureRenderer.paint2D(
+      BenchmarkFurnitureRenderer.paint2D(
         canvas,
         roomRect: rect,
         gridCols: gridCols,
@@ -138,7 +138,7 @@ class LightingFieldPainter extends CustomPainter {
     final roomHeight = snapshot.roomHeight;
 
     if (paintScene) {
-      BenchFurnitureRenderer.paint3DScene(
+      BenchmarkFurnitureRenderer.paint3DScene(
         canvas,
         size,
         roomWidth: snapshot.roomWidth,

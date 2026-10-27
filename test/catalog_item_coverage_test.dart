@@ -1,7 +1,7 @@
 // Every catalog SKU + upgrade must resolve to a kind, get an Auto-Rig role,
 // and survive multi-objective rearrange without being dropped.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/surface_mount.dart';
 import 'package:room_rig/models/upgrade_catalog.dart';
@@ -25,7 +25,7 @@ void main() {
       )
       .toList();
 
-  FurnitureItem catalogPiece(RigCatalogEntry e) => e.toFurniture(
+  FurnitureItem catalogPiece(RoomCatalogEntry e) => e.toFurniture(
         id: e.baseId,
         gridX: 1,
         gridY: 1,
@@ -44,7 +44,7 @@ void main() {
       );
 
   test('every catalog icon has a sprite-facing kind (not silent generic for known SKUs)', () {
-    for (final e in RigCatalog.items) {
+    for (final e in RoomCatalog.items) {
       final kind = FurnitureShapes.kindFrom(
         id: e.baseId,
         name: e.name,
@@ -78,7 +78,7 @@ void main() {
       'pc',
       'lamp',
     };
-    for (final e in RigCatalog.items.where((e) => deskTops.contains(e.baseId))) {
+    for (final e in RoomCatalog.items.where((e) => deskTops.contains(e.baseId))) {
       expect(SurfaceMounts.isDeskTopItem(catalogPiece(e)), isTrue, reason: e.baseId);
     }
   });
@@ -86,7 +86,7 @@ void main() {
   test('Auto-Rig assigns a target role for every catalog + upgrade id', () {
     final base = room.furniture.map((f) => f.copyWith()).toList();
     final extras = <FurnitureItem>[
-      for (final e in RigCatalog.items)
+      for (final e in RoomCatalog.items)
         if (!base.any((f) => f.id == e.baseId || f.iconName == e.iconName))
           catalogPiece(e),
       for (final u in upgradeSpecs) upgradePiece(u),
@@ -155,7 +155,7 @@ void main() {
     const cols = 14;
     const rows = 14;
     final furniture = <FurnitureItem>[
-      for (final e in RigCatalog.items)
+      for (final e in RoomCatalog.items)
         e.toFurniture(id: e.baseId, gridX: 1, gridY: 1),
       for (final u in upgradeSpecs) upgradePiece(u),
     ];
@@ -212,7 +212,7 @@ void main() {
   });
 
   test('each desk-top SKU alone mounts on the gaming desk after Auto-Rig', () {
-    final catalogTops = RigCatalog.items.where((e) => {'monitor', 'pc', 'lamp'}.contains(e.baseId));
+    final catalogTops = RoomCatalog.items.where((e) => {'monitor', 'pc', 'lamp'}.contains(e.baseId));
     for (final e in catalogTops) {
       final furniture = [
         ...room.furniture.map((f) => f.copyWith()),

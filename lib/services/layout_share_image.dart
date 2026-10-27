@@ -8,7 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/room_model.dart';
 import '../theme/app_theme.dart';
-import '../widgets/bench_room_views.dart';
+import '../widgets/benchmark_room_views.dart';
 
 /// Renders a before/after floor-plan PNG and shares it via the OS sheet.
 class LayoutShareImage {
@@ -135,7 +135,7 @@ class LayoutShareImage {
     canvas.save();
     canvas.clipRRect(RRect.fromRectAndRadius(paintRect, const Radius.circular(10)));
     canvas.translate(paintRect.left, paintRect.top);
-    BenchRoom2DPainter(
+    BenchmarkRoom2DPainter(
       gridCols: gridCols,
       gridRows: gridRows,
       furniture: furniture,

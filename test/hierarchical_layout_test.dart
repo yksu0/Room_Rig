@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/upgrade_catalog.dart';
 import 'package:room_rig/services/hierarchical_layout.dart';
@@ -9,7 +9,7 @@ import 'package:room_rig/services/placement_catalog.dart';
 
 void main() {
   test('PlacementCatalog covers every catalog + upgrade id', () {
-    for (final e in RigCatalog.items) {
+    for (final e in RoomCatalog.items) {
       final f = e.toFurniture(id: e.baseId, gridX: 1, gridY: 1);
       final spec = PlacementCatalog.of(f);
       expect(spec.id, isNot('unknown'), reason: e.baseId);

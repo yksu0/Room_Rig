@@ -2,32 +2,30 @@
 
 Flutter app that treats an indoor room like a PC build: **layout → score → optimize**.
 
-**Core loop (demo-ready):** Hub → Rig → Bench → Upgrades  
+**Core loop (demo-ready):** Hub → Room → Benchmark (nav order: Hub · Room · Scan · Benchmark)  
 **Optional:** Scan seeds a layout when the camera cooperates.
 
 ## What works now
 
-- **Hub** — presets, manual rooms, My Rooms, score rings (`ROUGH EST.` / `BENCH OK`), checkpoints / history / compare (local builds)
-- **Rig** — 2D drag + snap/collision, 3D orbit + MOVE, Place ghosts from Upgrades, Auto-Rig, undo
-- **Bench** — airflow / lighting / ergonomics / spatial sims on the live Rig layout; My Room → Improved compare; Apply with conflict + no-op gates
-- **Upgrades** — catalog → ghost on Rig → Place; boosts feed scores
+- **Hub** — presets, manual rooms, My Rooms, score rings (`ROUGH EST.` / `BENCHMARK OK`), checkpoints / history / compare (local builds)
+- **Room** — 2D drag + snap/collision, 3D orbit + MOVE, Items drawer / Place, Auto-Rig, undo
+- **Benchmark** — airflow / lighting / ergonomics / spatial sims on the live Room layout; My Room → Improved compare; Apply with conflict + no-op gates
 - **Scan (approximate)** — Room Rig 18-class YOLO when `yolo_roomrig.tflite` is bundled; otherwise luma heuristics. Manual / walk / preset room size; ARCore (opt-in) or visual tracking for the minimap.
 
 ## Honest limits (say this in a presentation)
 
 - Scan is **not** full AR SLAM or survey-grade depth — pose is ARCore (opt-in) or visual odometry; room size is preset, walk-measured, or manual
-- Bench Airflow / Lighting / Ergonomics are **coarse heuristics** (voxel field, 2D lux proxy, clearance paths) — not CFD / radiosity / motion capture. Calibration notes: `assets/bench/`
-- Pre-Bench Hub scores are impact estimates until you run Bench
-- Upgrades prices/boosts are authored constants for the prototype
-- ML weights under `assets/models/` are for **Scan detection only**, not Bench scoring
+- Benchmark Airflow / Lighting / Ergonomics are **coarse heuristics** (voxel field, 2D lux proxy, clearance paths) — not CFD / radiosity / motion capture. Calibration notes: `assets/bench/`
+- Pre-Benchmark Hub scores are impact estimates until you run Benchmark
+- Prices are mid-market PH estimates (`est. ₱`) — basis and verify-with terms ship in `assets/PRICE_SOURCES.md`; boosts are authored constants
+- ML weights under `assets/models/` are for **Scan detection only**, not Benchmark scoring
 
 ## Professor demo (no camera)
 
-1. Hub → **Demo** → loads Gaming Setup → Rig  
+1. Hub → **Demo** → loads Gaming Setup → Room  
 2. Drag one item  
-3. Bench → **Simulate** (My Room → Improved) → **Apply**  
-4. Hub shows **BENCH OK**  
-5. Optional: Upgrades → Place on Rig  
+3. Benchmark → **Simulate** (My Room → Improved) → **Apply**  
+4. Hub shows **BENCHMARK OK**  
 
 ## Run
 
@@ -53,9 +51,9 @@ Flutter, Provider, camera, tflite_flutter, flutter_svg, google_fonts, share_plus
 
 - `lib/main.dart` — tab shell  
 - `lib/models/app_state.dart` — rooms, scores, persistence  
-- `lib/screens/` — Hub, Scan, Rig, Bench, Upgrades  
-- `lib/services/` — scan pipeline, Bench sims/optimizers, share/compare  
-- `test/` — unit/widget coverage for layout, scan, Bench, Place ghosts  
+- `lib/screens/` — Hub, Room, Scan, Benchmark, Profile  
+- `lib/services/` — scan pipeline, Benchmark sims/optimizers, share/compare  
+- `test/` — unit/widget coverage for layout, scan, Benchmark, Place ghosts  
 
 ## Status note
 

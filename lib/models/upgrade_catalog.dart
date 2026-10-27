@@ -1,6 +1,6 @@
 // Upgrade shop — mid-market PH (₱) retail ballparks (researched 2025).
 // Boosts are authored score tags (not measured CFD / lux / ergonomics lab points).
-import 'rig_catalog.dart';
+import 'room_catalog.dart';
 
 class UpgradeSpec {
   final String name;
@@ -43,10 +43,10 @@ class UpgradeSpec {
 /// Shared Hub badge strings (keep UI + QA tests in sync).
 class HubScoreLabels {
   static const roughEst = 'ROUGH EST.';
-  static const benchOk = 'BENCH OK';
-  static const roughSubtitle = 'Run Bench to lock scores after layout changes.';
+  static const benchmarkOk = 'BENCHMARK OK';
+  static const roughSubtitle = 'Run Benchmark to lock scores after layout changes.';
   static const honestyNote =
-      'ROUGH EST. = live layout heuristics (geometry); BENCH OK = Bench Apply locked those sims. Overall matches Auto-Rig composite.';
+      'ROUGH EST. = live layout heuristics (geometry); BENCHMARK OK = Benchmark Apply locked those sims. Overall matches Auto-Rig composite.';
 }
 
 class UpgradeCatalog {
@@ -64,7 +64,7 @@ class UpgradeCatalog {
       iconName: 'fan',
       furnitureId: 'upg_fan',
       type: 'airflow',
-      desc: 'Places a stand fan on your Rig — oscillates into open floor',
+      desc: 'Places a stand fan on your Room — oscillates into open floor',
       airflowBoost: 14,
       lightingBoost: 0,
       ergonomicsBoost: 0,
@@ -86,7 +86,7 @@ class UpgradeCatalog {
       iconName: 'floorLamp',
       furnitureId: 'upg_floor_lamp',
       type: 'lighting',
-      desc: 'Soft ambient lamp on the Rig floor plan',
+      desc: 'Soft ambient lamp on the Room floor plan',
       airflowBoost: 0,
       lightingBoost: 11,
       ergonomicsBoost: 2,
@@ -115,5 +115,5 @@ class UpgradeCatalog {
       specs.map((s) => s.furnitureId).toSet();
 
   static bool isKnownFurnitureId(String id) =>
-      furnitureIds.contains(id) || RigCatalog.items.any((e) => e.baseId == id);
+      furnitureIds.contains(id) || RoomCatalog.items.any((e) => e.baseId == id);
 }

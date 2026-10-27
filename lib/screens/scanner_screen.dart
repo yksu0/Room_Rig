@@ -55,7 +55,7 @@ class _ScannerScreenState extends State<ScannerScreen>
   /// Stage-2 detect: room size already locked — lower bar than old all-in-one scan.
   static const double _requiredCoverageToFinish = 0.40;
   static const int _requiredStableQualityFrames = 5;
-  static const int _scanTabIndex = 1;
+  static const int _scanTabIndex = scanTabIndex;
 
   late AnimationController _pulseController;
   AppState? _appState;
@@ -158,7 +158,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         if (!mounted) return;
         unawaited(_refreshDetectorLabel());
         _appendLog(
-          '> Android Scan: measure (ARCore) → confirm size → detect items → Rig.',
+          '> Android Scan: measure (ARCore) → confirm size → detect items → Room.',
           key: 'android-live-camera',
         );
       });
@@ -523,7 +523,7 @@ class _ScannerScreenState extends State<ScannerScreen>
       _logs.add(
         const ScanLogEntry(
           message:
-              '> Stage 2 detect: live camera + YOLO after size, then Rig.',
+              '> Stage 2 detect: live camera + YOLO after size, then Room.',
           severity: ScanLogSeverity.info,
         ),
       );
@@ -533,7 +533,7 @@ class _ScannerScreenState extends State<ScannerScreen>
 
     // Manual size from coach → confirm sheet immediately.
     if (_setup.phase == ScanSessionPhase.confirmSize) {
-      await _promptConfirmAndOpenRig();
+      await _promptConfirmAndOpenRoom();
       return;
     }
 
@@ -558,7 +558,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             ? 'ARCore not ready — preset room size'
             : 'ARCore off — preset room size (or enter size manually)',
       );
-      await _promptConfirmAndOpenRig();
+      await _promptConfirmAndOpenRoom();
     }
   }
 
@@ -607,7 +607,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     setState(() {});
   }
 
-  Future<void> _promptConfirmAndOpenRig() async {
+  Future<void> _promptConfirmAndOpenRoom() async {
     if (!mounted) return;
     final state = context.read<AppState>();
     final fallback = RoomDimensions(
@@ -713,8 +713,8 @@ class _ScannerScreenState extends State<ScannerScreen>
     );
   }
 
-  /// Skip stage 2 — commit sized empty room straight to Rig.
-  Future<void> _commitSizedRoomToRig() async {
+  /// Skip stage 2 — commit sized empty room straight to Room.
+  Future<void> _commitSizedRoomToRoom() async {
     if (!mounted) return;
     final state = context.read<AppState>();
     if (!state.scanSessionMatchesActiveRoom ||
@@ -736,7 +736,7 @@ class _ScannerScreenState extends State<ScannerScreen>
     await _stopInputProvider();
     final tracking = _scanPipeline?.trackingProvider;
     if (tracking is CompositeTrackingProvider) {
-      await tracking.releaseNativeSession(reason: 'sized_to_rig');
+      await tracking.releaseNativeSession(reason: 'sized_to_room');
     }
     await _scanPipeline?.dispose();
     _scanPipeline = null;
@@ -759,17 +759,17 @@ class _ScannerScreenState extends State<ScannerScreen>
     _appendLog(
       '> Room sized ${seed.dimensions.lengthMeters.toStringAsFixed(1)}×'
       '${seed.dimensions.widthMeters.toStringAsFixed(1)} m '
-      '(${_setup.roomSizeSource}) — skipped detect, opening Rig.',
-      key: 'size-to-rig',
+      '(${_setup.roomSizeSource}) — skipped detect, opening Room.',
+      key: 'size-to-room',
     );
     HapticFeedback.mediumImpact();
-    state.setTab(2);
+    state.setTab(roomTabIndex);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           'Room ${seed.dimensions.lengthMeters.toStringAsFixed(1)}×'
-          '${seed.dimensions.widthMeters.toStringAsFixed(1)} m — empty Rig (detect skipped)',
+          '${seed.dimensions.widthMeters.toStringAsFixed(1)} m — empty Room (detect skipped)',
         ),
         backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
         behavior: SnackBarBehavior.floating,
@@ -906,9 +906,9 @@ class _ScannerScreenState extends State<ScannerScreen>
     if (_arCoreOwnsCamera) {
       await setArMeasurePreviewVisible(false);
     }
-    if (mounted) {
-      context.read<AppState>().setArMeasurePassthrough(false);
-    }
+    // Use the cached state: this also runs from dispose(), where Provider
+    // lookups on a deactivated element are unsafe.
+    _appState?.setArMeasurePassthrough(false);
     await _inputProvider?.stop();
     await _inputProvider?.dispose();
     _inputProvider = null;
@@ -973,16 +973,16 @@ class _ScannerScreenState extends State<ScannerScreen>
     final conf = state.lastScanConfidence;
     final confPct = conf == null ? '--' : '${(conf.overallScore * 100).round()}%';
     _appendLog(
-      '> Detect pass committed ($confPct confidence). Opening Rig.',
+      '> Detect pass committed ($confPct confidence). Opening Room.',
       key: 'scan-finalized',
       minInterval: const Duration(seconds: 6),
     );
     HapticFeedback.mediumImpact();
-    state.setTab(2);
+    state.setTab(roomTabIndex);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Scan saved · $confPct confidence — edit placements on Rig'),
+        content: Text('Scan saved · $confPct confidence — edit placements on Room'),
         backgroundColor: AppColors.cyan.withValues(alpha: 0.9),
         behavior: SnackBarBehavior.floating,
       ),
@@ -1567,7 +1567,7 @@ class _ScannerScreenState extends State<ScannerScreen>
                 } else if (_setup.phase == ScanSessionPhase.markFootprint) {
                   _setup.advanceFromMark();
                   HapticFeedback.selectionClick();
-                  unawaited(_promptConfirmAndOpenRig());
+                  unawaited(_promptConfirmAndOpenRoom());
                 }
               },
               onDropMark: _setup.phase == ScanSessionPhase.markFootprint
@@ -1589,16 +1589,16 @@ class _ScannerScreenState extends State<ScannerScreen>
               },
               onSetupSkipToPreset: () {
                 _skipSetupToPresetConfirm(reason: 'user skipped sizing');
-                unawaited(_promptConfirmAndOpenRig());
+                unawaited(_promptConfirmAndOpenRoom());
               },
               onEnterManualSize: () => unawaited(_promptManualRoomSize()),
-              onConfirmContinue: () => unawaited(_promptConfirmAndOpenRig()),
+              onConfirmContinue: () => unawaited(_promptConfirmAndOpenRoom()),
               onFinishScan: _finishScan,
               onSkipDetection: _setup.phase == ScanSessionPhase.capture
-                  ? () => unawaited(_commitSizedRoomToRig())
+                  ? () => unawaited(_commitSizedRoomToRoom())
                   : null,
               onCancelScan: _cancelScan,
-              onOpenRig: () => context.read<AppState>().setTab(2),
+              onOpenRoom: () => context.read<AppState>().setTab(roomTabIndex),
               onExportScanBundle: () => _exportScanBundle(state),
             ),
           ],
@@ -1891,7 +1891,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         );
         _setup.skipToConfirmSize();
         unawaited(_refreshDetectorLabel());
-        unawaited(_promptConfirmAndOpenRig());
+        unawaited(_promptConfirmAndOpenRoom());
       }
     }
     lengthCtrl.dispose();

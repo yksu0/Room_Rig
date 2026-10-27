@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+﻿import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/app_state.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,7 +10,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('toggleUpgrade places and removes a fan on the Rig', () {
+  test('toggleUpgrade places and removes a fan on the Room', () {
     final state = AppState();
     final before = state.furniture.length;
     expect(state.upgrades.first['added'], isFalse);
@@ -41,13 +41,13 @@ void main() {
     expect(state.upgrades.first['added'], isFalse);
   });
 
-  test('leaving Rig cancels an unfinished Place ghost', () {
+  test('leaving Room cancels an unfinished Place ghost', () {
     final state = AppState();
-    state.setTab(2);
+    state.setTab(roomTabIndex);
     expect(state.toggleUpgrade(0, pending: true), isTrue);
     expect(state.hasPendingPlacement, isTrue);
 
-    state.setTab(0);
+    state.setTab(hubTabIndex);
     expect(state.hasPendingPlacement, isFalse);
     expect(state.furniture.any((f) => f.id == 'upg_fan'), isFalse);
     expect(state.upgrades.first['added'], isFalse);
@@ -55,11 +55,11 @@ void main() {
     expect(state.takeTabNotice(), isNull);
   });
 
-  test('jumping to Rig with a pending upgrade keeps the ghost', () {
+  test('jumping to Room with a pending upgrade keeps the ghost', () {
     final state = AppState();
-    state.setTab(4);
+    state.setTab(hubTabIndex);
     expect(state.toggleUpgrade(0, pending: true), isTrue);
-    state.setTab(2);
+    state.setTab(roomTabIndex);
     expect(state.hasPendingPlacement, isTrue);
     expect(state.furniture.any((f) => f.id == 'upg_fan'), isTrue);
   });

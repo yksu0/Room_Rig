@@ -18,8 +18,8 @@ import 'room_model_scene_stub.dart'
 
 /// Interactive three.js room with Kenney CC0 furniture GLBs + textured shell.
 ///
-/// Rig Model view can select / drag via JS raycasts → [onSelect] /
-/// [onDrag*] → AppState. Bench previews leave those callbacks null.
+/// Room Model view can select / drag via JS raycasts → [onSelect] /
+/// [onDrag*] → AppState. Benchmark previews leave those callbacks null.
 class RoomModelScene extends StatefulWidget {
   final RoomData room;
   final List<FurnitureItem> furniture;

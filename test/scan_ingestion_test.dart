@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/room_model.dart';
-import 'package:room_rig/models/rig_catalog.dart';
+import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/scan_layout_model.dart';
 import 'package:room_rig/services/scan_input_provider.dart';
 import 'package:room_rig/services/scan_layout_converter.dart';
@@ -67,7 +67,7 @@ void main() {
       expect(refined.dimensions.lengthMeters, greaterThan(3.6));
     });
 
-    test('COCO couch/tv labels map to Rig sofa/tv icons', () {
+    test('COCO couch/tv labels map to Room sofa/tv icons', () {
       final layout = ScanLayoutConverter.finalizeLayout(
         RoomLayoutModel(
           roomName: 'Map',
@@ -328,7 +328,7 @@ void main() {
       gridCols: 6,
       gridRows: 6,
     );
-    final kept = RigCatalog.retainV1(furniture);
+    final kept = RoomCatalog.retainV1(furniture);
     expect(kept.any((f) => f.iconName == 'purifier'), isTrue);
     expect(kept.any((f) => f.iconName == 'smartBlinds'), isTrue);
   });

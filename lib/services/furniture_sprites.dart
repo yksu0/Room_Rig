@@ -10,8 +10,8 @@ import '../widgets/room_icons.dart';
 /// Resolves optional catalog art under [assets/sprites/].
 ///
 /// Prefers SVG, then PNG, then the built-in inline SVG for [iconName].
-/// Decoded [ui.Image]s are also cached so Bench CustomPainters can draw the
-/// same sprites as Rig widget cells.
+/// Decoded [ui.Image]s are also cached so Benchmark CustomPainters can draw the
+/// same sprites as Room widget cells.
 class FurnitureSprites {
   FurnitureSprites._();
 
@@ -23,7 +23,7 @@ class FurnitureSprites {
   static final Map<String, ui.Image> _images = {};
   static final Map<String, bool> _imageIsSvg = {};
 
-  /// Bumps when a sprite finishes decoding — Bench painters can listen.
+  /// Bumps when a sprite finishes decoding — Benchmark painters can listen.
   static final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
   static String pngPath(String iconName) => '$assetFolder/$iconName.png';
@@ -121,7 +121,7 @@ class FurnitureSprites {
     }
   }
 
-  /// Draw a top-down sprite into [cell] (Rig/Bench shared). Returns false if
+  /// Draw a top-down sprite into [cell] (Room/Benchmark shared). Returns false if
   /// no decoded asset is available yet.
   static bool paintPlanSprite(
     Canvas canvas,

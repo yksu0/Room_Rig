@@ -178,7 +178,7 @@ class AirflowOptimizer {
         metrics.heatPocketRatio + 0.004 < beforeMetrics.heatPocketRatio ||
         metrics.hvacClearance > beforeMetrics.hvacClearance + 2.0;
     final circDrop = beforeMetrics.circulationScore - metrics.circulationScore;
-    // Never accept a layout that tanks circulation — Bench Improved must not
+    // Never accept a layout that tanks circulation — Benchmark Improved must not
     // score worse than My Room. Small human-metric wins may offset a tiny dip.
     if (circDrop > 0.5 && !(humanBetter && circDrop <= 1.25)) {
       return AirflowOptimizeResult(

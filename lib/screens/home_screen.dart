@@ -13,6 +13,7 @@ import '../models/scan_layout_model.dart';
 import '../models/upgrade_catalog.dart';
 import '../services/auth_service.dart';
 import '../services/layout_share_image.dart';
+import '../services/profile_service.dart';
 import '../services/room_compare.dart';
 import '../theme/app_layout.dart';
 import '../theme/app_theme.dart';
@@ -20,11 +21,12 @@ import '../widgets/app_snack_bar.dart';
 import '../widgets/chrome/adaptive_panel.dart';
 import '../widgets/confirm_dialogs.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/guest_signup_gate.dart';
 import '../widgets/onboarding_sheet.dart';
+import '../widgets/profile_avatar.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/score_ring.dart';
-import 'account_screen.dart';
-import 'auth_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -81,16 +83,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _openAccountSheet(BuildContext context) async {
-    final auth = context.read<AuthService>();
-    if (auth.isSignedIn) {
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute(builder: (_) => const AccountScreen()),
-      );
-      return;
-    }
-    await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const AuthScreen()),
+  Future<void> _openProfile(BuildContext context) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
     );
   }
 
@@ -114,7 +109,7 @@ class _HomeScreenState extends State<HomeScreen> {
     state.restoreOriginalLayout();
     showAppSnackBar(
       context,
-      message: 'Original layout restored · scores are ROUGH EST. until Bench',
+      message: 'Original layout restored · scores are ROUGH EST. until Benchmark',
     );
   }
 
@@ -188,13 +183,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               ..._hubStatusBlocks(context, state),
                               _buildScoreSection(context, state),
-                              if (state.roomIsReady &&
-                                  state.suggestedUpgrade() != null) ...[
-                                const SizedBox(height: AppSpace.md),
-                                _UpgradeSuggestionBanner(
-                                  suggestion: state.suggestedUpgrade()!,
-                                ),
-                              ],
                               if (!wideDesktop) ...[
                                 const SizedBox(height: AppSpace.section),
                                 _buildMetricsRow(
@@ -273,10 +261,6 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: AppSpace.xl),
               ..._hubStatusBlocks(context, state),
               _buildScoreSection(context, state),
-              if (state.roomIsReady && state.suggestedUpgrade() != null) ...[
-                const SizedBox(height: AppSpace.md),
-                _UpgradeSuggestionBanner(suggestion: state.suggestedUpgrade()!),
-              ],
               const SizedBox(height: AppSpace.section),
               _buildMyRooms(context, state),
               const SizedBox(height: AppSpace.section),
@@ -336,6 +320,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildHeader(BuildContext context, RoomData room, AppState state) {
     final auth = context.watch<AuthService>();
+    final profiles = context.watch<ProfileService>();
     return Row(
       children: [
         Column(
@@ -352,7 +337,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: AppSpace.xs),
             Text(
-              'Rig Hub',
+              'Room Hub',
               style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 28,
@@ -362,57 +347,35 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         const Spacer(),
-        Padding(
-          padding: const EdgeInsets.only(right: 10),
+        // Profile button (top-right). Guests see the generic glyph; signed-in
+        // users see their photo / initial.
+        Tooltip(
+          message: auth.isSignedIn ? 'Profile' : 'Sign in or sign up',
           child: Material(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(999),
+            color: Colors.transparent,
+            shape: const CircleBorder(),
             child: InkWell(
-              borderRadius: BorderRadius.circular(999),
-              onTap: () => _openAccountSheet(context),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      auth.isSignedIn ? Icons.person_rounded : Icons.person_outline_rounded,
-                      size: 16,
-                      color: AppColors.cyan,
-                    ),
-                    const SizedBox(width: 6),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 110),
-                      child: Text(
-                        auth.isSignedIn ? (auth.email ?? 'Account') : 'Guest',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
+              customBorder: const CircleBorder(),
+              onTap: () => _openProfile(context),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.cyan.withValues(alpha: auth.isSignedIn ? 0.9 : 0.4),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(color: AppColors.cyan.withValues(alpha: 0.25), blurRadius: 16),
                   ],
+                ),
+                child: ProfileAvatar(
+                  size: 44,
+                  imageUrl: auth.isSignedIn ? profiles.avatarUrl : null,
+                  label: auth.isSignedIn ? profiles.displayLabel : null,
                 ),
               ),
             ),
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: AppColors.accentGradient,
-            boxShadow: [
-              BoxShadow(color: AppColors.cyan.withValues(alpha: 0.3), blurRadius: 20),
-            ],
-          ),
-          child: SvgIcon(
-            presetSvgFor(room.iconName.isNotEmpty ? room.iconName : room.name),
-            size: 26,
-            color: Colors.white,
           ),
         ),
       ],
@@ -450,7 +413,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       const Text(
-                        'Overall Rig Score',
+                        'Overall Room Score',
                         style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 13,
@@ -461,7 +424,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
-                          onTap: () => state.setTab(3),
+                          onTap: () => state.setTab(benchmarkTabIndex),
                           borderRadius: BorderRadius.circular(AppRadius.sm),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -471,7 +434,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               border: Border.all(color: accent.withValues(alpha: 0.4)),
                             ),
                             child: Text(
-                              simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchOk,
+                              simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchmarkOk,
                               style: TextStyle(
                                 color: accent,
                                 fontSize: 10,
@@ -520,9 +483,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               state.roomIsReady
                   ? (simulated
-                      ? '${HubScoreLabels.roughSubtitle} Tap a ring to open that Bench domain. Tap ? for Create → Rig → Bench tips.'
-                      : 'Bench locked these scores. Tap a ring for that domain — edit in Rig, then Bench again after layout changes. Tap ? for a quick tour.')
-                  : 'Use + to create a room or Scan in Quick Actions. Then arrange in Rig and run Bench to lock scores. Tap ? for the tour.',
+                      ? '${HubScoreLabels.roughSubtitle} Tap a ring to open that Benchmark domain. Tap ? for Create → Room → Benchmark tips.'
+                      : 'Benchmark locked these scores. Tap a ring for that domain — edit in Room, then Benchmark again after layout changes. Tap ? for a quick tour.')
+                  : 'Use + to create a room or Scan in Quick Actions. Then arrange in Room and run Benchmark to lock scores. Tap ? for the tour.',
               style: const TextStyle(
                 color: AppColors.textMuted,
                 fontSize: 12,
@@ -631,7 +594,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return GestureDetector(
       onTap: () {
         state.setBenchmarkMode(mode);
-        state.setTab(3);
+        state.setTab(benchmarkTabIndex);
       },
       child: ScoreRing(score: score, size: size, color: color, label: label),
     );
@@ -672,14 +635,14 @@ class _HomeScreenState extends State<HomeScreen> {
             badgeLabel: '${state.furniture.length}',
             selected: true,
             onTap: () => _showRenameRoomSheet(context, state),
-            onDuplicate: () {
+            onDuplicate: () async {
+              if (!await ensureCanCreateRoom(context)) return;
+              if (!context.mounted) return;
               state.duplicateActiveRoom();
-              if (context.mounted) {
-                showAppSnackBar(
-                  context,
-                  message: 'Duplicated as ${state.currentRoomData.name}',
-                );
-              }
+              showAppSnackBar(
+                context,
+                message: 'Duplicated as ${state.currentRoomData.name}',
+              );
             },
             onDelete: null,
           ),
@@ -693,6 +656,8 @@ class _HomeScreenState extends State<HomeScreen> {
             selected: r.id == state.activeRoomId,
             onTap: () => _confirmLoadSavedRoom(context, state, r.id),
             onDuplicate: () async {
+              if (!await ensureCanCreateRoom(context)) return;
+              if (!context.mounted) return;
               if (r.id != state.activeRoomId) {
                 await _confirmLoadSavedRoom(context, state, r.id);
                 if (!context.mounted) return;
@@ -844,7 +809,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   style: TextStyle(color: AppColors.textPrimary),
                                 ),
                                 content: Text(
-                                  'Replace the current layout with “${rev.label}”? Scores become ROUGH EST. until you run Bench again.',
+                                  'Replace the current layout with “${rev.label}”? Scores become ROUGH EST. until you run Benchmark again.',
                                   style: const TextStyle(color: AppColors.textSecondary),
                                 ),
                                 actions: [
@@ -939,22 +904,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => _showCreateRoomSheet(context, state),
               ),
               _ActionButton(
-                svgString: RoomSvg.tune,
-                label: 'Customize',
+                svgString: RoomSvg.floorPlan,
+                label: 'Room',
                 color: AppColors.cyan,
-                onTap: () => context.read<AppState>().setTab(2),
+                onTap: () => context.read<AppState>().setTab(roomTabIndex),
               ),
               _ActionButton(
                 svgString: RoomSvg.speedometer,
-                label: 'Bench',
+                label: 'Benchmark',
                 color: AppColors.amber,
-                onTap: () => context.read<AppState>().setTab(3),
+                onTap: () => context.read<AppState>().setTab(benchmarkTabIndex),
               ),
               _ActionButton(
                 svgString: RoomSvg.scan,
                 label: 'Scan (opt.)',
                 color: AppColors.textMuted,
-                onTap: () => context.read<AppState>().setTab(1),
+                onTap: () => context.read<AppState>().setTab(scanTabIndex),
               ),
             ];
             if (narrow) {
@@ -1005,7 +970,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _SpecRow(
                 svgString: RoomSvg.home,
-                label: 'Rig Name',
+                label: 'Room Name',
                 value: state.currentRoomData.name,
                 onTap: () => _showRenameRoomSheet(context, state),
               ),
@@ -1040,11 +1005,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 _SpecRow(
                   svgString: RoomSvg.star,
                   label: 'Before/after',
-                  value: 'Open Bench',
+                  value: 'Open Benchmark',
                   valueColor: AppColors.cyan,
                   onTap: () {
                     state.setBenchmarkMode('airflow');
-                    state.setTab(3);
+                    state.setTab(benchmarkTabIndex);
                   },
                 ),
               ],
@@ -1097,7 +1062,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await Share.shareXFiles(
         [XFile(file.path, mimeType: 'application/json')],
         subject: '$raw layout.json',
-        text: 'Room Rig layout export (heuristic scores — see benchOk in JSON)',
+        text: 'Room Rig layout export (heuristic scores — see benchmarkOk in JSON)',
       );
     } catch (e) {
       if (!context.mounted) return;
@@ -1177,6 +1142,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _showCreateRoomSheet(BuildContext context, AppState state) async {
+    // Guests own exactly one room — room #2 is a hard sign-up gate.
+    if (!await ensureCanCreateRoom(context)) return;
+    if (!context.mounted) return;
     if (state.hasLayoutWork) {
       final ok = await confirmAction(
         context,
@@ -1344,7 +1312,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     await state.flushRoomsToCloud();
     if (!context.mounted) return;
-    state.setTab(2);
+    state.setTab(roomTabIndex);
     showAppSnackBar(
       context,
       message: 'Created ${state.currentRoomData.name}',
@@ -1360,13 +1328,13 @@ class _ScanConfidenceBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final pct = (metrics.overallScore * 100).round();
     final sizeOnly = metrics.detectionCount == 0 &&
-        metrics.notes.any((n) => n.contains('place furniture on Rig'));
+        metrics.notes.any((n) => n.contains('place furniture on Room'));
     final title = sizeOnly
-        ? 'Last measure · room sized · open Rig'
+        ? 'Last measure · room sized · open Room'
         : 'Last scan · $pct% confidence · ${metrics.objectCount} objects';
     final note = metrics.notes.isNotEmpty
         ? metrics.notes.first
-        : (sizeOnly ? 'Place furniture on Rig.' : 'Ready for Rig + Bench.');
+        : (sizeOnly ? 'Place furniture on Room.' : 'Ready for Room + Benchmark.');
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -1411,25 +1379,25 @@ class _JourneySteps extends StatelessWidget {
       children: [
         Expanded(
           child: _JourneyChip(
-            label: '1. Edit Rig',
+            label: '1. Edit Room',
             color: AppColors.cyan,
-            onTap: () => state.setTab(2),
+            onTap: () => state.setTab(roomTabIndex),
           ),
         ),
         const SizedBox(width: AppSpace.xs),
         Expanded(
           child: _JourneyChip(
-            label: '2. Bench',
+            label: '2. Benchmark',
             color: AppColors.amber,
-            onTap: () => state.setTab(3),
+            onTap: () => state.setTab(benchmarkTabIndex),
           ),
         ),
         const SizedBox(width: AppSpace.xs),
         Expanded(
           child: _JourneyChip(
-            label: '3. Upgrades',
+            label: '3. Apply',
             color: AppColors.green,
-            onTap: () => state.setTab(4),
+            onTap: () => state.setTab(benchmarkTabIndex),
           ),
         ),
       ],
@@ -1548,62 +1516,6 @@ class _SpecRow extends StatelessWidget {
     );
     if (onTap == null) return row;
     return GestureDetector(onTap: onTap, behavior: HitTestBehavior.opaque, child: row);
-  }
-}
-
-class _UpgradeSuggestionBanner extends StatelessWidget {
-  final ({String category, String name, int index}) suggestion;
-
-  const _UpgradeSuggestionBanner({required this.suggestion});
-
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<AppState>();
-    final label = switch (suggestion.category) {
-      'airflow' => 'Airflow',
-      'lighting' => 'Lighting',
-      'ergonomics' => 'Ergonomics',
-      _ => suggestion.category,
-    };
-    return GlassCard(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '$label looks weak',
-                  style: const TextStyle(
-                    color: AppColors.amber,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Try ${suggestion.name} on Upgrades to place it on your Rig.',
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () {
-              state.setBenchmarkMode(suggestion.category);
-              state.setTab(4);
-            },
-            child: const Text('UPGRADES', style: TextStyle(fontWeight: FontWeight.w800)),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -1831,7 +1743,7 @@ class _CompareRoomsSheetBodyState extends State<_CompareRoomsSheetBody> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Rough side-by-side from furniture tags — not Bench sims. Use Bench Apply for locked scores.',
+              'Rough side-by-side from furniture tags — not Benchmark sims. Use Benchmark Apply for locked scores.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.35),
             ),
             const SizedBox(height: 14),

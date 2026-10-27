@@ -2,7 +2,7 @@
 // Demo layouts for the lighting benchmark prototype.
 import 'room_model.dart';
 
-/// Daylight + task-light arrangement stories for Bench / Auto-Rig.
+/// Daylight + task-light arrangement stories for Benchmark / Auto-Rig.
 class LightingPrototypeLayouts {
   LightingPrototypeLayouts._();
 

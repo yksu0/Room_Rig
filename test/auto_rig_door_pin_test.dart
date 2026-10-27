@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/surface_mount.dart';
 import 'package:room_rig/services/airflow_optimizer.dart';
-import 'package:room_rig/services/bench_layouts.dart';
+import 'package:room_rig/services/benchmark_layouts.dart';
 import 'package:room_rig/services/layout_optimizer_common.dart';
 import 'package:room_rig/services/multi_objective_optimizer.dart';
 
@@ -30,7 +30,7 @@ void main() {
     expect(after.yawDegrees, before.yawDegrees);
   });
 
-  test('Auto-Rig / Bench Improved keep door pose identical', () {
+  test('Auto-Rig / Benchmark Improved keep door pose identical', () {
     final door = doorOf(room.furniture)!;
     expect(SurfaceMounts.isStructuralMount(door), isTrue);
 
@@ -58,8 +58,8 @@ void main() {
     expect(airDoor.gridX, door.gridX);
     expect(airDoor.gridY, door.gridY);
 
-    final layouts = BenchLayoutBuilder.build(
-      mode: BenchMode.airflow,
+    final layouts = BenchmarkLayoutBuilder.build(
+      mode: BenchmarkMode.airflow,
       roomFurniture: room.furniture,
       gridCols: room.gridCols,
       gridRows: room.gridRows,

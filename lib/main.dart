@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'models/app_state.dart';
-import 'models/rig_catalog.dart';
+import 'models/room_catalog.dart';
 import 'services/auth_service.dart';
 import 'services/autorug_ranker.dart';
+import 'services/profile_service.dart';
 import 'services/furniture_sprites.dart';
 import 'services/supabase_bootstrap.dart';
 import 'theme/app_layout.dart';
@@ -16,10 +17,9 @@ import 'widgets/app_snack_bar.dart';
 import 'widgets/room_icons.dart';
 import 'screens/home_screen.dart';
 import 'screens/scanner_screen_selector.dart';
-import 'screens/rig_customizer_screen.dart';
+import 'screens/room_customizer_screen.dart';
 import 'screens/benchmark_screen.dart';
 import 'screens/set_password_screen.dart';
-import 'screens/upgrades_screen.dart';
 import 'widgets/room_model_scene_pointer_guard.dart';
 
 void main() async {
@@ -39,7 +39,7 @@ void main() async {
   ));
   await SupabaseBootstrap.ensureInitialized();
   await FurnitureSprites.warmCache({
-    ...RigCatalog.items.map((e) => e.iconName),
+    ...RoomCatalog.items.map((e) => e.iconName),
     'fan',
     'purifier',
     'floorLamp',
@@ -62,6 +62,7 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthService()),
+        ChangeNotifierProvider(create: (_) => ProfileService()),
         ChangeNotifierProvider(create: (_) => AppState()),
       ],
       child: const RoomRigApp(),
@@ -92,12 +93,13 @@ class _MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
+  /// Order must match [hubTabIndex] / [roomTabIndex] / [scanTabIndex] /
+  /// [benchmarkTabIndex] in `models/app_tabs.dart`.
   static const _screens = [
     HomeScreen(),
+    RoomCustomizerScreen(),
     ScannerScreen(),
-    RigCustomizerScreen(),
     BenchmarkScreen(),
-    UpgradesScreen(),
   ];
 
   int? _handledTab;
@@ -162,13 +164,15 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
     showAppSnackBar(context, message: notice);
   }
 
-  void _hookAuth(AuthService auth, AppState app) {
+  void _hookAuth(AuthService auth, AppState app, ProfileService profiles) {
     if (_authHooked) return;
     _authHooked = true;
     _authWasSignedIn = auth.isSignedIn;
     if (_authWasSignedIn) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(app.handleSignedIn());
+        // load() also cancels a pending soft-delete (sign-in inside 7 days).
+        unawaited(profiles.load());
       });
     }
     auth.addListener(() {
@@ -179,12 +183,14 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
         _signOutDebounce = null;
         _authWasSignedIn = true;
         unawaited(app.handleSignedIn());
+        unawaited(profiles.load());
       } else if (!now && _authWasSignedIn) {
         final intentional = auth.consumeIntentionalSignOut();
         if (intentional) {
           _signOutDebounce?.cancel();
           _signOutDebounce = null;
           _authWasSignedIn = false;
+          profiles.clear();
           unawaited(app.handleSignedOut());
           return;
         }
@@ -195,6 +201,7 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
           if (!mounted) return;
           if (auth.isSignedIn) return;
           _authWasSignedIn = false;
+          profiles.clear();
           unawaited(app.handleSignedOut());
         });
       }
@@ -227,29 +234,29 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
       return;
     }
     _importDialogOpen = true;
+    // Only reached when the automatic claim upload failed (offline etc.).
     final n = state.guestRoomsPendingImportCount;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text(
-          'Upload rooms from this device?',
+          'Retry uploading this device\'s rooms?',
           style: TextStyle(color: AppColors.textPrimary),
         ),
         content: Text(
-          'Upload $n room(s) made on this device while signed out? '
-          'They may belong to someone else who used this phone. '
-          'Choose Not now to discard them from this device.',
+          '$n room(s) made on this device were added to your account but '
+          'could not be uploaded yet. Retry now, or discard them from this device.',
           style: const TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Not now'),
+            child: const Text('Discard'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Upload'),
+            child: const Text('Retry'),
           ),
         ],
       ),
@@ -267,7 +274,7 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthService>();
     final state = context.watch<AppState>();
-    _hookAuth(auth, state);
+    _hookAuth(auth, state, context.read<ProfileService>());
     if (auth.passwordRecoveryPending) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_maybeOpenPasswordRecovery(auth));
@@ -304,7 +311,7 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
         backgroundColor: AppColors.bg,
         body: Row(
           children: [
-            _RigSideNav(currentIndex: state.currentTab),
+            _RoomSideNav(currentIndex: state.currentTab),
             Expanded(child: stack),
           ],
         ),
@@ -314,22 +321,25 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: stack,
-      bottomNavigationBar: _RigNavBar(currentIndex: state.currentTab),
+      bottomNavigationBar: _RoomNavBar(currentIndex: state.currentTab),
     );
   }
 }
 
-class _RigSideNav extends StatelessWidget {
-  final int currentIndex;
-  const _RigSideNav({required this.currentIndex});
+/// Main nav, in [IndexedStack] order (see `models/app_tabs.dart`).
+/// Scan sits in the centre and is drawn emphasised on the mobile bar.
+const kAppNavItems = [
+  (RoomSvg.home, 'Hub'),
+  (RoomSvg.floorPlan, 'Room'),
+  (RoomSvg.scan, 'Scan'),
+  (RoomSvg.speedometer, 'Benchmark'),
+];
 
-  static const _items = [
-    (RoomSvg.home, 'Hub'),
-    (RoomSvg.scan, 'Scan*'),
-    (RoomSvg.tune, 'Rig'),
-    (RoomSvg.speedometer, 'Bench'),
-    (RoomSvg.upgrade, 'Upgrades'),
-  ];
+class _RoomSideNav extends StatelessWidget {
+  final int currentIndex;
+  const _RoomSideNav({required this.currentIndex});
+
+  static const _items = kAppNavItems;
 
   @override
   Widget build(BuildContext context) {
@@ -426,19 +436,13 @@ class _RigSideNav extends StatelessWidget {
   }
 }
 
-class _RigNavBar extends StatelessWidget {
+class _RoomNavBar extends StatelessWidget {
   final int currentIndex;
-  const _RigNavBar({required this.currentIndex});
+  const _RoomNavBar({required this.currentIndex});
 
   @override
   Widget build(BuildContext context) {
-    final items = [
-      (RoomSvg.home, 'Hub'),
-      (RoomSvg.scan, 'Scan*'),
-      (RoomSvg.tune, 'Rig'),
-      (RoomSvg.speedometer, 'Bench'),
-      (RoomSvg.upgrade, 'Upgrades'),
-    ];
+    const items = kAppNavItems;
 
     final bottom = MediaQuery.paddingOf(context).bottom;
     return Material(
@@ -457,6 +461,7 @@ class _RigNavBar extends StatelessWidget {
             final i = entry.key;
             final item = entry.value;
             final isSelected = i == currentIndex;
+            final emphasized = i == scanTabIndex;
             return Expanded(
               child: Material(
                 color: Colors.transparent,
@@ -465,7 +470,9 @@ class _RigNavBar extends StatelessWidget {
                     clearAppSnackBars(context);
                     context.read<AppState>().setTab(i);
                   },
-                  child: AnimatedContainer(
+                  child: emphasized
+                      ? _ScanNavTile(label: item.$2, selected: isSelected)
+                      : AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
                     decoration: BoxDecoration(
@@ -513,6 +520,53 @@ class _RigNavBar extends StatelessWidget {
             );
           }).toList(),
         ),
+      ),
+    );
+  }
+}
+
+/// Centre Scan tab: a raised filled disc so it reads as the primary action.
+class _ScanNavTile extends StatelessWidget {
+  final String label;
+  final bool selected;
+  const _ScanNavTile({required this.label, required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    final fill = selected ? AppColors.cyan : AppColors.cyan.withValues(alpha: 0.18);
+    final iconColor = selected ? AppColors.bg : AppColors.cyan;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpace.xs),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: fill,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: AppColors.cyan.withValues(alpha: selected ? 1 : 0.6),
+                width: 1.5,
+              ),
+            ),
+            child: Center(
+              child: SvgIcon(RoomSvg.scan, size: 22, color: iconColor),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: AppColors.cyan,
+              fontSize: 11,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
       ),
     );
   }

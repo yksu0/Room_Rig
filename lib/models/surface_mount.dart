@@ -4,7 +4,7 @@
 //
 // The mount heights here deliberately mirror the volumes the simulators build
 // (see AirflowSimulator._buildBoxes and LightingSimulator._buildLights) so the
-// Rig can never draw a wall AC in a spot the physics treats as floor.
+// Room can never draw a wall AC in a spot the physics treats as floor.
 import 'dart:math' as math;
 import '../services/gltf_catalog.dart';
 import 'room_model.dart';
@@ -15,7 +15,7 @@ enum MountSurface { floor, wall, ceiling, desk }
 /// North is z = 0, the top edge of the 2D floor plan.
 enum RoomWall { north, east, south, west }
 
-/// Drives which symbol the Rig draws for the item.
+/// Drives which symbol the Room draws for the item.
 enum MountStyle { floorItem, window, door, vent, intake, exhaust, ceilingFixture, deskItem }
 
 /// A wall-mounted item's footprint, expressed on the floor in grid units.

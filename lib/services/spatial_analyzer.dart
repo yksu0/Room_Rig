@@ -345,7 +345,7 @@ class SpatialOptimizer {
       gridRows: gridRows,
     );
     // Relink / conflict packing can nudge a tidy room slightly — never ship a
-    // Bench Improved that scores worse than My Room.
+    // Benchmark Improved that scores worse than My Room.
     if (metrics.overallScore + 0.5 < before.overallScore) {
       return SpatialOptimizeResult(
         furniture: furniture.map((f) => f.copyWith()).toList(),

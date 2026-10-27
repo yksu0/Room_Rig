@@ -1,5 +1,5 @@
 // lib/services/airflow_simulator.dart
-// Coarse voxel airflow + interactive particle advection for Bench prototype.
+// Coarse voxel airflow + interactive particle advection for Benchmark prototype.
 import 'dart:math';
 import '../models/room_model.dart';
 import '../models/sim_room_bounds.dart';
@@ -161,7 +161,7 @@ class AirflowMetrics {
   });
 }
 
-/// Mass-balance readout for Bench UI — supply vs extract and passive window leak.
+/// Mass-balance readout for Benchmark UI — supply vs extract and passive window leak.
 class AirflowPressureSummary {
   final double supplyStrength;
   final double extractStrength;

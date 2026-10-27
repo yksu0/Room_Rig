@@ -1,4 +1,4 @@
-// Fact-checked comfort / behavioral heuristics for Auto-Rig + Bench.
+// Fact-checked comfort / behavioral heuristics for Auto-Rig + Benchmark.
 //
 // Source tiers (honest labeling in UI reasons):
 // - agency: OSHA eTools / similar public guidance
@@ -14,7 +14,7 @@ import '../models/room_scale.dart';
 import '../models/surface_mount.dart';
 import 'layout_collision.dart';
 
-/// Shared scoring + placement cues that Bench and Auto-Rig both use.
+/// Shared scoring + placement cues that Benchmark and Auto-Rig both use.
 class ComfortHeuristics {
   ComfortHeuristics._();
 

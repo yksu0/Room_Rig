@@ -161,7 +161,7 @@ class RoomPlanGeometry {
         RoomWall.north || RoomWall.south => math.max((span.x1 - span.x0) * cw, 34),
         RoomWall.west || RoomWall.east => math.max((span.z1 - span.z0) * ch, 34),
       };
-      // Match Rig wall-fitting inward depth (doors need leaf swing room).
+      // Match Room wall-fitting inward depth (doors need leaf swing room).
       final band = mount.style == MountStyle.door
           ? math.max(46.0, along * 0.94 + 10)
           : 22.0;

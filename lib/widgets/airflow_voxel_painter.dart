@@ -5,7 +5,7 @@ import '../models/room_model.dart';
 import '../services/airflow_simulator.dart';
 import '../services/furniture_sprites.dart';
 import '../theme/app_theme.dart';
-import 'bench_room_views.dart';
+import 'benchmark_room_views.dart';
 
 enum AirflowVizMode { topDown2D, orbit3D }
 
@@ -26,13 +26,13 @@ class AirflowVoxelPainter extends CustomPainter {
   final int gridCols;
   final int gridRows;
 
-  /// When false, skip Bench room chrome/furniture — field + particles only (Rig LIVE).
+  /// When false, skip Benchmark room chrome/furniture — field + particles only (Room LIVE).
   final bool paintScene;
 
-  /// Optional 2D rect (Rig room plan). When set, maps sim world into this footprint.
+  /// Optional 2D rect (Room room plan). When set, maps sim world into this footprint.
   final Rect? overlayRect;
 
-  /// Camera / map room size for overlay (Rig grid). Defaults to sim field size.
+  /// Camera / map room size for overlay (Room grid). Defaults to sim field size.
   final double? overlayRoomWidth;
   final double? overlayRoomDepth;
 
@@ -84,7 +84,7 @@ class AirflowVoxelPainter extends CustomPainter {
   void _paint2D(Canvas canvas, Size size) {
     final field = snapshot.field;
     final rect = overlayRect ??
-        BenchRoom2DGeometry.fieldRectFor(
+        BenchmarkRoom2DGeometry.fieldRectFor(
           size: size,
           gridCols: gridCols,
           gridRows: gridRows,
@@ -142,7 +142,7 @@ class AirflowVoxelPainter extends CustomPainter {
     }
 
     if (paintScene) {
-      BenchFurnitureRenderer.paint2D(
+      BenchmarkFurnitureRenderer.paint2D(
         canvas,
         roomRect: rect,
         gridCols: gridCols,
@@ -306,7 +306,7 @@ class AirflowVoxelPainter extends CustomPainter {
     );
 
     if (paintScene) {
-      BenchFurnitureRenderer.paint3DScene(
+      BenchmarkFurnitureRenderer.paint3DScene(
         canvas,
         size,
         roomWidth: field.roomWidth,
@@ -423,7 +423,7 @@ class AirflowVoxelPainter extends CustomPainter {
       canvas.drawCircle(p.$1, radius, Paint()..color = color.withValues(alpha: alpha));
     }
 
-    // Fan aim indicator in 3D (wall/floor fittings are drawn by BenchFurnitureRenderer).
+    // Fan aim indicator in 3D (wall/floor fittings are drawn by BenchmarkFurnitureRenderer).
     for (final box in snapshot.boxes.where((b) => b.kind == 'fan')) {
       final aim = AirflowSimulator.fanAimDirection(box, time);
       final c = box.center;

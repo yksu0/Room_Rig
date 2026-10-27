@@ -10,7 +10,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('upgrade remove dirties scores instead of marking BENCH OK', () {
+  test('upgrade remove dirties scores instead of marking BENCHMARK OK', () {
     final state = AppState();
     state.runOptimization(goal: 'airflow');
     expect(state.scoresAreSimulated, isFalse);
@@ -28,7 +28,7 @@ void main() {
     expect(state.isOptimized, isFalse);
   });
 
-  test('rig move clears Applied while keeping restore snapshot', () {
+  test('room move clears Applied while keeping restore snapshot', () {
     final state = AppState();
     state.runOptimization(goal: 'airflow');
     expect(state.isOptimized, isTrue);
@@ -53,7 +53,7 @@ void main() {
     expect(state.hasCompareSnapshot, isTrue);
   });
 
-  test('switching rooms restores BENCH OK when stash was clean', () {
+  test('switching rooms restores BENCHMARK OK when stash was clean', () {
     final state = AppState();
     state.createManualRoom(name: 'A', lengthMeters: 3.6, widthMeters: 3.6);
     state.runOptimization(goal: 'airflow');
@@ -108,7 +108,7 @@ void main() {
       persist: false,
     );
 
-    state.setTab(0);
+    state.setTab(hubTabIndex);
     final stashed = state.savedRooms.firstWhere((r) => r.id == owner);
     expect(stashed.layout.scanSource, isNot('scan-seed'));
   });
