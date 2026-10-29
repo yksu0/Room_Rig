@@ -1,35 +1,20 @@
-#!/usr/bin/env bash
-# Inject Supabase public keys into the marketing site and stage deploy output.
+﻿#!/usr/bin/env bash
+# Build the Next.js storefront under site/.
+# Prefer Vercel Git integration with Root Directory = site.
+# Env (public): NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, NEXT_PUBLIC_GITHUB_REPO
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
+cd "$ROOT/site"
 
-if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_ANON_KEY:-}" ]]; then
-  echo "Set SUPABASE_URL and SUPABASE_ANON_KEY (Vercel/GitHub secrets or export)." >&2
+if [[ -z "${NEXT_PUBLIC_SUPABASE_URL:-${SUPABASE_URL:-}}" || -z "${NEXT_PUBLIC_SUPABASE_ANON_KEY:-${SUPABASE_ANON_KEY:-}}" ]]; then
+  echo "Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY (or SUPABASE_URL / SUPABASE_ANON_KEY)." >&2
   exit 1
 fi
 
-OUT="$ROOT/build/site"
-rm -rf "$OUT"
-mkdir -p "$OUT"
-cp -R "$ROOT/site/." "$OUT/"
+export NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL:-$SUPABASE_URL}"
+export NEXT_PUBLIC_SUPABASE_ANON_KEY="${NEXT_PUBLIC_SUPABASE_ANON_KEY:-$SUPABASE_ANON_KEY}"
+export NEXT_PUBLIC_GITHUB_REPO="${NEXT_PUBLIC_GITHUB_REPO:-yksu0/Room_Rig}"
 
-# Escape for JS string literals.
-escape_js() {
-  printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])'
-}
-
-URL_ESC="$(escape_js "$SUPABASE_URL")"
-KEY_ESC="$(escape_js "$SUPABASE_ANON_KEY")"
-
-cat > "$OUT/config.js" <<EOF
-window.ROOM_RIG_SITE = {
-  supabaseUrl: "${URL_ESC}",
-  supabaseAnonKey: "${KEY_ESC}",
-  githubReleasesUrl: "https://github.com/yksu0/Room_Rig/releases",
-  appDeepLink: "com.roomrig.room_rig://login-callback/",
-};
-EOF
-
-cp "$ROOT/site/vercel.json" "$OUT/vercel.json"
-echo "Output: $OUT"
+npm ci
+npm run build
+echo "Next build OK under $ROOT/site (.next). Deploy via Vercel (Root Directory=site) or vercel deploy --prebuilt."

@@ -1,9 +1,8 @@
-# Build marketing storefront and deploy static output to Vercel.
-# Product experience is the Android APK; Vercel hosts description + auth + download.
+﻿# Build Next.js storefront under site/ and deploy with Vercel CLI (--prebuilt).
+# Preferred long-term: Vercel Git integration with Root Directory = site, then disable this workflow.
 # Secrets (repo Settings → Secrets → Actions):
-#   SUPABASE_URL, SUPABASE_ANON_KEY
+#   SUPABASE_URL, SUPABASE_ANON_KEY  (mapped to NEXT_PUBLIC_*)
 #   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
-# ORG/PROJECT IDs must match local .vercel/project.json (team_… / prj_…).
 name: Deploy web
 
 on:
@@ -14,16 +13,29 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build storefront
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install & build
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: bash scripts/build_site.sh
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_GITHUB_REPO: yksu0/Room_Rig
+        run: |
+          npm ci
+          npm run build
 
       - name: Deploy to Vercel
+        working-directory: .
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -33,4 +45,8 @@ jobs:
           npm install -g vercel@latest
           mkdir -p .vercel
           printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" > .vercel/project.json
-          vercel deploy build/site --prod --yes --token="$VERCEL_TOKEN" --archive=tgz
+          # Pull env into site/, then deploy the Next project from site/
+          cd site
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"

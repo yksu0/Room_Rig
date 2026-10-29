@@ -1,10 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": null,
-  "cleanUrls": true,
-  "rewrites": [
-    { "source": "/admin", "destination": "/admin.html" },
-    { "source": "/auth", "destination": "/auth.html" },
-    { "source": "/download", "destination": "/download.html" }
-  ]
+  "framework": "nextjs"
 }
