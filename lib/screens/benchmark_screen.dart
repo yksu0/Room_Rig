@@ -35,7 +35,6 @@ class BenchmarkScreen extends StatefulWidget {
 
 class _BenchmarkScreenState extends State<BenchmarkScreen> {
   bool _showResults = false;
-  static var _scoreTipShownThisSession = false;
 
   // Locks page scroll synchronously on pointer down (setState alone is too late on Android).
   final _scrollLocked = ValueNotifier(false);
@@ -354,20 +353,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   Widget _buildMobileHeader(AppState state) {
     // Domain View/Inspect + compact score live on BenchmarkPanelScaffold chrome.
     // Keep header thin: title, room chip, mode picker only.
-    if (!_scoreTipShownThisSession) {
-      _scoreTipShownThisSession = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'These scores are layout estimates. Higher is better. Tap ? on the score for what each means.',
-            ),
-            duration: Duration(seconds: 5),
-          ),
-        );
-      });
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
