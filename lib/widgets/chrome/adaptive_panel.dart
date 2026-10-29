@@ -252,9 +252,10 @@ class AdaptivePanelTriggers extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         for (var i = 0; i < visible.length; i++) ...[
-          if (i > 0) const SizedBox(width: 6),
+          if (i > 0) const SizedBox(width: AppSpace.xxs + 2),
           _PanelTriggerChip(
             label: regionLabels?[visible[i]] ?? visible[i].label,
             icon: visible[i].icon,
@@ -375,43 +376,46 @@ class ChromeViewModeChips extends StatelessWidget {
         children: [
           for (var i = 0; i < modes.length; i++) ...[
             if (i > 0) const SizedBox(width: 2),
-            Flexible(
-              fit: compact ? FlexFit.loose : FlexFit.tight,
-              child: Material(
-                key: ValueKey('chrome_view_${modes[i].name}'),
-                color: selected == modes[i]
-                    ? AppColors.cyan.withValues(alpha: 0.28)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                child: InkWell(
-                  onTap: () => onChanged(modes[i]),
+            Builder(
+              builder: (context) {
+                final chip = Material(
+                  key: ValueKey('chrome_view_${modes[i].name}'),
+                  color: selected == modes[i]
+                      ? AppColors.cyan.withValues(alpha: 0.28)
+                      : Colors.transparent,
                   borderRadius: BorderRadius.circular(AppRadius.sm),
-                  child: Semantics(
-                    button: true,
-                    selected: selected == modes[i],
-                    label: '${modes[i].label} view',
-                    child: Container(
-                      alignment: Alignment.center,
-                      constraints: BoxConstraints(minHeight: compact ? 40 : 44),
-                      padding: EdgeInsets.symmetric(
-                        horizontal: compact ? 10 : 8,
-                        vertical: compact ? 8 : 12,
-                      ),
-                      child: Text(
-                        modes[i].label,
-                        style: TextStyle(
-                          color: selected == modes[i]
-                              ? AppColors.cyan
-                              : AppColors.textMuted,
-                          fontSize: compact ? 12 : 13,
-                          fontWeight:
-                              selected == modes[i] ? FontWeight.w800 : FontWeight.w600,
+                  child: InkWell(
+                    onTap: () => onChanged(modes[i]),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    child: Semantics(
+                      button: true,
+                      selected: selected == modes[i],
+                      label: '${modes[i].label} view',
+                      child: Container(
+                        alignment: Alignment.center,
+                        constraints: BoxConstraints(minHeight: compact ? 40 : 44),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compact ? 10 : 8,
+                          vertical: compact ? 8 : 12,
+                        ),
+                        child: Text(
+                          modes[i].label,
+                          style: TextStyle(
+                            color: selected == modes[i]
+                                ? AppColors.cyan
+                                : AppColors.textMuted,
+                            fontSize: compact ? 12 : 13,
+                            fontWeight:
+                                selected == modes[i] ? FontWeight.w800 : FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
+                );
+                if (compact) return chip;
+                return Expanded(child: chip);
+              },
             ),
           ],
         ],

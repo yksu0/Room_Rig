@@ -63,7 +63,7 @@ void main() {
   }
 
   testWidgets(
-      'Empty lot after Create shows Add/Auto-Room CTA until first movable item',
+      'Empty lot after Create shows Add Item CTA until first movable item',
       (tester) async {
     ignoreLayoutNoise();
     final state = await pumpEmptyRoom(tester);
@@ -75,7 +75,8 @@ void main() {
     );
     expect(find.byKey(const ValueKey('empty_lot_cta')), findsOneWidget);
     expect(find.byKey(const ValueKey('empty_lot_add')), findsOneWidget);
-    expect(find.byKey(const ValueKey('empty_lot_auto_room')), findsOneWidget);
+    expect(find.byKey(const ValueKey('empty_lot_open_tools')), findsOneWidget);
+    expect(find.byKey(const ValueKey('empty_lot_auto_room')), findsNothing);
     expect(find.textContaining('does not stock empty rooms'), findsWidgets);
 
     final desk = RoomCatalogEntry(
@@ -98,7 +99,7 @@ void main() {
   });
 
   testWidgets(
-      'Mobile Room toolbar: view modes + pinned Add/Auto-Room; live in overflow',
+      'Mobile Room toolbar: view modes + Add Item; Auto-Rig via Tools; live in overflow',
       (tester) async {
     ignoreLayoutNoise();
     await pumpEmptyRoom(tester);
@@ -108,9 +109,12 @@ void main() {
 
     expect(find.byKey(const ValueKey('chrome_view_mode_bar')), findsWidgets);
     expect(find.byKey(const ValueKey('room_add_item_btn')), findsOneWidget);
-    expect(find.byKey(const ValueKey('room_auto_room_btn')), findsOneWidget);
+    expect(find.byKey(const ValueKey('room_auto_room_btn')), findsNothing);
+    expect(find.byKey(const ValueKey('empty_lot_auto_room')), findsNothing);
+    expect(find.byKey(const ValueKey('empty_lot_open_tools')), findsOneWidget);
     expect(find.byKey(const ValueKey('room_chrome_overflow')), findsOneWidget);
     expect(find.text('Stock this room'), findsOneWidget);
+    expect(find.text('Tools'), findsWidgets);
   });
 
   testWidgets('Guest sync hint visible on Room when not signed in', (tester) async {
