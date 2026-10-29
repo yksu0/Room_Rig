@@ -57,58 +57,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _editName(ProfileService profiles) async {
-    final ctrl = TextEditingController(
-      text: profiles.hasDisplayName ? profiles.displayLabel : '',
-    );
-    String? error;
     final saved = await showDialog<String>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => AlertDialog(
-          backgroundColor: AppColors.surface,
-          title: const Text('Display name',
-              style: TextStyle(color: AppColors.textPrimary)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: ctrl,
-                autofocus: true,
-                maxLength: 32,
-                textCapitalization: TextCapitalization.words,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  labelStyle: TextStyle(color: AppColors.textMuted),
-                  counterStyle: TextStyle(color: AppColors.textMuted),
-                ),
-                onSubmitted: (v) => Navigator.pop(ctx, v),
-              ),
-              if (error != null)
-                Text(error!,
-                    style:
-                        const TextStyle(color: AppColors.amber, fontSize: 12)),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () {
-                if (ctrl.text.trim().length < 2) {
-                  setLocal(() => error = 'At least 2 characters.');
-                  return;
-                }
-                Navigator.pop(ctx, ctrl.text);
-              },
-              child: const Text('Save'),
-            ),
-          ],
-        ),
+      builder: (ctx) => _DisplayNameDialog(
+        initial: profiles.hasDisplayName ? profiles.displayLabel : '',
       ),
     );
-    ctrl.dispose();
     if (saved == null || !mounted) return;
     setState(() => _busy = true);
     final err = await profiles.updateDisplayName(saved);
@@ -620,6 +574,86 @@ class _ProfileScreenState extends State<ProfileScreen> {
         OutlinedButton(
           onPressed: _busy ? null : () => _signOut(auth),
           child: const Text('Sign out'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Owns the [TextEditingController] for the full dialog lifetime so we never
+/// dispose it while the route is still animating out (Failed assertion).
+class _DisplayNameDialog extends StatefulWidget {
+  final String initial;
+  const _DisplayNameDialog({required this.initial});
+
+  @override
+  State<_DisplayNameDialog> createState() => _DisplayNameDialogState();
+}
+
+class _DisplayNameDialogState extends State<_DisplayNameDialog> {
+  late final TextEditingController _ctrl;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final trimmed = _ctrl.text.trim();
+    if (trimmed.length < 2) {
+      setState(() => _error = 'At least 2 characters.');
+      return;
+    }
+    Navigator.pop(context, trimmed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text(
+        'Display name',
+        style: TextStyle(color: AppColors.textPrimary),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            maxLength: 32,
+            textCapitalization: TextCapitalization.words,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              labelText: 'Name',
+              labelStyle: TextStyle(color: AppColors.textMuted),
+              counterStyle: TextStyle(color: AppColors.textMuted),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+          if (_error != null)
+            Text(
+              _error!,
+              style: const TextStyle(color: AppColors.amber, fontSize: 12),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Save'),
         ),
       ],
     );
