@@ -1,5 +1,6 @@
-﻿# Build Next.js storefront under site/ and deploy with Vercel CLI (--prebuilt).
-# Preferred long-term: Vercel Git integration with Root Directory = site, then disable this workflow.
+# Build Next.js storefront under site/; Vercel CLI runs from repo root.
+# When Vercel Root Directory is `site`, CLI cwd must be repo root (not site/)
+# or paths double to site/site (vercel/vercel#17735).
 # Secrets (repo Settings → Secrets → Actions):
 #   SUPABASE_URL, SUPABASE_ANON_KEY  (mapped to NEXT_PUBLIC_*)
 #   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
@@ -13,9 +14,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: site
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +24,7 @@ jobs:
           cache-dependency-path: site/package-lock.json
 
       - name: Require public Supabase env
+        working-directory: site
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -38,6 +37,7 @@ jobs:
           echo "Public Supabase env present (values not printed)."
 
       - name: Install & build
+        working-directory: site
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -48,7 +48,7 @@ jobs:
           npm run build
 
       - name: Deploy to Vercel
-        working-directory: site
+        working-directory: .
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -64,7 +64,7 @@ jobs:
           : "${VERCEL_PROJECT_ID:?VERCEL_PROJECT_ID secret missing}"
           : "${VERCEL_TOKEN:?VERCEL_TOKEN secret missing}"
           npm install -g vercel@latest
-          # project.json must live under site/.vercel (same cwd as pull/build/deploy)
+          # project.json at repo root; project Root Directory=site must not be doubled via cwd=site
           mkdir -p .vercel
           printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" > .vercel/project.json
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
