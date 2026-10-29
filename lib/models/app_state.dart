@@ -1749,6 +1749,20 @@ class AppState extends ChangeNotifier {
         'spatial': spatialScore.round(),
       };
 
+  /// Live scores for the active room; otherwise last locked/original scores if any.
+  Map<String, dynamic>? publishScoresForRoom(String roomId) {
+    if (roomId == _activeRoomId) return currentRoomPublishScores();
+    for (final r in _rooms) {
+      if (r.id != roomId) continue;
+      final s = r.originalScores;
+      if (s == null || s.isEmpty) return null;
+      return {
+        for (final e in s.entries) e.key: e.value.round(),
+      };
+    }
+    return null;
+  }
+
   /// Snapshot a saved room for publish (live furniture if [roomId] is active).
   PublishedLayoutSnapshot publishSnapshotForRoom(String roomId) {
     _stashActiveRoom(upload: false);
@@ -1780,7 +1794,7 @@ class AppState extends ChangeNotifier {
       title: title,
       description: description,
       layout: publishSnapshotForRoom(id),
-      scores: id == _activeRoomId ? currentRoomPublishScores() : null,
+      scores: publishScoresForRoom(id),
       tags: tags,
     );
     cachePublishedLayout(published);

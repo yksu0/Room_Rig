@@ -5,6 +5,7 @@ import '../models/app_state.dart';
 import '../models/published_layout.dart';
 import '../models/saved_room.dart';
 import '../services/auth_service.dart';
+import '../services/published_layout_repository.dart';
 import '../theme/app_theme.dart';
 import 'guest_signup_gate.dart';
 
@@ -46,6 +47,41 @@ Future<bool> publishCurrentLayoutToCommunity(BuildContext context) async {
   }
 }
 
+/// Edit title / description / tags on an existing Community post.
+Future<PublishedLayout?> editPublishedLayoutPost(
+  BuildContext context,
+  PublishedLayout layout,
+) async {
+  final draft = await showModalBottomSheet<_EditDraft>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppColors.surface,
+    builder: (ctx) => _EditPostSheet(layout: layout),
+  );
+  if (draft == null || !context.mounted) return null;
+
+  try {
+    final updated = await PublishedLayoutRepository().updatePost(
+      layoutId: layout.id,
+      title: draft.title,
+      description: draft.description,
+      tags: draft.tags,
+    );
+    if (!context.mounted) return updated;
+    context.read<AppState>().cachePublishedLayout(updated);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Post updated')),
+    );
+    return updated;
+  } catch (e) {
+    if (!context.mounted) return null;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Update failed: $e')),
+    );
+    return null;
+  }
+}
+
 class _PublishDraft {
   final String roomId;
   final String title;
@@ -54,6 +90,18 @@ class _PublishDraft {
 
   const _PublishDraft({
     required this.roomId,
+    required this.title,
+    this.description,
+    required this.tags,
+  });
+}
+
+class _EditDraft {
+  final String title;
+  final String? description;
+  final List<String> tags;
+
+  const _EditDraft({
     required this.title,
     this.description,
     required this.tags,
@@ -327,6 +375,201 @@ class _PublishComposeSheetState extends State<_PublishComposeSheet> {
                     child: FilledButton(
                       onPressed: _submit,
                       child: const Text('Publish'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EditPostSheet extends StatefulWidget {
+  final PublishedLayout layout;
+  const _EditPostSheet({required this.layout});
+
+  @override
+  State<_EditPostSheet> createState() => _EditPostSheetState();
+}
+
+class _EditPostSheetState extends State<_EditPostSheet> {
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _descCtrl;
+  late final TextEditingController _customTagCtrl;
+  late final Set<String> _tags;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleCtrl = TextEditingController(text: widget.layout.title);
+    _descCtrl = TextEditingController(text: widget.layout.description ?? '');
+    _customTagCtrl = TextEditingController();
+    _tags = {...widget.layout.tags};
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    _customTagCtrl.dispose();
+    super.dispose();
+  }
+
+  void _addCustomTag() {
+    final raw = _customTagCtrl.text.trim().toLowerCase().replaceAll(' ', '-');
+    if (raw.isEmpty || raw.length > 24) return;
+    setState(() {
+      _tags.add(raw);
+      _customTagCtrl.clear();
+    });
+  }
+
+  void _submit() {
+    final title = _titleCtrl.text.trim();
+    if (title.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a title (at least 2 characters).')),
+      );
+      return;
+    }
+    final desc = _descCtrl.text.trim();
+    Navigator.pop(
+      context,
+      _EditDraft(
+        title: title,
+        description: desc.isEmpty ? null : desc,
+        tags: _tags.toList(growable: false),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inset = MediaQuery.viewInsetsOf(context).bottom;
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(bottom: inset),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Edit post',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _titleCtrl,
+                maxLength: 80,
+                style: const TextStyle(color: AppColors.textPrimary),
+                decoration: const InputDecoration(
+                  labelText: 'Title',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _descCtrl,
+                maxLength: 400,
+                maxLines: 4,
+                style: const TextStyle(color: AppColors.textPrimary),
+                decoration: const InputDecoration(
+                  labelText: 'Description',
+                  alignLabelWithHint: true,
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Tags',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final t in kCommunityPostTagOptions)
+                    FilterChip(
+                      label: Text(t),
+                      selected: _tags.contains(t),
+                      onSelected: (on) => setState(() {
+                        if (on) {
+                          _tags.add(t);
+                        } else {
+                          _tags.remove(t);
+                        }
+                      }),
+                    ),
+                  for (final t in _tags.where(
+                    (t) => !kCommunityPostTagOptions.contains(t),
+                  ))
+                    FilterChip(
+                      label: Text(t),
+                      selected: true,
+                      onSelected: (_) => setState(() => _tags.remove(t)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _customTagCtrl,
+                      style: const TextStyle(color: AppColors.textPrimary),
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        labelText: 'Custom tag',
+                        border: OutlineInputBorder(),
+                      ),
+                      onSubmitted: (_) => _addCustomTag(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: _addCustomTag,
+                    child: const Text('Add'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _submit,
+                      child: const Text('Save'),
                     ),
                   ),
                 ],

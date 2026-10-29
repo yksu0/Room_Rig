@@ -115,6 +115,11 @@ class _ProfileCommunitySectionState extends State<ProfileCommunitySection> {
     if (published && mounted) await _reload();
   }
 
+  Future<void> _editPost(PublishedLayout layout) async {
+    final updated = await editPublishedLayoutPost(context, layout);
+    if (updated != null && mounted) await _reload();
+  }
+
   String _relative(DateTime utc) {
     final d = DateTime.now().toUtc().difference(utc.toUtc());
     if (d.inMinutes < 1) return 'just now';
@@ -262,6 +267,7 @@ class _ProfileCommunitySectionState extends State<ProfileCommunitySection> {
                 layout: post,
                 when: _relative(post.publishedAt),
                 busy: _busyId == post.id,
+                onEdit: () => _editPost(post),
                 onHideToggle: () => _toggleHidden(post),
                 onDelete: () => _deletePost(post),
               ),
@@ -324,6 +330,7 @@ class _PostRow extends StatelessWidget {
   final PublishedLayout layout;
   final String when;
   final bool busy;
+  final VoidCallback onEdit;
   final VoidCallback onHideToggle;
   final VoidCallback onDelete;
 
@@ -331,6 +338,7 @@ class _PostRow extends StatelessWidget {
     required this.layout,
     required this.when,
     required this.busy,
+    required this.onEdit,
     required this.onHideToggle,
     required this.onDelete,
   });
@@ -448,6 +456,15 @@ class _PostRow extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 16),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              onEdit();
+                            },
+                            icon: const Icon(Icons.edit_outlined, size: 18),
+                            label: const Text('Edit title, description, tags'),
+                          ),
+                          const SizedBox(height: 8),
                           OutlinedButton.icon(
                             onPressed: () {
                               Navigator.pop(ctx);

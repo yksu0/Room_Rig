@@ -80,7 +80,8 @@ class PublishedLayoutRepository {
           .eq('id', id)
           .maybeSingle();
       if (row == null) return null;
-      return _hydrate(Map<String, dynamic>.from(row));
+      final list = await _hydrateAll([row]);
+      return list.isEmpty ? null : list.first;
     } catch (e) {
       debugPrint('fetchById($id): $e');
       return null;
@@ -158,7 +159,33 @@ class PublishedLayoutRepository {
         .eq('id', layoutId)
         .select()
         .single();
-    return _hydrate(Map<String, dynamic>.from(updated));
+    final list = await _hydrateAll([updated]);
+    return list.first;
+  }
+
+  Future<PublishedLayout> updatePost({
+    required String layoutId,
+    required String title,
+    String? description,
+    List<String> tags = const [],
+  }) async {
+    final client = _client;
+    if (client == null) {
+      throw StateError('Supabase is not configured');
+    }
+    final desc = description?.trim();
+    final updated = await client
+        .from('published_layouts')
+        .update({
+          'title': title.trim(),
+          'description': (desc == null || desc.isEmpty) ? null : desc,
+          'tags': tags,
+        })
+        .eq('id', layoutId)
+        .select()
+        .single();
+    final list = await _hydrateAll([updated]);
+    return list.first;
   }
 
   Future<void> deleteLayout(String layoutId) async {
@@ -195,7 +222,8 @@ class PublishedLayoutRepository {
         })
         .select()
         .single();
-    return _hydrate(Map<String, dynamic>.from(inserted));
+    final list = await _hydrateAll([inserted]);
+    return list.first;
   }
 
   Future<PublishedLayout> rate({
@@ -211,13 +239,16 @@ class PublishedLayoutRepository {
     if (vote != 1 && vote != -1) {
       throw ArgumentError.value(vote, 'vote', 'must be ±1');
     }
-    await client.from('layout_ratings').upsert({
-      'layout_id': layoutId,
-      'rater_id': raterId,
-      'vote': vote,
-      'tags': tags,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    });
+    await client.from('layout_ratings').upsert(
+      {
+        'layout_id': layoutId,
+        'rater_id': raterId,
+        'vote': vote,
+        'tags': tags,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'layout_id,rater_id',
+    );
     final refreshed = await fetchById(layoutId);
     if (refreshed == null) {
       throw StateError('Layout missing after rate');
@@ -247,59 +278,86 @@ class PublishedLayoutRepository {
   }
 
   Future<List<PublishedLayout>> _hydrateAll(List<dynamic> rows) async {
-    final list = <PublishedLayout>[];
+    final maps = <Map<String, dynamic>>[];
     for (final row in rows) {
       if (row is Map) {
-        list.add(await _hydrate(Map<String, dynamic>.from(row)));
+        maps.add(Map<String, dynamic>.from(row));
       }
     }
-    return list;
-  }
+    if (maps.isEmpty) return const [];
 
-  Future<PublishedLayout> _hydrate(Map<String, dynamic> row) async {
     final client = _client;
-    Map<String, dynamic>? stats;
-    Map<String, dynamic>? myRating;
-    Map<String, dynamic>? author;
-    final id = row['id'] as String?;
-    final authorId = row['author_id'] as String?;
-    if (client != null && id != null) {
+    final ids = <String>[];
+    final authorIds = <String>{};
+    for (final row in maps) {
+      final id = row['id'] as String?;
+      if (id != null) ids.add(id);
+      final authorId = row['author_id'] as String?;
+      if (authorId != null) authorIds.add(authorId);
+    }
+
+    final statsById = <String, Map<String, dynamic>>{};
+    final myById = <String, Map<String, dynamic>>{};
+    final authorById = <String, Map<String, dynamic>>{};
+
+    if (client != null && ids.isNotEmpty) {
       try {
-        final s = await client
+        final statsRows = await client
             .from('layout_rating_stats')
             .select()
-            .eq('layout_id', id)
-            .maybeSingle();
-        if (s != null) stats = Map<String, dynamic>.from(s);
-      } catch (_) {}
+            .inFilter('layout_id', ids);
+        for (final s in statsRows) {
+          final m = Map<String, dynamic>.from(s);
+          final lid = m['layout_id'] as String?;
+          if (lid != null) statsById[lid] = m;
+        }
+      } catch (e) {
+        debugPrint('hydrate stats: $e');
+      }
+
       final uid = client.auth.currentUser?.id;
       if (uid != null) {
         try {
-          final r = await client
+          final ratingRows = await client
               .from('layout_ratings')
               .select()
-              .eq('layout_id', id)
               .eq('rater_id', uid)
-              .maybeSingle();
-          if (r != null) myRating = Map<String, dynamic>.from(r);
-        } catch (_) {}
+              .inFilter('layout_id', ids);
+          for (final r in ratingRows) {
+            final m = Map<String, dynamic>.from(r);
+            final lid = m['layout_id'] as String?;
+            if (lid != null) myById[lid] = m;
+          }
+        } catch (e) {
+          debugPrint('hydrate my ratings: $e');
+        }
       }
-      if (authorId != null) {
+
+      if (authorIds.isNotEmpty) {
         try {
-          final a = await client
-              .from('profiles')
+          final authorRows = await client
+              .from('community_profiles')
               .select('id, display_name, avatar_url')
-              .eq('id', authorId)
-              .maybeSingle();
-          if (a != null) author = Map<String, dynamic>.from(a);
-        } catch (_) {}
+              .inFilter('id', authorIds.toList(growable: false));
+          for (final a in authorRows) {
+            final m = Map<String, dynamic>.from(a);
+            final aid = m['id'] as String?;
+            if (aid != null) authorById[aid] = m;
+          }
+        } catch (e) {
+          debugPrint('hydrate authors: $e');
+        }
       }
     }
-    return PublishedLayout.fromRow(
-      row,
-      stats: stats,
-      myRating: myRating,
-      author: author,
-    );
+
+    return [
+      for (final row in maps)
+        PublishedLayout.fromRow(
+          row,
+          stats: statsById[row['id'] as String?],
+          myRating: myById[row['id'] as String?],
+          author: authorById[row['author_id'] as String?],
+        ),
+    ];
   }
 }
