@@ -182,3 +182,31 @@ const kCommunityPostTagOptions = [
   'before-after',
   'budget',
 ];
+
+/// Aggregates for the signed-in author's Profile Community block.
+class AuthorSocialSummary {
+  final int postCount;
+  final int upReceived;
+  final int downReceived;
+  final int netReceived;
+  final int votesCast;
+  final List<PublishedLayout> posts;
+
+  const AuthorSocialSummary({
+    required this.postCount,
+    required this.upReceived,
+    required this.downReceived,
+    required this.netReceived,
+    required this.votesCast,
+    required this.posts,
+  });
+
+  static const empty = AuthorSocialSummary(
+    postCount: 0,
+    upReceived: 0,
+    downReceived: 0,
+    netReceived: 0,
+    votesCast: 0,
+    posts: [],
+  );
+}

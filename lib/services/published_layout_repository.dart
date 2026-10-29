@@ -87,6 +87,88 @@ class PublishedLayoutRepository {
     }
   }
 
+  /// Author's Community posts (includes hidden — owner can still see them).
+  Future<List<PublishedLayout>> fetchByAuthor(
+    String authorId, {
+    int limit = 40,
+  }) async {
+    final client = _client;
+    if (client == null) return const [];
+    try {
+      final rows = await client
+          .from('published_layouts')
+          .select()
+          .eq('author_id', authorId)
+          .eq('is_admin_baseline', false)
+          .order('published_at', ascending: false)
+          .limit(limit);
+      return _hydrateAll(rows);
+    } catch (e) {
+      debugPrint('fetchByAuthor($authorId): $e');
+      return const [];
+    }
+  }
+
+  /// Profile stats: posts + karma received + votes this user cast.
+  Future<AuthorSocialSummary> fetchAuthorSocial(String authorId) async {
+    final posts = await fetchByAuthor(authorId);
+    var up = 0;
+    var down = 0;
+    for (final p in posts) {
+      up += p.upCount;
+      down += p.downCount;
+    }
+    final votesCast = await _countVotesCast(authorId);
+    return AuthorSocialSummary(
+      postCount: posts.length,
+      upReceived: up,
+      downReceived: down,
+      netReceived: up - down,
+      votesCast: votesCast,
+      posts: posts,
+    );
+  }
+
+  Future<int> _countVotesCast(String raterId) async {
+    final client = _client;
+    if (client == null) return 0;
+    try {
+      final rows = await client
+          .from('layout_ratings')
+          .select('layout_id')
+          .eq('rater_id', raterId);
+      return rows.length;
+    } catch (e) {
+      debugPrint('countVotesCast: $e');
+      return 0;
+    }
+  }
+
+  Future<PublishedLayout> setHidden({
+    required String layoutId,
+    required bool hidden,
+  }) async {
+    final client = _client;
+    if (client == null) {
+      throw StateError('Supabase is not configured');
+    }
+    final updated = await client
+        .from('published_layouts')
+        .update({'hidden': hidden})
+        .eq('id', layoutId)
+        .select()
+        .single();
+    return _hydrate(Map<String, dynamic>.from(updated));
+  }
+
+  Future<void> deleteLayout(String layoutId) async {
+    final client = _client;
+    if (client == null) {
+      throw StateError('Supabase is not configured');
+    }
+    await client.from('published_layouts').delete().eq('id', layoutId);
+  }
+
   Future<PublishedLayout> publish({
     required String authorId,
     required String title,

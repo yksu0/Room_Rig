@@ -8,17 +8,15 @@ import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_snack_bar.dart';
 import '../widgets/profile_avatar.dart';
+import '../widgets/profile_community_section.dart';
 import 'auth_screen.dart';
 import 'set_password_screen.dart';
 
 /// Profile page (Hub top-right).
 ///
-/// Signed in: avatar + display name (editable), sign-in methods, security,
-/// OTP-confirmed delete (7-day soft delete), sign out.
+/// Signed in: avatar + display name (editable), Community stats / posts,
+/// sync, security, OTP-confirmed delete (7-day soft delete), sign out.
 /// Signed out: Sign in / Sign up CTAs.
-///
-/// Layout intentionally leaves a section slot under the identity block for
-/// ratings / published layouts when the Benchmark social layer ships.
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -507,7 +505,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
 
-        // Reserved slot: ratings / published layouts land here later.
+        const SizedBox(height: 28),
+        const ProfileCommunitySection(),
         const SizedBox(height: 28),
 
         const _SectionLabel('SYNC'),
