@@ -357,8 +357,9 @@ class AppState extends ChangeNotifier {
     if (isSignedIn) return;
     // Give auth a moment after process restore — wiping too early looks like
     // "app reset" when the user only backgrounded Room Rig.
+    final epoch = _hydrateEpoch;
     await Future<void>.delayed(const Duration(seconds: 2));
-    if (isSignedIn) return;
+    if (isSignedIn || epoch != _hydrateEpoch) return;
     final orphans = _rooms.where((r) => !r.isGuestOwned).toList(growable: false);
     if (orphans.isEmpty) return;
     _abandonInFlightHydrate();
@@ -1564,16 +1565,6 @@ class AppState extends ChangeNotifier {
       await prefs.remove(_persistedLayoutKey);
       await prefs.remove(_persistedScanSessionKey);
     } catch (_) {}
-  }
-
-  Future<bool> _hasImportedGuestRooms(String uid) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getStringList(_guestImportDoneKey) ?? const [];
-      return raw.contains(uid);
-    } catch (_) {
-      return false;
-    }
   }
 
   Future<void> _markImportedGuestRooms(String uid) async {

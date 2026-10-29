@@ -139,7 +139,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       _busy = false;
                       _error = err;
                     });
-                    if (!mounted) return;
+                    if (!context.mounted) return;
                     if (err == null && auth.isSignedIn) {
                       Navigator.of(context).maybePop(true);
                     }

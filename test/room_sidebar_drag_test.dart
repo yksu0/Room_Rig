@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:room_rig/models/app_state.dart';
+import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/screens/room_customizer_screen.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +16,7 @@ void main() {
 
   Future<AppState> pumpRoom(WidgetTester tester) async {
     final state = AppState();
+    state.selectPreset(RoomPreset.gamingSetup);
     // Desktop shell: inspect rail already embeds LAYOUT ITEMS.
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -28,6 +30,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(seconds: 2));
     return state;
   }
 

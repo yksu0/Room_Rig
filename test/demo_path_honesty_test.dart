@@ -12,21 +12,23 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('professor demo marks the preset room ready', () {
+  test('Create marks the room ready; selectPreset alone does not', () {
     final state = AppState();
-    state.selectPreset(RoomPreset.gamingSetup);
     expect(state.roomIsReady, isFalse);
 
-    state.acceptPresetAsReady();
+    state.selectPreset(RoomPreset.gamingSetup);
+    expect(state.roomIsReady, isFalse);
+    expect(state.activeRoomLayout?.scanSource, 'preset');
+
+    state.createManualRoom(name: 'Studio', lengthMeters: 3.6, widthMeters: 4.8);
     expect(state.roomIsReady, isTrue);
-    expect(state.activeRoomLayout?.scanSource, 'demo');
-    expect(state.scanComplete, isTrue);
+    expect(state.activeRoomLayout?.scanSource, 'manual');
+    expect(state.scanComplete, isFalse);
   });
 
   test('placed upgrades survive applyFurnitureLayout retainV1', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
-    state.acceptPresetAsReady();
     expect(state.toggleUpgrade(0), isTrue);
     expect(state.furniture.any((f) => f.id == 'upg_fan'), isTrue);
 
@@ -39,7 +41,6 @@ void main() {
   test('Benchmark Apply Score Delta uses geometry-before not catalog impact tags', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
-    state.acceptPresetAsReady();
 
     // Dirty the scores with a move so Hub would show ROUGH EST.
     final movable = state.furniture.firstWhere(
@@ -77,7 +78,6 @@ void main() {
   test('dragging or rotating a Place ghost does not clear BENCHMARK OK', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
-    state.acceptPresetAsReady();
     state.applyFurnitureLayout(state.furniture, markOptimized: true);
     expect(state.isOptimized, isTrue);
     expect(state.scoresAreSimulated, isFalse);
@@ -97,7 +97,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
-    state.acceptPresetAsReady();
     final lamp = RoomCatalog.items.firstWhere((e) => e.baseId == 'lamp');
     final id = state.addCatalogFurniture(lamp, pending: true)!;
     state.rotateFurniture(id, deltaDegrees: 90);

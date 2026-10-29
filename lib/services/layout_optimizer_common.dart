@@ -864,9 +864,9 @@ class LayoutOptimizerCommon {
 
     const g = _deskTopGap;
     final parts = <FurnitureItem>[
-      if (pc != null) pc,
+      ?pc,
       mon,
-      if (lamp != null) lamp,
+      ?lamp,
     ];
     var total = 0.0;
     for (var i = 0; i < parts.length; i++) {
@@ -1514,9 +1514,7 @@ class LayoutOptimizerCommon {
       if (hay.contains('bed')) {
         // Hierarchical: bed chooses from wall/corner candidates only (headboard edge).
         // Soft desk clearance + privacy score pick among legal wall poses — never float.
-        final deskSeated = desk == null
-            ? null
-            : desk.copyWith(
+        final deskSeated = desk?.copyWith(
                 gridX: targets[desk.id]?.x ?? desk.gridX,
                 gridY: targets[desk.id]?.y ?? desk.gridY,
               );

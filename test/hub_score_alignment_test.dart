@@ -34,7 +34,6 @@ void main() {
   test('Hub overallScore matches Auto-Rig scoreLayout composite', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
-    state.acceptPresetAsReady();
 
     final expected = MultiObjectiveOptimizer.scoreLayout(
       furniture: state.committedFurniture,
@@ -48,7 +47,6 @@ void main() {
   test('ROUGH Hub rings use geometry scores, not catalog impact tags', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
-    state.acceptPresetAsReady();
 
     final movable = state.furniture.firstWhere(
       (f) =>

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:room_rig/models/app_state.dart';
+import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/services/layout_collision.dart';
 
 void main() {
@@ -15,6 +16,7 @@ void main() {
       final state = AppState();
       // Let restore attempt settle against the mock prefs.
       await Future<void>.delayed(Duration.zero);
+      state.selectPreset(RoomPreset.gamingSetup);
 
       final before = state.furniture.firstWhere((f) => f.id == 'fan');
       final beforeX = before.gridX;
@@ -39,6 +41,7 @@ void main() {
     test('collision prevents overlapping desk and chair', () async {
       final state = AppState();
       await Future<void>.delayed(Duration.zero);
+      state.selectPreset(RoomPreset.gamingSetup);
       final desk = state.furniture.firstWhere((f) => f.id == 'desk');
       state.beginFurnitureGesture();
       state.moveFurniture('chair', desk.gridX + 0.5, desk.gridY);

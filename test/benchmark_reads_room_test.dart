@@ -18,6 +18,7 @@ void main() {
 
   Future<AppState> pumpBenchmark(WidgetTester tester, String mode) async {
     final state = AppState();
+    state.selectPreset(RoomPreset.gamingSetup);
     state.setBenchmarkMode(mode);
     state.setTab(benchmarkTabIndex);
     await tester.binding.setSurfaceSize(const Size(1200, 2400));
@@ -30,6 +31,7 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(seconds: 2));
     return state;
   }
 
@@ -38,6 +40,7 @@ void main() {
   for (final mode in const ['airflow', 'lighting', 'ergonomics']) {
     testWidgets('opening the $mode benchmark leaves the Room untouched', (tester) async {
       final probe = AppState();
+      probe.selectPreset(RoomPreset.gamingSetup);
       await tester.pump(const Duration(milliseconds: 20));
       final expected = fp(probe.furniture);
 

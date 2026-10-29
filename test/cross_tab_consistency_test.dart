@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:room_rig/models/app_state.dart';
+import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/scan_layout_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -12,6 +13,7 @@ void main() {
 
   test('upgrade remove dirties scores instead of marking BENCHMARK OK', () {
     final state = AppState();
+    state.selectPreset(RoomPreset.gamingSetup);
     state.runOptimization(goal: 'airflow');
     expect(state.scoresAreSimulated, isFalse);
     expect(state.isOptimized, isTrue);
@@ -30,6 +32,7 @@ void main() {
 
   test('room move clears Applied while keeping restore snapshot', () {
     final state = AppState();
+    state.selectPreset(RoomPreset.gamingSetup);
     state.runOptimization(goal: 'airflow');
     expect(state.isOptimized, isTrue);
     expect(state.hasCompareSnapshot, isTrue);

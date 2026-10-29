@@ -79,7 +79,6 @@ void main() {
         test('$preset goal=${goal ?? "balanced"}', () {
           final state = AppState();
           state.selectPreset(preset);
-          state.acceptPresetAsReady();
           final before = state.furniture.map((f) => f.copyWith()).toList();
           state.runOptimization(goal: goal);
           expectCleanAutoRig(
@@ -148,7 +147,6 @@ void main() {
   test('crowded 6x8 Auto-Rig keeps every id even if space is tight', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
-    state.acceptPresetAsReady();
     for (final entry in RoomCatalog.items) {
       state.addCatalogFurniture(entry);
     }
@@ -162,7 +160,6 @@ void main() {
     for (final entry in RoomCatalog.items) {
       final state = AppState();
       state.selectPreset(RoomPreset.homeOffice);
-      state.acceptPresetAsReady();
       final id = state.addCatalogFurniture(entry);
       expect(id, isNotNull, reason: 'could not place ${entry.baseId}');
       final before = state.furniture.map((f) => f.copyWith()).toList();
@@ -180,7 +177,6 @@ void main() {
   test('place upgrades then Auto-Rig keeps upg_* ids', () {
     final state = AppState();
     state.selectPreset(RoomPreset.gamingSetup);
-    state.acceptPresetAsReady();
 
     for (var i = 0; i < state.upgrades.length; i++) {
       state.toggleUpgrade(i);
@@ -203,7 +199,6 @@ void main() {
   test('add then remove catalog pieces across Auto-Rig cycles', () {
     final state = AppState();
     state.selectPreset(RoomPreset.studioApartment);
-    state.acceptPresetAsReady();
 
     final added = <String>[];
     for (final entry in const ['tv', 'space_heater', 'floor_lamp', 'wardrobe', 'plant']) {

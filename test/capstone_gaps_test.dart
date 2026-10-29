@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:room_rig/models/app_state.dart';
+import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/room_catalog.dart';
 import 'package:room_rig/models/room_scale.dart';
 import 'package:room_rig/models/scan_layout_model.dart';
@@ -50,6 +51,7 @@ void main() {
 
   test('ghost drag follows overlap then snaps back on release', () {
     final state = AppState();
+    state.selectPreset(RoomPreset.gamingSetup);
     final desk = state.furniture.firstWhere((f) => f.id == 'desk');
     final chair = state.furniture.firstWhere((f) => f.id == 'chair');
     state.selectFurniture(desk.id);

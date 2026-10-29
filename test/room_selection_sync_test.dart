@@ -18,6 +18,7 @@ void main() {
 
   Future<AppState> pumpRoom(WidgetTester tester) async {
     final state = AppState();
+    state.selectPreset(RoomPreset.gamingSetup);
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -30,12 +31,14 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(seconds: 2));
     return state;
   }
 
   test('rotateFurniture snaps 90 degrees and swaps footprint when needed', () {
     SharedPreferences.setMockInitialValues({});
     final state = AppState();
+    state.selectPreset(RoomPreset.gamingSetup);
     // Clear nearby blockers, then park a 2×1 desk in open space.
     state.beginFurnitureGesture();
     state.moveFurniture('fan', 5.0, 7.0, respectCollision: false);

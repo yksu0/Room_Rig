@@ -296,6 +296,7 @@ void main() {
   group('floor space', () {
     test('a wall vent does not block furniture underneath it', () {
       final state = AppState();
+      state.selectPreset(RoomPreset.gamingSetup);
       final ac = state.furniture.firstWhere((f) => f.id == 'ac');
 
       // Slide the shelf under the AC head (wall AC may be wider than the shelf).
@@ -377,6 +378,7 @@ void main() {
   group('room canvas', () {
     Future<AppState> pumpRoom(WidgetTester tester) async {
       final state = AppState();
+      state.selectPreset(RoomPreset.gamingSetup);
       await tester.binding.setSurfaceSize(const Size(1400, 960));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
