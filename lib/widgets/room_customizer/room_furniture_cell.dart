@@ -94,12 +94,20 @@ class _RoomFurnitureCellState extends State<RoomFurnitureCell> {
         ),
       );
     }
-    if (!isSelected && !isPending && !hasConflict) return cell;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        boxShadow: AppColors.activeGlow(glowColor, blur: 14, alpha: 0.35),
-      ),
-      child: cell,
+    Widget painted = cell;
+    if (isSelected || isPending || hasConflict) {
+      painted = DecoratedBox(
+        decoration: BoxDecoration(
+          boxShadow: AppColors.activeGlow(glowColor, blur: 14, alpha: 0.35),
+        ),
+        child: cell,
+      );
+    }
+    return Semantics(
+      label: item.name,
+      selected: isSelected,
+      button: true,
+      child: painted,
     );
   }
 }

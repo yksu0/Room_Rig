@@ -178,6 +178,11 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
     });
   }
 
+  /// Door + window shell only — no movable catalog pieces yet.
+  bool _isEmptyLot(AppState state) => state.furniture
+      .where((f) => f.iconName != 'door' && f.iconName != 'window')
+      .isEmpty;
+
   void _maybeOpenToolsAfterLanding(AppState state, {required bool desktop}) {
     // IndexedStack builds Room even off-tab — only consume when Room is showing.
     if (state.currentTab != roomTabIndex) return;
@@ -186,14 +191,27 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
       if (!mounted) return;
       if (desktop) {
         // Tools rail is already visible; nudge empty lots toward catalog starters.
-        final movable = state.furniture
-            .where((f) => f.iconName != 'door' && f.iconName != 'window')
-            .isEmpty;
-        if (movable) _showAddItemSheet();
+        if (_isEmptyLot(state)) _showAddItemSheet();
         return;
       }
       _adaptivePanelControllerFor(state).openPanel(context, ChromeRegion.tools);
     });
+  }
+
+  void _onAutoRoomPinned(AppState state) {
+    if (_isEmptyLot(state)) {
+      _toast(
+        'Auto-Room rearranges items already here — it does not stock empty rooms. Add furniture first.',
+        ok: false,
+      );
+      return;
+    }
+    if (AppLayout.isDesktop(context)) {
+      // Tools rail already shows Auto-Room; nudge with a toast.
+      _toast('Pick a goal in Tools, then run Auto-Rig.', ok: true);
+      return;
+    }
+    _adaptivePanelControllerFor(state).openPanel(context, ChromeRegion.tools);
   }
 
   @override
@@ -228,10 +246,12 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
                         final toolsW = AppLayout.toolsRailWidthFor(context);
                         final inspectW = AppLayout.inspectRailWidthFor(context);
                         // Keep a usable canvas on landscape-phone / narrow desktop.
+                        // Cap shrink so rails stay readable (never below 72%).
                         final maxRail = (constraints.maxWidth - 280).clamp(0.0, constraints.maxWidth);
-                        final scale = (toolsW + inspectW) > maxRail && (toolsW + inspectW) > 0
+                        final rawScale = (toolsW + inspectW) > maxRail && (toolsW + inspectW) > 0
                             ? maxRail / (toolsW + inspectW)
                             : 1.0;
+                        final scale = rawScale.clamp(0.72, 1.0);
                         final tw = toolsW * scale;
                         final iw = inspectW * scale;
                         return Row(
@@ -252,13 +272,13 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       _buildViewPanelBody(state, embedded: true),
-                                      const SizedBox(height: 20),
+                                      const SizedBox(height: AppSpace.lg),
                                       const Divider(color: AppColors.borderSubtle),
-                                      const SizedBox(height: 12),
+                                      const SizedBox(height: AppSpace.sm),
                                       _buildToolsPanelBody(context, state, embedded: true),
-                                      const SizedBox(height: 20),
+                                      const SizedBox(height: AppSpace.lg),
                                       const Divider(color: AppColors.borderSubtle),
-                                      const SizedBox(height: 12),
+                                      const SizedBox(height: AppSpace.sm),
                                       _buildSnapshotPanelBody(context, state),
                                     ],
                                   ),
@@ -376,6 +396,16 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
                     ),
                   ),
                 ),
+              // Persistent empty-lot CTA after Create until first movable item.
+              if (state.roomIsReady && _isEmptyLot(state) && !state.hasPendingPlacement)
+                Positioned.fill(
+                  child: Center(
+                    child: _EmptyLotBootstrapCta(
+                      onAdd: _showAddItemSheet,
+                      onAutoRoom: () => _onAutoRoomPinned(state),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -420,20 +450,28 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
                       'ROOM CUSTOMIZER',
                       style: TextStyle(color: AppColors.cyan, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2.8),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: AppSpace.xxs + 2),
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: ActiveRoomChip(),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: AppSpace.xxs),
                     Text(
                       sizeLabel,
                       style: const TextStyle(color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
                     ),
+                    if (!state.isSignedIn) ...[
+                      const SizedBox(height: AppSpace.xxs),
+                      const Text(
+                        'Saved on this device only',
+                        key: ValueKey('room_sync_hint'),
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
+                    ],
                     // Scores / ROUGH EST. live on Hub + Benchmark — omit strip here so
                     // mobile Room header stays short.
                     if (desktop) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppSpace.xs),
                       const RoomStatusStrip(compact: true),
                     ],
                   ],
@@ -463,10 +501,13 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
               ],
               const SizedBox(width: AppSpace.xs),
               _AddItemButton(onTap: _showAddItemSheet),
+              if (!desktop) ...[
+                const SizedBox(width: AppSpace.xs),
+                _AutoRoomPinButton(onTap: () => _onAutoRoomPinned(state)),
+              ],
             ],
           ),
           const SizedBox(height: AppSpace.sm),
-          // 2D / Orbit / Model lives only in the View panel (not duplicated here).
           if (desktop)
             RoomLiveDomainBar(
               domain: _liveDomain,
@@ -481,6 +522,16 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Canvas-first: View modes stay discoverable outside the Tools sheet.
+                  SizedBox(
+                    width: 200,
+                    child: ChromeViewModeChips(
+                      compact: true,
+                      selected: _chromeForViewMode(_viewMode),
+                      onChanged: _applyChromeView,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpace.xs),
                   AdaptivePanelTriggers(
                     controller: _adaptivePanelControllerFor(state),
                     visible: const [
@@ -491,6 +542,7 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
                     ],
                     regionLabels: const {
                       ChromeRegion.inspect: 'Items',
+                      ChromeRegion.view: 'Camera',
                     },
                     regionActions: {
                       ChromeRegion.inspect: () {
@@ -498,18 +550,17 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
                       },
                     },
                   ),
-                  const SizedBox(width: 6),
-                  RoomLiveDomainBar(
-                    compactMenu: true,
+                  const SizedBox(width: AppSpace.xs),
+                  // Live-domain moved into overflow so Add/Auto-Room stay pinned above.
+                  _RoomChromeOverflow(
                     domain: _liveDomain,
                     score: _liveCache.score,
                     detail: _liveCache.isStale
                         ? '${_liveCache.detail} · updating…'
                         : _liveCache.detail,
-                    onChanged: (d) => _setLiveDomain(state, d),
+                    onDomainChanged: (d) => _setLiveDomain(state, d),
                   ),
-                  // Room so the last chip isn't flush against the fade edge.
-                  const SizedBox(width: 20),
+                  const SizedBox(width: AppSpace.lg),
                 ],
               ),
             ),
@@ -999,9 +1050,11 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
           style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.4),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Moves items already on this Room. Does not add catalog stock.',
-          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+        Text(
+          _isEmptyLot(state)
+              ? 'Empty rooms stay empty — Auto-Room only rearranges items already here; it does not stock catalog pieces. Add furniture first.'
+              : 'Moves items already on this Room. Does not add catalog stock.',
+          style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
         ),
         const SizedBox(height: 10),
         Wrap(
@@ -3601,7 +3654,7 @@ class _ConflictCautionChipState extends State<_ConflictCautionChip> {
                               child: Text(
                                 n > 9 ? '9+' : '$n',
                                 style: const TextStyle(
-                                  color: Color(0xFF1A1200),
+                                  color: AppColors.onAmber,
                                   fontSize: 9,
                                   fontWeight: FontWeight.w900,
                                 ),
@@ -3704,26 +3757,31 @@ class _AddItemButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 40,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.cyan.withValues(alpha: 0.55)),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.add_rounded, size: 18, color: AppColors.cyan),
-            SizedBox(width: 4),
-            Text(
-              'Add Item',
-              style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w700, fontSize: 12),
-            ),
-          ],
+    return Semantics(
+      button: true,
+      label: 'Add item',
+      child: GestureDetector(
+        key: const ValueKey('room_add_item_btn'),
+        onTap: onTap,
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.cyan.withValues(alpha: 0.55)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_rounded, size: 18, color: AppColors.cyan),
+              SizedBox(width: AppSpace.xxs),
+              Text(
+                'Add Item',
+                style: TextStyle(color: AppColors.cyan, fontWeight: FontWeight.w700, fontSize: 12),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -4240,7 +4298,7 @@ class _OrbitMiniMap extends StatelessWidget {
       width: 108,
       height: 86,
       decoration: BoxDecoration(
-        color: const Color(0xD111141C),
+        color: AppColors.miniMapScrim,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: AppColors.border),
       ),
@@ -4278,7 +4336,7 @@ class _OrbitMiniMapPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bg = Paint()..color = const Color(0xFF1B2030);
+    final bg = Paint()..color = AppColors.card;
     canvas.drawRect(Offset.zero & size, bg);
 
     const pad = 8.0;
@@ -4310,14 +4368,14 @@ class _OrbitMiniMapPainter extends CustomPainter {
         Paint()
           ..color = f.id == selectedId
               ? AppColors.cyan
-              : const Color(0xFF5A6280),
+              : AppColors.textMuted,
       );
     }
 
     canvas.drawCircle(
       Offset(ox + lookAtX * s, oz + lookAtZ * s),
       3.5,
-      Paint()..color = const Color(0xFF2EE68A),
+      Paint()..color = AppColors.green,
     );
   }
 
@@ -4479,6 +4537,264 @@ class _InspectImpactChip extends StatelessWidget {
 
 /// Horizontal chrome strip: swipe sideways when View/Tools/Snapshot/Items/Live
 /// do not fit. Right-edge fade hints that more chips are off-screen.
+
+/// Persistent empty-lot card: Add + Auto-Room until the first movable item.
+class _EmptyLotBootstrapCta extends StatelessWidget {
+  final VoidCallback onAdd;
+  final VoidCallback onAutoRoom;
+
+  const _EmptyLotBootstrapCta({
+    required this.onAdd,
+    required this.onAutoRoom,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Empty room. Add furniture or learn about Auto-Room.',
+      child: Material(
+        key: const ValueKey('empty_lot_cta'),
+        color: AppColors.card,
+        elevation: 6,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpace.md),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Stock this room',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.xs),
+                const Text(
+                  'Add furniture to get started. Auto-Room rearranges inventory — it does not stock empty rooms.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: AppSpace.sm),
+                FilledButton.icon(
+                  key: const ValueKey('empty_lot_add'),
+                  onPressed: onAdd,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Add Item'),
+                ),
+                const SizedBox(height: AppSpace.xs),
+                OutlinedButton.icon(
+                  key: const ValueKey('empty_lot_auto_room'),
+                  onPressed: onAutoRoom,
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                  label: const Text('Auto-Room'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutoRoomPinButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AutoRoomPinButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Auto-Room',
+      child: GestureDetector(
+        key: const ValueKey('room_auto_room_btn'),
+        onTap: onTap,
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AppColors.purple.withValues(alpha: 0.55)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.auto_awesome_rounded, size: 18, color: AppColors.purple),
+              SizedBox(width: AppSpace.xxs),
+              Text(
+                'Auto-Room',
+                style: TextStyle(
+                  color: AppColors.purple,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Overflow for live-domain (and future chrome) so the mobile toolbar stays canvas-first.
+class _RoomChromeOverflow extends StatelessWidget {
+  final RoomLiveDomain domain;
+  final double score;
+  final String detail;
+  final ValueChanged<RoomLiveDomain> onDomainChanged;
+
+  const _RoomChromeOverflow({
+    required this.domain,
+    required this.score,
+    required this.detail,
+    required this.onDomainChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'More room tools',
+      child: PopupMenuButton<String>(
+        key: const ValueKey('room_chrome_overflow'),
+        tooltip: 'More',
+        color: AppColors.surface,
+        onSelected: (value) async {
+          if (value == 'live') {
+            await showModalBottomSheet<void>(
+              context: context,
+              backgroundColor: AppColors.surface,
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+              ),
+              builder: (ctx) {
+                Widget row(RoomLiveDomain d, String title, String subtitle) {
+                  final on = domain == d;
+                  final color = RoomLiveDomainBar.colorFor(d);
+                  return ListTile(
+                    leading: Icon(
+                      RoomLiveDomainBar.iconFor(d),
+                      color: on ? color : AppColors.textMuted,
+                    ),
+                    title: Text(
+                      title,
+                      style: TextStyle(
+                        color: on ? color : AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    subtitle: Text(
+                      subtitle,
+                      style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+                    ),
+                    trailing: on
+                        ? Icon(Icons.check_rounded, color: color, size: 20)
+                        : null,
+                    onTap: () {
+                      onDomainChanged(d);
+                      Navigator.pop(ctx);
+                    },
+                  );
+                }
+
+                return SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 10, 8, 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(12, 4, 12, 8),
+                          child: Text(
+                            'LIVE FIELD',
+                            style: TextStyle(
+                              color: AppColors.cyan,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.4,
+                            ),
+                          ),
+                        ),
+                        row(RoomLiveDomain.none, 'Off', 'No live overlay on the canvas'),
+                        row(RoomLiveDomain.airflow, 'Air', 'Circulation field'),
+                        row(RoomLiveDomain.lighting, 'Light', 'Lux / shadow field'),
+                        row(RoomLiveDomain.ergonomics, 'Ergo', 'Reach / comfort field'),
+                        if (domain != RoomLiveDomain.none && detail.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                            child: Text(
+                              detail,
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          }
+        },
+        itemBuilder: (context) => [
+          PopupMenuItem<String>(
+            value: 'live',
+            child: ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                RoomLiveDomainBar.iconFor(domain),
+                color: RoomLiveDomainBar.colorFor(domain),
+                size: 20,
+              ),
+              title: Text(
+                'Live: ${RoomLiveDomainBar.labelFor(domain)}'
+                '${domain != RoomLiveDomain.none ? ' · ${score.round()}' : ''}',
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+              subtitle: const Text(
+                'Field overlay',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+              ),
+            ),
+          ),
+        ],
+        child: Container(
+          height: 44,
+          width: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: const Icon(Icons.more_horiz_rounded, color: AppColors.cyan, size: 22),
+        ),
+      ),
+    );
+  }
+}
+
 class _RoomChromeScrollRow extends StatefulWidget {
   final Widget child;
 
@@ -4625,7 +4941,14 @@ class _RoomSnapshotPanelState extends State<_RoomSnapshotPanel> {
           'Save the current Room layout as a Hub checkpoint. Benchmark Compare can pick it as Left or Right.',
           style: TextStyle(color: AppColors.textSecondary, fontSize: 12, height: 1.35),
         ),
-        const SizedBox(height: 12),
+        if (!widget.state.isSignedIn) ...[
+          const SizedBox(height: AppSpace.xs),
+          const Text(
+            'Guest rooms stay on this device until you sign in.',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+          ),
+        ],
+        const SizedBox(height: AppSpace.sm),
         TextField(
           controller: _nameCtrl,
           style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),

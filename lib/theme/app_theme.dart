@@ -47,7 +47,11 @@ class AppColors {
   static const purple = Color(0xFF8B7CFF);
   static const purpleDim = Color(0xFF4538A0);
   static const amber = Color(0xFFFFB020);
+  /// Dark ink on amber badges (conflict count chip).
+  static const onAmber = Color(0xFF1A1200);
   static const green = Color(0xFF2EE68A);
+  /// Mini-map glass scrim (~82% opaque surface).
+  static const miniMapScrim = Color(0xD111141C);
   static const red = Color(0xFFFF4D4D);
   static const orange = Color(0xFFFF7A29);
 

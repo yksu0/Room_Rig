@@ -345,6 +345,9 @@ class ChromeViewModeChips extends StatelessWidget {
   final ValueChanged<ChromeViewMode> onChanged;
   final List<ChromeViewMode> modes;
 
+  /// Toolbar strip: hide purpose subtitle, slightly tighter padding.
+  final bool compact;
+
   const ChromeViewModeChips({
     super.key,
     required this.selected,
@@ -354,59 +357,72 @@ class ChromeViewModeChips extends StatelessWidget {
       ChromeViewMode.orbit,
       ChromeViewMode.check,
     ],
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          key: const ValueKey('chrome_view_mode_bar'),
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceAlt,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: AppColors.borderSubtle),
-          ),
-          child: Row(
-            children: [
-              for (var i = 0; i < modes.length; i++) ...[
-                if (i > 0) const SizedBox(width: 2),
-                Expanded(
-                  child: Material(
-                    key: ValueKey('chrome_view_${modes[i].name}'),
-                    color: selected == modes[i]
-                        ? AppColors.cyan.withValues(alpha: 0.28)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    child: InkWell(
-                      onTap: () => onChanged(modes[i]),
-                      borderRadius: BorderRadius.circular(AppRadius.sm),
-                      child: Container(
-                        alignment: Alignment.center,
-                        constraints: const BoxConstraints(minHeight: 44),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                        child: Text(
-                          modes[i].label,
-                          style: TextStyle(
-                            color: selected == modes[i]
-                                ? AppColors.cyan
-                                : AppColors.textMuted,
-                            fontSize: 13,
-                            fontWeight:
-                                selected == modes[i] ? FontWeight.w800 : FontWeight.w600,
-                          ),
+    final bar = Container(
+      key: const ValueKey('chrome_view_mode_bar'),
+      padding: EdgeInsets.all(compact ? 2 : 3),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.borderSubtle),
+      ),
+      child: Row(
+        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+        children: [
+          for (var i = 0; i < modes.length; i++) ...[
+            if (i > 0) const SizedBox(width: 2),
+            Flexible(
+              fit: compact ? FlexFit.loose : FlexFit.tight,
+              child: Material(
+                key: ValueKey('chrome_view_${modes[i].name}'),
+                color: selected == modes[i]
+                    ? AppColors.cyan.withValues(alpha: 0.28)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                child: InkWell(
+                  onTap: () => onChanged(modes[i]),
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: Semantics(
+                    button: true,
+                    selected: selected == modes[i],
+                    label: '${modes[i].label} view',
+                    child: Container(
+                      alignment: Alignment.center,
+                      constraints: BoxConstraints(minHeight: compact ? 40 : 44),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compact ? 10 : 8,
+                        vertical: compact ? 8 : 12,
+                      ),
+                      child: Text(
+                        modes[i].label,
+                        style: TextStyle(
+                          color: selected == modes[i]
+                              ? AppColors.cyan
+                              : AppColors.textMuted,
+                          fontSize: compact ? 12 : 13,
+                          fontWeight:
+                              selected == modes[i] ? FontWeight.w800 : FontWeight.w600,
                         ),
                       ),
                     ),
                   ),
                 ),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+    if (compact) return bar;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        bar,
+        const SizedBox(height: AppSpace.xs),
         Text(
           selected.purpose,
           style: const TextStyle(
