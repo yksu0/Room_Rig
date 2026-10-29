@@ -57,8 +57,8 @@ Shipped in the Android app + `published_layouts` migration:
 
 Vercel hosts the **marketing site** in [`site/`](../site/) — product description, Sign in / Sign up, Download (GitHub Releases link), Admin stub. It does **not** host the Flutter web customizer.
 
-1. `vercel login` (CLI) → create/link project (see repo `vercel.json` / `site/vercel.json`).
-2. GitHub Actions [`.github/workflows/deploy-web.yml`](../.github/workflows/deploy-web.yml) runs `scripts/build_site.sh` and deploys `build/site`.
-3. Repo secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
+1. Prefer Vercel Git integration: Framework **Next.js**, Root Directory **`site`**, Node **22.x**. Config lives in [`site/vercel.json`](../site/vercel.json) only.
+2. GitHub Actions [`.github/workflows/deploy-web.yml`](../.github/workflows/deploy-web.yml) runs `npm ci` / `npm run build` in `site/`, then `vercel pull|build|deploy` from the **repo root** (avoids `site/site` when Root Directory is `site`). Local check: `scripts/build_site.sh`.
+3. Repo secrets for CI: `SUPABASE_URL`, `SUPABASE_ANON_KEY` (mapped to `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`), plus `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`. Set the same `NEXT_PUBLIC_*` names (and `NEXT_PUBLIC_GITHUB_REPO`) on the Vercel project for Production and Preview.
 4. Keep `https://roomrig.vercel.app/**` on the Auth redirect allow list for **storefront** OAuth. Native Android Google Sign-In does not use Vercel.
 5. Download page points at GitHub Releases; uploading an APK asset is a separate release step (suggested tag style `v1.0.0+1`, not locked).

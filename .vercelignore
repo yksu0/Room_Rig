@@ -1,6 +1,15 @@
-# Only ship the Flutter web build — keep uploads under Vercel’s file limit.
-*
-!build/
-!build/web/
-!build/web/**
-!vercel.json
+# Vercel Git integration uses Root Directory=site - do not blanket-ignore the repo
+# or site/ will be missing from the upload. Exclude junk only.
+node_modules
+**/node_modules
+.next
+**/.next
+out
+build
+ml
+datasets
+.git
+.cursor
+**/*.tflite
+**/.env.local
+**/supabase.local.json
