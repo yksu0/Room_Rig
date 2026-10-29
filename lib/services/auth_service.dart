@@ -255,7 +255,9 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  /// Deletes the auth user (rooms/profiles cascade). Requires `delete-account` Edge Function.
+  /// Soft-deletes the account (sets `deletion_requested_at` via `delete-account`
+  /// Edge Function). Hard purge runs after 7 days. Prefer the OTP flow in
+  /// [ProfileService.confirmDeleteWithCode] for in-app deletes.
   Future<String?> deleteAccount() async {
     final client = SupabaseBootstrap.clientOrNull;
     if (client == null) return 'Cloud auth is not configured on this build.';
@@ -264,7 +266,7 @@ class AuthService extends ChangeNotifier {
       if (res.status >= 400) {
         final msg = res.data is Map && (res.data as Map)['error'] != null
             ? '${(res.data as Map)['error']}'
-            : 'Could not delete account (${res.status}).';
+            : 'Could not schedule account deletion (${res.status}).';
         return msg;
       }
       _passwordRecoveryPending = false;

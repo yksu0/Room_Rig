@@ -7,7 +7,7 @@ Free-tier orgs are limited to **2 active projects**. Creating `room-rig` failed 
    - [migrations/20261018120000_room_rig_init.sql](migrations/20261018120000_room_rig_init.sql)
    - [migrations/20261027120000_profiles_avatar_soft_delete.sql](migrations/20261027120000_profiles_avatar_soft_delete.sql) — `profiles.avatar_url` / `deletion_requested_at`, `avatars` bucket, `profiles_due_for_purge`
    - [migrations/20261028140000_published_layouts_social.sql](migrations/20261028140000_published_layouts_social.sql) — Community `published_layouts` / `layout_ratings`, `layout_rating_stats`, `monthly_featured_layouts`, `profiles.is_admin`, seeded baselines
-   - Deploy `functions/purge-deleted-accounts` and schedule it daily (Dashboard → Edge Functions → Schedules, cron `0 3 * * *`, or see [functions/purge-deleted-accounts/README.md](functions/purge-deleted-accounts/README.md)). It hard-deletes accounts 7 days after the in-app OTP-confirmed delete; signing in within the window cancels.
+   - Deploy `functions/purge-deleted-accounts` and schedule it daily (pg_cron job uses service_role Bearer — see [functions/purge-deleted-accounts/README.md](functions/purge-deleted-accounts/README.md)). Soft-delete is set via `request_account_deletion()` after OTP (or the `delete-account` Edge Function); signing in cancels via `cancel_account_deletion()`. Hard purge runs after 7 days.
    - Email Templates → **Magic Link**: paste `email_templates/magic_link.html` (keeps `{{ .Token }}` so the in-app 6-digit confirm works).
    - Admin storefront access: `UPDATE profiles SET is_admin = true WHERE id = '…';`
 3. Auth → Email enabled; Confirm email **off** until Brevo SMTP works, then turn **on**.

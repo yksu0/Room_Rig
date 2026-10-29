@@ -42,6 +42,11 @@
     return data;
   }
 
+  /** Admin gate: profiles.is_admin only (writable by service_role / SQL, not clients). */
+  function isAdminUser(_session, profile) {
+    return profile?.is_admin === true;
+  }
+
   async function refreshAuthChrome() {
     const slot = document.getElementById("auth-slot");
     if (!slot) return;
@@ -183,12 +188,11 @@
         return;
       }
       const profile = await loadProfile(session.user.id);
-      if (!profile?.is_admin) {
+      if (!isAdminUser(session, profile)) {
         gate.innerHTML =
           "<p>This account is not flagged as admin.</p>" +
-          "<p class='muted'>Flip with SQL: " +
-          "<code>UPDATE profiles SET is_admin = true WHERE id = '…';</code></p>" +
-          "<p>You can still see the stub shell below as read-only preview after admin is set.</p>";
+          "<p class='muted'>Flip with SQL (service_role / dashboard only — clients cannot set this): " +
+          "<code>UPDATE profiles SET is_admin = true WHERE id = '…';</code></p>";
         body.hidden = true;
         return;
       }

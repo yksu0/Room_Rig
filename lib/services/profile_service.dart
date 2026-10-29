@@ -49,6 +49,7 @@ class UserProfile {
       displayName: row['display_name'] as String?,
       avatarUrl: row['avatar_url'] as String?,
       deletionRequestedAt: raw is String ? DateTime.tryParse(raw) : null,
+      // is_admin is server-owned (service_role / SQL only). Still readable.
       isAdmin: row['is_admin'] as bool? ?? false,
     );
   }
@@ -100,7 +101,7 @@ class ProfileService extends ChangeNotifier {
   }
 
   /// Fetch (or create a blank) app profile row. Never copies Google name/photo.
-  /// Sign-in inside the 7-day delete window cancels pending deletion.
+  /// Sign-in inside the 7-day delete window cancels pending deletion via RPC.
   Future<void> load({bool cancelPendingDeletion = true}) async {
     final client = _client;
     final user = _user;
@@ -122,16 +123,20 @@ class ProfileService extends ChangeNotifier {
           ? UserProfile(id: user.id)
           : UserProfile.fromRow(Map<String, dynamic>.from(row));
 
-      final patch = <String, dynamic>{};
-      if (cancelPendingDeletion && p.deletionRequestedAt != null) {
-        patch['deletion_requested_at'] = null;
-      }
       // Ensure the row exists; leave display_name / avatar_url null until
       // the user sets them in Profile (app-owned identity).
-      if (patch.isNotEmpty || row == null) {
-        await client.from('profiles').upsert({'id': user.id, ...patch});
-        if (patch.containsKey('deletion_requested_at')) {
+      if (row == null) {
+        await client.from('profiles').upsert({'id': user.id});
+      }
+
+      // Cancel pending soft-delete only through the SECURITY DEFINER RPC
+      // (clients cannot UPDATE deletion_requested_at directly).
+      if (cancelPendingDeletion && p.deletionRequestedAt != null) {
+        try {
+          await client.rpc('cancel_account_deletion');
           p = p.copyWith(clearDeletion: true);
+        } catch (e) {
+          debugPrint('ProfileService.cancel_account_deletion: $e');
         }
       }
       _profile = p;
@@ -260,7 +265,7 @@ class ProfileService extends ChangeNotifier {
     }
   }
 
-  /// Verifies the emailed code, then marks the profile for deletion.
+  /// Verifies the emailed code, then marks the profile for deletion via RPC.
   /// Returns null on success; the caller signs out afterwards.
   Future<String?> confirmDeleteWithCode(String code) async {
     final client = _client;
@@ -279,12 +284,12 @@ class ProfileService extends ChangeNotifier {
       if (res.user == null || res.user!.id != user.id) {
         return 'That code did not match this account.';
       }
-      await client.from('profiles').upsert({
-        'id': user.id,
-        'deletion_requested_at': DateTime.now().toUtc().toIso8601String(),
-      });
+      final raw = await client.rpc('request_account_deletion');
+      final ts = raw is String
+          ? DateTime.tryParse(raw)
+          : (raw is DateTime ? raw : DateTime.now().toUtc());
       _profile = (_profile ?? UserProfile(id: user.id)).copyWith(
-        deletionRequestedAt: DateTime.now().toUtc(),
+        deletionRequestedAt: ts?.toUtc() ?? DateTime.now().toUtc(),
       );
       notifyListeners();
       return null;
