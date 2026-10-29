@@ -322,37 +322,22 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
             fit: StackFit.expand,
             children: [
               _buildCanvas(state),
-              // Selection + conflicts share one top column so they never overlap.
+              // Selection card (left/center). Conflicts are a separate top-right chip.
               if (selectedFurniture != null &&
                   !state.hasPendingPlacement &&
                   !_drag2dGestureStarted &&
                   _drag2dItemId == null)
                 Positioned(
                   left: 8,
-                  right: topChromeRight,
+                  right: state.layoutConflicts.isNotEmpty ? 56 : topChromeRight,
                   top: topChromeTop,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (state.layoutConflicts.isNotEmpty) ...[
-                        IgnorePointer(
-                          child: _ConflictBanner(conflicts: state.layoutConflicts),
-                        ),
-                        const SizedBox(height: 6),
-                      ],
-                      _buildFurnitureInfoCard(state, selectedFurniture),
-                    ],
-                  ),
-                )
-              else if (state.layoutConflicts.isNotEmpty)
+                  child: _buildFurnitureInfoCard(state, selectedFurniture),
+                ),
+              if (state.layoutConflicts.isNotEmpty)
                 Positioned(
-                  left: 10,
                   right: topChromeRight,
                   top: topChromeTop,
-                  child: IgnorePointer(
-                    child: _ConflictBanner(conflicts: state.layoutConflicts),
-                  ),
+                  child: _ConflictCautionChip(conflicts: state.layoutConflicts),
                 ),
               if (_showDimensions && _viewMode == _RoomViewMode.twoD) ...[
                 Positioned(
@@ -3456,34 +3441,179 @@ class _HistoryButton extends StatelessWidget {
   }
 }
 
-class _ConflictBanner extends StatelessWidget {
+/// Compact top-right caution control — tap to expand the full conflict list.
+class _ConflictCautionChip extends StatefulWidget {
   final List<LayoutConflict> conflicts;
 
-  const _ConflictBanner({required this.conflicts});
+  const _ConflictCautionChip({required this.conflicts});
+
+  @override
+  State<_ConflictCautionChip> createState() => _ConflictCautionChipState();
+}
+
+class _ConflictCautionChipState extends State<_ConflictCautionChip> {
+  var _expanded = false;
+
+  @override
+  void didUpdateWidget(covariant _ConflictCautionChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.conflicts.isEmpty && _expanded) {
+      _expanded = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final top = conflicts.take(2).map((c) => c.message).join(' · ');
-    final extra = conflicts.length > 2 ? ' (+${conflicts.length - 2} more)' : '';
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.amber.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.amber.withValues(alpha: 0.45)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.warning_amber_rounded, size: 16, color: AppColors.amber),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '$top$extra',
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
+    final n = widget.conflicts.length;
+    return Material(
+      color: Colors.transparent,
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topRight,
+        child: _expanded
+            ? ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 280),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.amber.withValues(alpha: 0.55),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      InkWell(
+                        onTap: () => setState(() => _expanded = false),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(12),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.warning_amber_rounded,
+                                size: 18,
+                                color: AppColors.amber,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  n == 1
+                                      ? '1 layout caution'
+                                      : '$n layout cautions',
+                                  style: const TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              const Icon(
+                                Icons.expand_less,
+                                size: 18,
+                                color: AppColors.textMuted,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const Divider(height: 1, color: AppColors.border),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (var i = 0; i < widget.conflicts.length; i++) ...[
+                              if (i > 0) const SizedBox(height: 6),
+                              Text(
+                                '• ${widget.conflicts[i].message}',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 11,
+                                  height: 1.35,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : Tooltip(
+                message: n == 1
+                    ? widget.conflicts.first.message
+                    : '$n layout cautions — tap for details',
+                child: InkWell(
+                  onTap: () => setState(() => _expanded = true),
+                  borderRadius: BorderRadius.circular(22),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.amber.withValues(alpha: 0.16),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: AppColors.amber.withValues(alpha: 0.65),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          size: 20,
+                          color: AppColors.amber,
+                        ),
+                        if (n > 1)
+                          Positioned(
+                            right: 2,
+                            top: 2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.amber,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                n > 9 ? '9+' : '$n',
+                                style: const TextStyle(
+                                  color: Color(0xFF1A1200),
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
       ),
     );
   }
