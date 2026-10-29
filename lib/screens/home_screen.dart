@@ -24,6 +24,7 @@ import '../widgets/glass_card.dart';
 import '../widgets/guest_signup_gate.dart';
 import '../widgets/onboarding_sheet.dart';
 import '../widgets/profile_avatar.dart';
+import '../widgets/publish_layout_action.dart';
 import '../widgets/room_icons.dart';
 import '../widgets/score_ring.dart';
 import 'profile_screen.dart';
@@ -622,7 +623,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const Spacer(),
-            // Create lives in Quick Actions / Set up banner; checkpoints + rough compare here.
+            // Create lives in Quick Actions / Set up banner; checkpoints + Community publish here.
+            TextButton(
+              onPressed: () => publishCurrentLayoutToCommunity(context),
+              child: const Text('Publish', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
             TextButton(
               onPressed: () => _showRoomHistorySheet(context, state),
               child: const Text('Checkpoints', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -755,6 +760,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      if (Navigator.canPop(ctx)) Navigator.pop(ctx);
+                      if (!context.mounted) return;
+                      await publishCurrentLayoutToCommunity(context);
+                    },
+                    icon: const Icon(Icons.public, size: 18),
+                    label: const Text('Publish to Community'),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 if (revisions.isEmpty)

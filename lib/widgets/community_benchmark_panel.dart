@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../services/profile_service.dart';
 import '../theme/app_theme.dart';
 import 'guest_signup_gate.dart';
+import 'publish_layout_action.dart';
 
 /// Benchmark → Community: browse baselines / featured / recent, publish, rate,
 /// clone, and open in Compare.
@@ -66,60 +67,8 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
   }
 
   Future<void> _publish() async {
-    if (!await ensureProfileCompleteForPublish(context)) return;
-    if (!mounted) return;
-    final titleCtrl = TextEditingController(
-      text: context.read<AppState>().currentRoomData.name,
-    );
-    final title = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text(
-          'Publish layout',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        content: TextField(
-          controller: titleCtrl,
-          autofocus: true,
-          style: const TextStyle(color: AppColors.textPrimary),
-          decoration: const InputDecoration(
-            labelText: 'Title',
-            hintText: 'My gaming setup',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, titleCtrl.text.trim()),
-            child: const Text('Publish'),
-          ),
-        ],
-      ),
-    );
-    titleCtrl.dispose();
-    if (title == null || title.isEmpty || !mounted) return;
-    final uid = context.read<AuthService>().userId;
-    if (uid == null) return;
-    try {
-      await context.read<AppState>().publishCurrentRoom(
-            authorId: uid,
-            title: title,
-          );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Published to Community')),
-      );
-      await _reload();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Publish failed: $e')),
-      );
-    }
+    final ok = await publishCurrentLayoutToCommunity(context);
+    if (ok && mounted) await _reload();
   }
 
   Future<void> _openDetail(PublishedLayout layout) async {

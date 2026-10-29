@@ -41,6 +41,7 @@ import '../widgets/chrome/adaptive_panel.dart';
 import '../widgets/dash_path.dart';
 import '../widgets/ergonomics_field_painter.dart';
 import '../widgets/lighting_field_painter.dart';
+import '../widgets/publish_layout_action.dart';
 import '../widgets/room_live_field_overlay.dart';
 import '../services/airflow_simulator.dart';
 
@@ -4525,6 +4526,15 @@ class _RoomSnapshotPanelState extends State<_RoomSnapshotPanel> {
             }
           },
           child: const Text('Save snapshot'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () async {
+            final ok = await publishCurrentLayoutToCommunity(context);
+            if (ok && context.mounted) widget.onCloseSheet();
+          },
+          icon: const Icon(Icons.public, size: 18),
+          label: const Text('Publish to Community'),
         ),
         if (revs.isNotEmpty) ...[
           const SizedBox(height: 16),
