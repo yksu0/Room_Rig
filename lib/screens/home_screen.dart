@@ -1102,7 +1102,9 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: AppColors.surface,
         title: const Text('Delete room?', style: TextStyle(color: AppColors.textPrimary)),
         content: Text(
-          'Remove "$name" from saved rooms. This cannot be undone.',
+          state.isSignedIn
+              ? 'Remove "$name" from this device and your account cloud. This cannot be undone.'
+              : 'Remove "$name" from saved rooms on this device. This cannot be undone.',
           style: const TextStyle(color: AppColors.textSecondary),
         ),
         actions: [

@@ -64,9 +64,8 @@ class AppState extends ChangeNotifier {
     _openToolsOnRoom = true;
   }
 
-  /// Guest drafts found at sign-in. Standard path force-claims them into the
-  /// account (see [handleSignedIn]); the prompt flag only stays for the rare
-  /// case where the claim upload itself failed and the user must retry.
+  /// Guest drafts found at sign-in. [handleSignedIn] asks before claiming them
+  /// into the account; also set when a chosen import upload fails and needs retry.
   bool _awaitingGuestImportPrompt = false;
   bool get awaitingGuestImportPrompt => _awaitingGuestImportPrompt;
   List<SavedRoom> _guestRoomsPendingImport = const [];
@@ -1230,6 +1229,16 @@ class AppState extends ChangeNotifier {
         _applySavedRoom(_rooms.last);
       }
     }
+    final uid = signedInUserId;
+    if (uid != null) {
+      unawaited(() async {
+        try {
+          await _roomRepo.deleteRoom(uid, id);
+        } catch (e) {
+          debugPrint('deleteSavedRoom cloud: $e');
+        }
+      }());
+    }
     unawaited(_persistActiveRoomLayout());
     notifyListeners();
     return true;
@@ -1323,18 +1332,32 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Awaited upload of every lot for the signed-in user (incl. active).
+  /// Awaited upload of lots for the signed-in user (incl. active).
   /// Call before sign-out so logout wipe does not lose rooms that never synced.
-  Future<bool> flushRoomsToCloud() async {
+  ///
+  /// When [claimGuestRooms] is false (sign-in prompt path), guest drafts stay
+  /// local-only until [importGuestRoomsToCloud] runs.
+  Future<bool> flushRoomsToCloud({bool claimGuestRooms = true}) async {
     final uid = signedInUserId;
     if (uid == null) return false;
     _stashActiveRoom(upload: false);
-    final owned = _rooms
-        .map((r) => r.ownerUserId == null ? r.copyWith(ownerUserId: uid) : r)
-        .toList(growable: false);
-    _rooms
-      ..clear()
-      ..addAll(owned);
+    final List<SavedRoom> owned;
+    if (claimGuestRooms) {
+      owned = _rooms
+          .map((r) => r.ownerUserId == null ? r.copyWith(ownerUserId: uid) : r)
+          .toList(growable: false);
+      _rooms
+        ..clear()
+        ..addAll(owned);
+    } else {
+      owned = _rooms
+          .where((r) => r.ownerUserId == uid)
+          .toList(growable: false);
+    }
+    if (owned.isEmpty) {
+      await _persistActiveRoomLayout();
+      return true;
+    }
     try {
       await _roomRepo.upsertMany(uid, owned);
       await _persistActiveRoomLayout();
@@ -1356,7 +1379,15 @@ class AppState extends ChangeNotifier {
     // Snapshot true guest lots BEFORE stash tags the active room with this uid.
     final guestSnapshot =
         _rooms.where((r) => r.isGuestOwned).toList(growable: false);
-    _stashActiveRoom();
+    final guestIds = guestSnapshot.map((r) => r.id).toSet();
+    _stashActiveRoom(upload: false);
+    // Stash assigns the signed-in uid — undo that for guest drafts until the
+    // user confirms (or declines) the import prompt.
+    for (var i = 0; i < _rooms.length; i++) {
+      if (guestIds.contains(_rooms[i].id)) {
+        _rooms[i] = _rooms[i].copyWith(clearOwner: true);
+      }
+    }
     await _roomRepo.ensureProfile(userId: uid);
     var cloudLoaded = false;
     try {
@@ -1384,23 +1415,19 @@ class AppState extends ChangeNotifier {
         ..addAll(keep);
       if (_rooms.isEmpty) {
         _bootstrapEmptyLot();
-        _stashActiveRoom();
+        _stashActiveRoom(upload: false);
       } else {
         final match = _rooms.where((r) => r.id == _activeRoomId);
         _applySavedRoom(match.isNotEmpty ? match.first : _rooms.first);
       }
-      // Push local lots up so the next sign-out/sign-in cycle can restore them.
-      await flushRoomsToCloud();
+      // Account-owned lots only — guest drafts wait for the import prompt.
+      await flushRoomsToCloud(claimGuestRooms: false);
     }
 
     final alreadyImported = await _hasImportedGuestRooms(uid);
     if (!alreadyImported && guestSnapshot.isNotEmpty) {
-      // Force-claim: the guest's one room belongs to whoever just signed in
-      // on this device. No optional upload dialog on the standard path.
       _guestRoomsPendingImport = guestSnapshot;
-      _awaitingGuestImportPrompt = false;
-      await importGuestRoomsToCloud();
-      return; // importGuestRoomsToCloud persists + notifies.
+      _awaitingGuestImportPrompt = true;
     } else {
       _awaitingGuestImportPrompt = false;
       _guestRoomsPendingImport = const [];

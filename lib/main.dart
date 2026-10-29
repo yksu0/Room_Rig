@@ -234,19 +234,21 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
       return;
     }
     _importDialogOpen = true;
-    // Only reached when the automatic claim upload failed (offline etc.).
     final n = state.guestRoomsPendingImportCount;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text(
-          'Retry uploading this device\'s rooms?',
+          'Keep this device\'s room?',
           style: TextStyle(color: AppColors.textPrimary),
         ),
         content: Text(
-          '$n room(s) made on this device were added to your account but '
-          'could not be uploaded yet. Retry now, or discard them from this device.',
+          n == 1
+              ? 'A room made on this device as a guest is still here. '
+                  'Add it to your account, or discard it from this phone.'
+              : '$n rooms made on this device as a guest are still here. '
+                  'Add them to your account, or discard them from this phone.',
           style: const TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -254,9 +256,9 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Discard'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Retry'),
+            child: const Text('Add to account'),
           ),
         ],
       ),
