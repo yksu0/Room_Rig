@@ -14,39 +14,11 @@ Future<bool> publishCurrentLayoutToCommunity(BuildContext context) async {
   if (!await ensureProfileCompleteForPublish(context)) return false;
   if (!context.mounted) return false;
 
-  final titleCtrl = TextEditingController(
-    text: context.read<AppState>().currentRoomData.name,
-  );
+  final initial = context.read<AppState>().currentRoomData.name;
   final title = await showDialog<String>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      backgroundColor: AppColors.surface,
-      title: const Text(
-        'Publish layout',
-        style: TextStyle(color: AppColors.textPrimary),
-      ),
-      content: TextField(
-        controller: titleCtrl,
-        autofocus: true,
-        style: const TextStyle(color: AppColors.textPrimary),
-        decoration: const InputDecoration(
-          labelText: 'Title',
-          hintText: 'My gaming setup',
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, titleCtrl.text.trim()),
-          child: const Text('Publish'),
-        ),
-      ],
-    ),
+    builder: (ctx) => _PublishTitleDialog(initial: initial),
   );
-  titleCtrl.dispose();
   if (title == null || title.isEmpty || !context.mounted) return false;
 
   final uid = context.read<AuthService>().userId;
@@ -68,5 +40,67 @@ Future<bool> publishCurrentLayoutToCommunity(BuildContext context) async {
       SnackBar(content: Text('Publish failed: $e')),
     );
     return false;
+  }
+}
+
+/// Owns the title [TextEditingController] for the full dialog lifetime.
+class _PublishTitleDialog extends StatefulWidget {
+  final String initial;
+  const _PublishTitleDialog({required this.initial});
+
+  @override
+  State<_PublishTitleDialog> createState() => _PublishTitleDialogState();
+}
+
+class _PublishTitleDialogState extends State<_PublishTitleDialog> {
+  late final TextEditingController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final trimmed = _ctrl.text.trim();
+    if (trimmed.isEmpty) return;
+    Navigator.pop(context, trimmed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text(
+        'Publish layout',
+        style: TextStyle(color: AppColors.textPrimary),
+      ),
+      content: TextField(
+        controller: _ctrl,
+        autofocus: true,
+        style: const TextStyle(color: AppColors.textPrimary),
+        decoration: const InputDecoration(
+          labelText: 'Title',
+          hintText: 'My gaming setup',
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Publish'),
+        ),
+      ],
+    );
   }
 }
