@@ -237,6 +237,7 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
     final n = state.guestRoomsPendingImportCount;
     final ok = await showDialog<bool>(
       context: context,
+      barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
         title: const Text(
@@ -266,9 +267,11 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
     if (!mounted) return;
     if (ok == true) {
       await state.importGuestRoomsToCloud();
-    } else {
+    } else if (ok == false) {
       await state.declineGuestImport();
     }
+    // null (shouldn't happen with barrierDismissible: false) → leave pending
+    // so the prompt can show again.
     _importDialogOpen = false;
   }
 

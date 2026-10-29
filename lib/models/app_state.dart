@@ -1376,18 +1376,28 @@ class AppState extends ChangeNotifier {
     // empty lot, persist it, and wipe My Rooms / history on every cold start.
     await ensureDeviceHydrated();
     if (signedInUserId != uid) return;
-    // Snapshot true guest lots BEFORE stash tags the active room with this uid.
-    final guestSnapshot =
-        _rooms.where((r) => r.isGuestOwned).toList(growable: false);
-    final guestIds = guestSnapshot.map((r) => r.id).toSet();
+    // Remember which lots were guest-owned before stash tags them with uid.
+    final priorGuestIds =
+        _rooms.where((r) => r.isGuestOwned).map((r) => r.id).toSet();
+    final activeIdBeforeStash = _activeRoomId;
+    final activeWasListed = _rooms.any((r) => r.id == activeIdBeforeStash);
     _stashActiveRoom(upload: false);
-    // Stash assigns the signed-in uid — undo that for guest drafts until the
-    // user confirms (or declines) the import prompt.
+    // Stash assigns the signed-in uid — undo for guest drafts (and a live lot
+    // that was not listed yet) until the user confirms the import prompt.
+    final guestIds = {...priorGuestIds};
+    if (!activeWasListed || priorGuestIds.contains(activeIdBeforeStash)) {
+      guestIds.add(_activeRoomId);
+    }
     for (var i = 0; i < _rooms.length; i++) {
       if (guestIds.contains(_rooms[i].id)) {
         _rooms[i] = _rooms[i].copyWith(clearOwner: true);
       }
     }
+    // Snapshot AFTER stash so furniture matches what is on screen.
+    final guestSnapshot = _rooms
+        .where((r) => guestIds.contains(r.id))
+        .map((r) => r.copyWith(clearOwner: true))
+        .toList(growable: false);
     await _roomRepo.ensureProfile(userId: uid);
     var cloudLoaded = false;
     try {
@@ -1424,10 +1434,21 @@ class AppState extends ChangeNotifier {
       await flushRoomsToCloud(claimGuestRooms: false);
     }
 
-    final alreadyImported = await _hasImportedGuestRooms(uid);
-    if (!alreadyImported && guestSnapshot.isNotEmpty) {
+    // Always ask when guest drafts exist on this device — do not skip because
+    // an older sign-in already marked import "done" (that hid the prompt and
+    // dropped the guest lot after cloud rooms loaded).
+    if (guestSnapshot.isNotEmpty) {
       _guestRoomsPendingImport = guestSnapshot;
       _awaitingGuestImportPrompt = true;
+      if (cloudLoaded) {
+        // Cloud replaced the in-memory list; keep guest drafts visible as
+        // unsigned local slots until the user chooses Add / Discard.
+        for (final g in guestSnapshot) {
+          if (!_rooms.any((r) => r.id == g.id)) {
+            _rooms.add(g.copyWith(clearOwner: true));
+          }
+        }
+      }
     } else {
       _awaitingGuestImportPrompt = false;
       _guestRoomsPendingImport = const [];
