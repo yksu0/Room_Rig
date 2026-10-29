@@ -205,6 +205,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              if (!state.roomIsReady) ...[
+                                _buildEmptyStartCard(context, state),
+                                const SizedBox(height: AppSpace.section),
+                              ],
                               _buildMyRooms(context, state),
                               const SizedBox(height: AppSpace.section),
                               _buildQuickActions(context, state),
@@ -260,6 +264,10 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildHeader(context, room, state),
               const SizedBox(height: AppSpace.xl),
+              if (!state.roomIsReady) ...[
+                _buildEmptyStartCard(context, state),
+                const SizedBox(height: AppSpace.section),
+              ],
               ..._hubStatusBlocks(context, state),
               _buildScoreSection(context, state),
               const SizedBox(height: AppSpace.section),
@@ -398,11 +406,7 @@ class _HomeScreenState extends State<HomeScreen> {
         glowAlpha: state.roomIsReady ? (simulated ? 0.12 : 0.2) : 0.06,
       ),
       child: GlassCard(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1A1E32), Color(0xFF0E1020)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: AppColors.cardGradient,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -488,7 +492,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? (simulated
                       ? '${HubScoreLabels.roughSubtitle} Tap a ring to open that Benchmark domain. Tap ? for Create → Room → Benchmark tips.'
                       : 'Benchmark locked these scores. Tap a ring for that domain — edit in Room, then Benchmark again after layout changes. Tap ? for a quick tour.')
-                  : 'Use + to create a room or Scan in Quick Actions. Then arrange in Room and run Benchmark to lock scores. Tap ? for the tour.',
+                  : 'Tap the + button to create a room (or use Create below). Scan from the Scan tab when you can. Then arrange in Room and run Benchmark to lock scores. Tap ? for the tour.',
               style: const TextStyle(
                 color: AppColors.textMuted,
                 fontSize: 12,
@@ -496,90 +500,94 @@ class _HomeScreenState extends State<HomeScreen> {
                 height: 1.35,
               ),
             ),
-            const SizedBox(height: 16),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final tight = constraints.maxWidth < 360;
-                final side = tight ? 56.0 : 70.0;
-                final overall = tight ? 84.0 : 104.0;
-                return Row(
-                  children: [
-                    Expanded(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: _tappableRing(
-                          state,
-                          'airflow',
-                          state.airflowScore,
-                          side,
-                          AppColors.airflowColor,
-                          'Airflow',
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: ScoreRing(
-                          score: state.overallScore,
-                          size: overall,
-                          color: AppColors.cyan,
-                          label: 'Overall',
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: _tappableRing(
-                          state,
-                          'lighting',
-                          state.lightingScore,
-                          side,
-                          AppColors.lightingColor,
-                          'Lighting',
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: _tappableRing(
-                      state,
-                      'ergonomics',
-                      state.ergonomicsScore,
-                      64,
-                      AppColors.ergonomicsColor,
-                      'Ergo',
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: _tappableRing(
-                      state,
-                      'spatial',
-                      state.spatialScore,
-                      64,
-                      AppColors.spatialColor,
-                      'Space',
-                    ),
-                  ),
-                ),
-              ],
-            ),
             if (state.roomIsReady) ...[
               const SizedBox(height: 16),
-              _JourneySteps(state: state),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final tight = constraints.maxWidth < 360;
+                  final side = tight ? 56.0 : 70.0;
+                  final overall = tight ? 84.0 : 104.0;
+                  return Row(
+                    children: [
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: _tappableRing(
+                            context,
+                            state,
+                            'airflow',
+                            state.airflowScore,
+                            side,
+                            AppColors.airflowColor,
+                            'Airflow',
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: ScoreRing(
+                            score: state.overallScore,
+                            size: overall,
+                            color: AppColors.cyan,
+                            label: 'Overall',
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: _tappableRing(
+                            context,
+                            state,
+                            'lighting',
+                            state.lightingScore,
+                            side,
+                            AppColors.lightingColor,
+                            'Lighting',
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: _tappableRing(
+                        context,
+                        state,
+                        'ergonomics',
+                        state.ergonomicsScore,
+                        64,
+                        AppColors.ergonomicsColor,
+                        'Ergo',
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: _tappableRing(
+                        context,
+                        state,
+                        'spatial',
+                        state.spatialScore,
+                        64,
+                        AppColors.spatialColor,
+                        'Space',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
+            const SizedBox(height: 16),
+            _JourneySteps(state: state),
           ],
         ),
       ),
@@ -587,6 +595,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _tappableRing(
+    BuildContext context,
     AppState state,
     String mode,
     double score,
@@ -596,6 +605,13 @@ class _HomeScreenState extends State<HomeScreen> {
   ) {
     return GestureDetector(
       onTap: () {
+        if (!state.roomIsReady) {
+          showAppSnackBar(
+            context,
+            message: 'Create a room with + first, then Benchmark opens from these rings.',
+          );
+          return;
+        }
         state.setBenchmarkMode(mode);
         state.setTab(benchmarkTabIndex);
       },
@@ -623,7 +639,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const Spacer(),
-            // Create lives in Quick Actions / Set up banner; checkpoints + Community publish here.
+            // Create lives in + FAB / Quick Actions; Scan is the bottom-nav Scan tab. Checkpoints + Publish here.
             TextButton(
               onPressed: () => publishCurrentLayoutToCommunity(context),
               child: const Text('Publish', style: TextStyle(fontWeight: FontWeight.w700)),
@@ -896,10 +912,51 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Empty-lot CTA: + FAB creates a room; Scan is the bottom-nav Scan tab.
+  Widget _buildEmptyStartCard(BuildContext context, AppState state) {
+    if (state.roomIsReady) return const SizedBox.shrink();
+    return GlassCard(
+      gradient: AppColors.cardGradient,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'GET STARTED',
+            style: TextStyle(
+              color: AppColors.cyan,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: AppSpace.xs),
+          const Text(
+            'Tap the + button to create an empty room with a door and window. '
+            'When you can, open the Scan tab to measure a real space.',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: AppSpace.md),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => _showCreateRoomSheet(context, state),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Create room'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildQuickActions(BuildContext context, AppState state) {
-    if (!state.roomIsReady) {
-      return const SizedBox.shrink();
-    }
+    // Scan is the bottom-nav Scan tab (not Quick Actions / not the + FAB).
+    // FAB opens Create room; Quick Actions always offer Create, plus Room/Benchmark when ready.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -916,38 +973,45 @@ class _HomeScreenState extends State<HomeScreen> {
         LayoutBuilder(
           builder: (context, constraints) {
             final narrow = constraints.maxWidth < 360;
-            final actions = [
+            final actions = <Widget>[
               _ActionButton(
                 svgString: RoomSvg.home,
                 label: 'Create',
                 color: AppColors.amber,
                 onTap: () => _showCreateRoomSheet(context, state),
               ),
-              _ActionButton(
-                svgString: RoomSvg.floorPlan,
-                label: 'Room',
-                color: AppColors.cyan,
-                onTap: () => context.read<AppState>().setTab(roomTabIndex),
-              ),
-              _ActionButton(
-                svgString: RoomSvg.speedometer,
-                label: 'Benchmark',
-                color: AppColors.amber,
-                onTap: () => context.read<AppState>().setTab(benchmarkTabIndex),
-              ),
-              _ActionButton(
-                svgString: RoomSvg.scan,
-                label: 'Scan (opt.)',
-                color: AppColors.textMuted,
-                onTap: () => context.read<AppState>().setTab(scanTabIndex),
-              ),
+              if (state.roomIsReady) ...[
+                _ActionButton(
+                  svgString: RoomSvg.floorPlan,
+                  label: 'Room',
+                  color: AppColors.cyan,
+                  onTap: () => context.read<AppState>().setTab(roomTabIndex),
+                ),
+                _ActionButton(
+                  svgString: RoomSvg.speedometer,
+                  label: 'Benchmark',
+                  color: AppColors.amber,
+                  onTap: () => context.read<AppState>().setTab(benchmarkTabIndex),
+                ),
+              ],
             ];
-            if (narrow) {
+            if (actions.length == 1) {
+              return Row(children: [Expanded(child: actions[0])]);
+            }
+            if (narrow && actions.length >= 3) {
               return Column(
                 children: [
-                  Row(children: [Expanded(child: actions[0]), const SizedBox(width: 12), Expanded(child: actions[1])]),
+                  Row(children: [
+                    Expanded(child: actions[0]),
+                    const SizedBox(width: 12),
+                    Expanded(child: actions[1]),
+                  ]),
                   const SizedBox(height: 12),
-                  Row(children: [Expanded(child: actions[2]), const SizedBox(width: 12), Expanded(child: actions[3])]),
+                  Row(children: [
+                    Expanded(child: actions[2]),
+                    const SizedBox(width: 12),
+                    const Expanded(child: SizedBox.shrink()),
+                  ]),
                 ],
               );
             }
@@ -1419,7 +1483,7 @@ class _JourneySteps extends StatelessWidget {
           child: _JourneyChip(
             label: '3. Apply',
             color: AppColors.green,
-            onTap: () => state.setTab(benchmarkTabIndex),
+            onTap: () => state.openBenchmarkResults(),
           ),
         ),
       ],

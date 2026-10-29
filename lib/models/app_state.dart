@@ -3124,6 +3124,19 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// One-shot request to open Benchmark on the Results step for [mode]
+  /// (or the current mode). Consumed by Benchmark panels / Airflow screen.
+  int _benchmarkResultsFocusToken = 0;
+  int get benchmarkResultsFocusToken => _benchmarkResultsFocusToken;
+
+  void openBenchmarkResults({String? mode}) {
+    if (mode != null && mode.isNotEmpty) {
+      _benchmarkMode = mode;
+    }
+    _benchmarkResultsFocusToken++;
+    setTab(benchmarkTabIndex);
+  }
+
   void _resetBenchmarkAlternate() {
     _benchmarkAlternateCursor = 0;
   }

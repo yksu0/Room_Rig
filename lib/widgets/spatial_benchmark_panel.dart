@@ -47,6 +47,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
   BenchmarkLayouts? _layouts;
   String? _layoutSyncKey;
   int _seenFocusToken = 0;
+  int _seenResultsFocusToken = 0;
   SpatialMetrics? _myRoomMetrics;
   SpatialMetrics? _improvedMetrics;
 
@@ -118,6 +119,13 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
       if (kind == BenchmarkLayoutKind.sample) kind = BenchmarkLayoutKind.myRoom;
       _layoutVariant = kind;
       _analyzeVariant = kind;
+    }
+    if (state.benchmarkResultsFocusToken != _seenResultsFocusToken) {
+      _seenResultsFocusToken = state.benchmarkResultsFocusToken;
+      _showResults = true;
+      _step = _SpatialStep.results;
+      _analyzeVariant = BenchmarkLayoutKind.improved;
+      _layoutVariant = BenchmarkLayoutKind.improved;
     }
     final key =
         '${benchmarkCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchmarkAlternateCursor}';

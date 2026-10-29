@@ -58,6 +58,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   BenchmarkLayouts? _layouts;
   String? _layoutSyncKey;
   int _seenFocusToken = 0;
+  int _seenResultsFocusToken = 0;
   AirflowSimSnapshot? _myRoomSim;
   AirflowSimSnapshot? _improvedSim;
   bool _prototypeReady = false;
@@ -186,6 +187,13 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         _roomViewMode = _RoomViewMode.twoD;
       }
     }
+    if (state.benchmarkResultsFocusToken != _seenResultsFocusToken) {
+      _seenResultsFocusToken = state.benchmarkResultsFocusToken;
+      _showResults = true;
+      _airflowStep = _AirflowStep.results;
+      _simVariant = BenchmarkLayoutKind.improved;
+      _layoutVariant = BenchmarkLayoutKind.improved;
+    }
     final key =
         '${benchmarkCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchmarkAlternateCursor}';
     if (_layouts != null && _layoutSyncKey == key) return;
@@ -296,7 +304,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           RoomStatusStrip(
             compact: true,
             onTapScores: () {
-              // Stay on Benchmark — scores already drive the active mode body.
+              // Open Results for the active Benchmark domain.
+              context.read<AppState>().openBenchmarkResults();
             },
           ),
           const SizedBox(height: 8),
@@ -403,6 +412,45 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     );
   }
 
+
+  Future<void> _applyAirflowImproved(AppState state) async {
+    final validation = _validationForSimVariant(state);
+    if (!await confirmBenchmarkApply(
+      context,
+      validation: validation,
+      fellBackToSample: _layouts?.fellBackToSample ?? false,
+    )) {
+      return;
+    }
+    if (!mounted) return;
+    final before = List<FurnitureItem>.from(state.committedFurniture);
+    state.applyFurnitureLayout(
+      _furnitureFor(BenchmarkLayoutKind.improved),
+      markOptimized: true,
+      lockMode: 'airflow',
+    );
+    final diff = summarizeLayoutDiff(before, state.furniture);
+    final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+    final room = state.currentRoomData;
+    final after = List<FurnitureItem>.from(state.furniture);
+    showBenchmarkApplySnackBar(
+      context,
+      message: why.isEmpty
+          ? 'Airflow applied — $diff'
+          : 'Airflow applied — $diff — $why',
+      accentColor: AppColors.cyan,
+      onOpenRoom: () => state.setTab(roomTabIndex),
+      onKeepAsBaseline: () => state.keepAppliedAsBenchmarkBaseline(),
+      onShareImage: () => LayoutShareImage.shareBeforeAfter(
+        gridCols: room.gridCols,
+        gridRows: room.gridRows,
+        before: before,
+        after: after,
+        footer: why.isEmpty ? diff : '$diff — $why',
+      ),
+    );
+  }
+
   Widget _buildAirflowDesktop(AppState state) {
     _syncFromState(state);
     if (!_prototypeReady) {
@@ -410,6 +458,21 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         child: CircularProgressIndicator(color: AppColors.cyan),
       );
     }
+    final applyValidation = _validationForSimVariant(state);
+    final noOp = improvedLayoutIsNoOp(_layouts);
+    final applyBlocked = noOp || applyValidation.hasHardLayoutConflicts;
+    final applyBlockedReason = applyValidation.hasHardLayoutConflicts
+        ? 'Fix overlaps or blocked doorways before applying.'
+        : (noOp ? 'Auto-Rig matches Baseline — nothing to apply.' : null);
+    final resultsExtra = noOp
+        ? benchmarkImprovedNoOpBanner(
+            message:
+                'Auto-Rig matches Baseline — airflow is already as good as the optimizer found.',
+          )
+        : benchmarkWhyWinsCard(
+            reasons: _layouts?.improvedReasons ?? const [],
+            accentColor: AppColors.airflowColor,
+          );
     final desktop = AppLayout.isDesktop(context);
     if (!desktop) {
       // Same Room-style View/Tools/Inspect sheets as other Benchmark domains.
@@ -448,7 +511,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         desktopInspect: _airflowDesktopInspect(state),
         compareLayouts: _layouts,
         onTryAlternate: () => state.cycleBenchmarkAlternate(),
-        onApply: null,
+        resultsExtra: resultsExtra,
+        applyEnabled: !applyBlocked && (_layouts?.rightIsAutoRig ?? true),
+        applyBlockedReason: applyBlockedReason,
+        onApply: applyBlocked ? null : () => _applyAirflowImproved(state),
         onRefresh: () => _rebuildFromRoom(state),
       );
     }
@@ -835,44 +901,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         _buildAirflowResults(state),
         const SizedBox(height: 16),
         BenchmarkApplyRow(
-          onApply: blocked
-              ? null
-              : () async {
-                  if (!await confirmBenchmarkApply(
-                    context,
-                    validation: validation,
-                    fellBackToSample: _layouts?.fellBackToSample ?? false,
-                  )) {
-                    return;
-                  }
-                  if (!mounted) return;
-                  final before = List<FurnitureItem>.from(state.committedFurniture);
-                  state.applyFurnitureLayout(
-                    _furnitureFor(BenchmarkLayoutKind.improved),
-                    markOptimized: true,
-                    lockMode: 'airflow',
-                  );
-                  final diff = summarizeLayoutDiff(before, state.furniture);
-                  final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
-                  final room = state.currentRoomData;
-                  final after = List<FurnitureItem>.from(state.furniture);
-                  showBenchmarkApplySnackBar(
-                    context,
-                    message: why.isEmpty
-                        ? 'Airflow applied · $diff'
-                        : 'Airflow applied · $diff · $why',
-                    accentColor: AppColors.cyan,
-                    onOpenRoom: () => state.setTab(roomTabIndex),
-                    onKeepAsBaseline: () => state.keepAppliedAsBenchmarkBaseline(),
-                    onShareImage: () => LayoutShareImage.shareBeforeAfter(
-                      gridCols: room.gridCols,
-                      gridRows: room.gridRows,
-                      before: before,
-                      after: after,
-                      footer: why.isEmpty ? diff : '$diff · $why',
-                    ),
-                  );
-                },
+          onApply: blocked ? null : () => _applyAirflowImproved(state),
           onRefresh: () => _rebuildFromRoom(state),
           blockedReason: validation.hasHardLayoutConflicts
               ? 'Fix overlaps or blocked doorways before applying.'

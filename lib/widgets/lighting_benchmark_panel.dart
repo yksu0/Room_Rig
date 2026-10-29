@@ -53,6 +53,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
   BenchmarkLayouts? _layouts;
   String? _layoutSyncKey;
   int _seenFocusToken = 0;
+  int _seenResultsFocusToken = 0;
   LightingSimSnapshot? _myRoomSim;
   LightingSimSnapshot? _improvedSim;
 
@@ -132,6 +133,13 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
       _layoutVariant = kind;
       _simVariant = kind;
       _selectedFurnitureId = null;
+    }
+    if (state.benchmarkResultsFocusToken != _seenResultsFocusToken) {
+      _seenResultsFocusToken = state.benchmarkResultsFocusToken;
+      _showResults = true;
+      _step = _LightStep.results;
+      _simVariant = BenchmarkLayoutKind.improved;
+      _layoutVariant = BenchmarkLayoutKind.improved;
     }
     final key =
         '${benchmarkCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchmarkAlternateCursor}';

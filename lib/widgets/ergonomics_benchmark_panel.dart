@@ -55,6 +55,7 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
   BenchmarkLayouts? _layouts;
   String? _layoutSyncKey;
   int _seenFocusToken = 0;
+  int _seenResultsFocusToken = 0;
   ErgonomicsSimSnapshot? _myRoomSim;
   ErgonomicsSimSnapshot? _improvedSim;
 
@@ -134,6 +135,13 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
       _layoutVariant = kind;
       _simVariant = kind;
       _selectedFurnitureId = null;
+    }
+    if (state.benchmarkResultsFocusToken != _seenResultsFocusToken) {
+      _seenResultsFocusToken = state.benchmarkResultsFocusToken;
+      _showResults = true;
+      _step = _ErgoStep.results;
+      _simVariant = BenchmarkLayoutKind.improved;
+      _layoutVariant = BenchmarkLayoutKind.improved;
     }
     final key =
         '${benchmarkCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchmarkAlternateCursor}';
