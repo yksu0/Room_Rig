@@ -428,7 +428,7 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Title / dims own the width ? never share a Row with the toolbar
+          // Title / dims own the width — never share a Row with the toolbar
           // (narrow phones were crushing "ROOM CUSTOMIZER" to one glyph per line).
           Text(
             'ROOM CUSTOMIZER',
@@ -473,7 +473,7 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
               ),
             ),
           ],
-          // Scores / ROUGH EST. live on Hub + Benchmark ? omit strip here so
+          // Scores / ROUGH EST. live on Hub + Benchmark — omit strip here so
           // mobile Room header stays short.
           if (desktop) ...[
             const SizedBox(height: AppSpace.xs),
@@ -517,7 +517,7 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
               domain: _liveDomain,
               score: _liveCache.score,
               detail: _liveCache.isStale
-                  ? '${_liveCache.detail} ? updating?'
+                  ? '${_liveCache.detail} · updating…'
                   : _liveCache.detail,
               onChanged: (d) => _setLiveDomain(state, d),
             )
@@ -557,7 +557,7 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
                     domain: _liveDomain,
                     score: _liveCache.score,
                     detail: _liveCache.isStale
-                        ? '${_liveCache.detail} ? updating?'
+                        ? '${_liveCache.detail} · updating…'
                         : _liveCache.detail,
                     onDomainChanged: (d) => _setLiveDomain(state, d),
                   ),
@@ -1149,7 +1149,7 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                 ),
-                // Empty lots have nothing to rearrange ? keep entry point visible but disabled.
+                // Empty lots have nothing to rearrange — keep entry point visible but disabled.
                 onPressed: _isEmptyLot(state)
                     ? null
                     : () {
@@ -4582,7 +4582,7 @@ class _EmptyLotBootstrapCta extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpace.xs),
                 const Text(
-                  'Add furniture to get started. Auto-Rig in Tools rearranges inventory ? it does not stock empty rooms.',
+                  'Add furniture to get started. Auto-Rig in Tools rearranges inventory — it does not stock empty rooms.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: AppColors.textSecondary,

@@ -25,14 +25,6 @@ void main() {
         overflows.add(s);
         return;
       }
-      if (s.contains('hasSize') ||
-          s.contains('RenderBox was not laid out') ||
-          s.contains('NEEDS-LAYOUT') ||
-          s.contains('_RenderListTile') ||
-          s.contains('rendering/object.dart') ||
-          s.contains('Failed assertion')) {
-        return;
-      }
       previousOnError?.call(details);
     };
     addTearDown(() => FlutterError.onError = previousOnError);
