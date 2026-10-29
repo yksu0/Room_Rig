@@ -89,14 +89,17 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
     if (!mounted) return;
     final uid = context.read<AuthService>().userId;
     if (uid == null) return;
+    final repo = context.read<AppState>().publishedLayoutRepository;
     try {
-      final updated =
-          await context.read<AppState>().publishedLayoutRepository.rate(
-                layoutId: layout.id,
-                raterId: uid,
-                vote: vote,
-                tags: layout.myTags,
-              );
+      // Same button again clears the vote; opposite button switches it.
+      final updated = layout.myVote == vote
+          ? await repo.clearRating(layoutId: layout.id, raterId: uid)
+          : await repo.rate(
+              layoutId: layout.id,
+              raterId: uid,
+              vote: vote,
+              tags: layout.myTags,
+            );
       if (!mounted) return;
       _replaceInFeeds(updated);
     } catch (e) {

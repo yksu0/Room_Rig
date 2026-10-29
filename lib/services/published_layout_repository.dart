@@ -140,6 +140,27 @@ class PublishedLayoutRepository {
     return refreshed;
   }
 
+  /// Remove this user's vote (tap same ▲/▼ again).
+  Future<PublishedLayout> clearRating({
+    required String layoutId,
+    required String raterId,
+  }) async {
+    final client = _client;
+    if (client == null) {
+      throw StateError('Supabase is not configured');
+    }
+    await client
+        .from('layout_ratings')
+        .delete()
+        .eq('layout_id', layoutId)
+        .eq('rater_id', raterId);
+    final refreshed = await fetchById(layoutId);
+    if (refreshed == null) {
+      throw StateError('Layout missing after clear rating');
+    }
+    return refreshed;
+  }
+
   Future<List<PublishedLayout>> _hydrateAll(List<dynamic> rows) async {
     final list = <PublishedLayout>[];
     for (final row in rows) {
