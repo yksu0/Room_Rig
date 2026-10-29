@@ -86,7 +86,67 @@ class PublishedLayout {
     this.myTags = const [],
   });
 
-  PublishedLayout copyWith({
+  Map<String, dynamic> toCacheJson() => {
+        'id': id,
+        'authorId': authorId,
+        'authorName': authorName,
+        'authorAvatarUrl': authorAvatarUrl,
+        'title': title,
+        'description': description,
+        'layout': layout.toJson(),
+        'scores': scores,
+        'tags': tags,
+        'isAdminBaseline': isAdminBaseline,
+        'featuredUntil': featuredUntil?.toUtc().toIso8601String(),
+        'publishedAt': publishedAt.toUtc().toIso8601String(),
+        'hidden': hidden,
+        'upCount': upCount,
+        'downCount': downCount,
+        'netScore': netScore,
+        'myVote': myVote,
+        'myTags': myTags,
+      };
+
+  factory PublishedLayout.fromCacheJson(Map<String, dynamic> json) {
+    final featured = json['featuredUntil'];
+    final published = json['publishedAt'];
+    final layoutRaw = json['layout'];
+    final scoresRaw = json['scores'];
+    final tagsRaw = json['tags'];
+    final myTagsRaw = json['myTags'];
+    return PublishedLayout(
+      id: json['id'] as String? ?? '',
+      authorId: json['authorId'] as String?,
+      authorName: json['authorName'] as String?,
+      authorAvatarUrl: json['authorAvatarUrl'] as String?,
+      title: json['title'] as String? ?? 'Untitled',
+      description: json['description'] as String?,
+      layout: PublishedLayoutSnapshot.fromJson(
+        layoutRaw is Map
+            ? Map<String, dynamic>.from(layoutRaw)
+            : <String, dynamic>{},
+      ),
+      scores: scoresRaw is Map ? Map<String, dynamic>.from(scoresRaw) : null,
+      tags: tagsRaw is List
+          ? tagsRaw.map((e) => e.toString()).toList(growable: false)
+          : const [],
+      isAdminBaseline: json['isAdminBaseline'] as bool? ?? false,
+      featuredUntil: featured is String ? DateTime.tryParse(featured) : null,
+      publishedAt: published is String
+          ? (DateTime.tryParse(published) ?? DateTime.now().toUtc())
+          : DateTime.now().toUtc(),
+      hidden: json['hidden'] as bool? ?? false,
+      upCount: (json['upCount'] as num?)?.toInt() ?? 0,
+      downCount: (json['downCount'] as num?)?.toInt() ?? 0,
+      netScore: (json['netScore'] as num?)?.toInt() ?? 0,
+      myVote: (json['myVote'] as num?)?.toInt(),
+      myTags: myTagsRaw is List
+          ? myTagsRaw.map((e) => e.toString()).toList(growable: false)
+          : const [],
+    );
+  }
+
+    PublishedLayout copyWith({
     int? upCount,
     int? downCount,
     int? netScore,

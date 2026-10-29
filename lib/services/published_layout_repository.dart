@@ -24,7 +24,7 @@ class PublishedLayoutRepository {
       return _hydrateAll(rows);
     } catch (e) {
       debugPrint('fetchBaselines: $e');
-      return const [];
+      rethrow;
     }
   }
 
@@ -42,7 +42,7 @@ class PublishedLayoutRepository {
       return _hydrateAll(rows);
     } catch (e) {
       debugPrint('fetchRecent: $e');
-      return const [];
+      rethrow;
     }
   }
 
@@ -66,7 +66,7 @@ class PublishedLayoutRepository {
       return _hydrateAll(rows);
     } catch (e) {
       debugPrint('fetchMonthlyFeatured: $e');
-      return const [];
+      rethrow;
     }
   }
 

@@ -78,7 +78,16 @@ class AppState extends ChangeNotifier {
   bool get canCreateAnotherRoom =>
       isSignedIn || _rooms.length < guestRoomLimit;
 
+  /// Test-only: treat device as signed in without Supabase session.
+  bool _debugTreatAsSignedIn = false;
+
+  @visibleForTesting
+  void debugSetSignedInForTests(bool value) {
+    _debugTreatAsSignedIn = value;
+  }
+
   bool get isSignedIn {
+    if (_debugTreatAsSignedIn) return true;
     final client = SupabaseBootstrap.clientOrNull;
     return client?.auth.currentUser != null;
   }
@@ -285,7 +294,7 @@ class AppState extends ChangeNotifier {
 
   BenchmarkCompareSource _benchmarkCompareLeft = const BenchmarkCompareSource.currentRoom();
   BenchmarkCompareSource _benchmarkCompareRight = const BenchmarkCompareSource.autoRig();
-  final PublishedLayoutRepository _publishedLayouts = PublishedLayoutRepository();
+  late final PublishedLayoutRepository _publishedLayouts;
   final Map<String, PublishedLayout> _publishedLayoutCache = {};
 
   /// Bumped when the user mutates session state so a late prefs hydrate cannot
@@ -299,7 +308,9 @@ class AppState extends ChangeNotifier {
   bool _sharedPhoneLock = false;
   bool get sharedPhoneLock => _sharedPhoneLock;
 
-  AppState() {
+  AppState({PublishedLayoutRepository? publishedLayouts}) {
+    _publishedLayouts = publishedLayouts ?? PublishedLayoutRepository();
+
     _bootstrapEmptyLot();
     final epoch = _hydrateEpoch;
     _deviceHydrateFuture = _hydrateDevicePrivacy(expectedEpoch: epoch);
@@ -1844,7 +1855,7 @@ class AppState extends ChangeNotifier {
     if (!isSignedIn) return false;
     final layout = await ensurePublishedLayoutCached(layoutId);
     if (layout == null) return false;
-    setBenchmarkMode('community');
+    // Keep the caller's Benchmark mode (do not silently switch to Community/Airflow).
     setBenchmarkCompareLeft(const BenchmarkCompareSource.currentRoom());
     setBenchmarkCompareRight(
       BenchmarkCompareSource.publishedLayout(

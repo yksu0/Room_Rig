@@ -123,30 +123,35 @@ class BenchmarkChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOutCubic,
-        width: double.infinity,
-        alignment: Alignment.center,
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 4 : 8,
-          vertical: compact ? 9 : 10,
-        ),
-        decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.28) : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: selected ? color : AppColors.textMuted,
-            fontSize: compact ? 11 : 12,
-            fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label benchmark mode',
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          width: double.infinity,
+          alignment: Alignment.center,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? AppSpace.xxs : AppSpace.xs,
+            vertical: compact ? 9 : 10,
+          ),
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.28) : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: selected ? color : AppColors.textMuted,
+              fontSize: compact ? 11 : 12,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+            ),
           ),
         ),
       ),
@@ -669,37 +674,43 @@ class BenchmarkPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final disabled = onTap == null;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          gradient: disabled ? null : AppColors.accentGradient,
-          color: disabled ? AppColors.card : null,
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          border: Border.all(color: disabled ? AppColors.border : Colors.transparent),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SvgIcon(icon, size: 18, color: disabled ? AppColors.textMuted : Colors.white),
-            const SizedBox(width: AppSpace.xs),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: disabled ? AppColors.textMuted : Colors.white,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                  letterSpacing: 1.1,
+    return Semantics(
+      button: true,
+      enabled: !disabled,
+      label: label,
+      child: GestureDetector(
+        key: const ValueKey('benchmark_apply_btn'),
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: AppSpace.md),
+          decoration: BoxDecoration(
+            gradient: disabled ? null : AppColors.accentGradient,
+            color: disabled ? AppColors.card : null,
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(color: disabled ? AppColors.border : Colors.transparent),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SvgIcon(icon, size: 18, color: disabled ? AppColors.textMuted : Colors.white),
+              const SizedBox(width: AppSpace.xs),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: disabled ? AppColors.textMuted : Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    letterSpacing: 1.1,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -761,9 +772,10 @@ class BenchmarkApplyRow extends StatelessWidget {
           ],
         ),
         if (onApply == null && blockedReason != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpace.xs),
           Text(
             blockedReason!,
+            key: const ValueKey('benchmark_apply_blocked_reason'),
             style: TextStyle(
               color: AppColors.amber.withValues(alpha: 0.95),
               fontSize: 11,
@@ -1883,7 +1895,7 @@ class BenchmarkPanelScaffold extends StatelessWidget {
                     const SizedBox(height: 12),
                   ],
                   ?resultsBody,
-                  if (onApply != null && onRefresh != null) ...[
+                  if (onRefresh != null && (onApply != null || applyBlockedReason != null)) ...[
                     const SizedBox(height: 12),
                     BenchmarkApplyRow(
                       onApply: applyEnabled ? onApply : null,
@@ -2005,7 +2017,7 @@ class BenchmarkPanelScaffold extends StatelessWidget {
                 const SizedBox(height: 12),
               ],
               ?resultsBody,
-              if (onApply != null && onRefresh != null) ...[
+              if (onRefresh != null && (onApply != null || applyBlockedReason != null)) ...[
                 const SizedBox(height: 16),
                 BenchmarkApplyRow(
                   onApply: applyEnabled ? onApply : null,

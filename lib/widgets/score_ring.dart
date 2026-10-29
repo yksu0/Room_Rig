@@ -58,40 +58,43 @@ class _ScoreRingState extends State<ScoreRing>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (context, _) => SizedBox(
-        width: widget.size,
-        height: widget.size,
-        child: CustomPaint(
-          painter: _RingPainter(
-            progress: (widget.score / 100).clamp(0.0, 1.0) * _animation.value,
-            color: widget.color,
-            bgColor: AppColors.border,
-          ),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '${(widget.score * _animation.value).round()}',
-                  style: TextStyle(
-                    color: widget.color,
-                    fontSize: widget.size * 0.22,
-                    fontWeight: FontWeight.w800,
-                    height: 1,
+    return Semantics(
+      label: '${widget.label} score ${widget.score.round()}',
+      child: AnimatedBuilder(
+        animation: _animation,
+        builder: (context, _) => SizedBox(
+          width: widget.size,
+          height: widget.size,
+          child: CustomPaint(
+            painter: _RingPainter(
+              progress: (widget.score / 100).clamp(0.0, 1.0) * _animation.value,
+              color: widget.color,
+              bgColor: AppColors.border,
+            ),
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '${(widget.score * _animation.value).round()}',
+                    style: TextStyle(
+                      color: widget.color,
+                      fontSize: widget.size * 0.22,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                    ),
                   ),
-                ),
-                Text(
-                  widget.label,
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: widget.size * 0.1,
-                    fontWeight: FontWeight.w500,
+                  Text(
+                    widget.label,
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: widget.size * 0.1,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

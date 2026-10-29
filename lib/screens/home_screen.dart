@@ -201,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: ColoredBox(
                         color: AppColors.bg,
                         child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
+                          padding: const EdgeInsets.fromLTRB(AppSpace.md, 10, AppSpace.md, AppSpace.xl + 4),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -284,13 +284,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCreateRoomFab(BuildContext context, AppState state) {
-    return FloatingActionButton(
+    return Semantics(
+      button: true,
+      label: 'Create room',
+      child: FloatingActionButton(
       heroTag: 'hub_create_room_fab',
       backgroundColor: AppColors.cyan,
       foregroundColor: AppColors.bg,
       tooltip: 'New room',
       onPressed: () => _showCreateRoomSheet(context, state),
       child: const Icon(Icons.add_rounded),
+    ),
     );
   }
 
@@ -360,30 +364,34 @@ class _HomeScreenState extends State<HomeScreen> {
         // users see their photo / initial.
         Tooltip(
           message: auth.isSignedIn ? 'Profile' : 'Sign in or sign up',
-          child: Material(
-            color: Colors.transparent,
-            shape: const CircleBorder(),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: () => _openProfile(context),
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.cyan.withValues(alpha: auth.isSignedIn ? 0.9 : 0.4),
-                    width: 1.5,
+          child: Semantics(
+            button: true,
+            label: auth.isSignedIn ? 'Profile' : 'Sign in or sign up',
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () => _openProfile(context),
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppColors.cyan.withValues(alpha: auth.isSignedIn ? 0.9 : 0.4),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(color: AppColors.cyan.withValues(alpha: 0.25), blurRadius: 16),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(color: AppColors.cyan.withValues(alpha: 0.25), blurRadius: 16),
-                  ],
-                ),
-                child: ProfileAvatar(
-                  size: 44,
-                  imageUrl: auth.isSignedIn ? profiles.avatarUrl : null,
-                  label: auth.isSignedIn && profiles.hasDisplayName
-                      ? profiles.displayLabel
-                      : null,
+                  child: ProfileAvatar(
+                    size: 44,
+                    imageUrl: auth.isSignedIn ? profiles.avatarUrl : null,
+                    label: auth.isSignedIn && profiles.hasDisplayName
+                        ? profiles.displayLabel
+                        : null,
+                  ),
                 ),
               ),
             ),
@@ -501,7 +509,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             if (state.roomIsReady) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: AppSpace.md),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final tight = constraints.maxWidth < 360;
@@ -552,7 +560,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 },
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: AppSpace.sm),
               Row(
                 children: [
                   Expanded(
@@ -586,7 +594,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpace.md),
             _JourneySteps(state: state),
           ],
         ),
@@ -603,19 +611,23 @@ class _HomeScreenState extends State<HomeScreen> {
     Color color,
     String label,
   ) {
-    return GestureDetector(
-      onTap: () {
-        if (!state.roomIsReady) {
-          showAppSnackBar(
-            context,
-            message: 'Create a room with + first, then Benchmark opens from these rings.',
-          );
-          return;
-        }
-        state.setBenchmarkMode(mode);
-        state.setTab(benchmarkTabIndex);
-      },
-      child: ScoreRing(score: score, size: size, color: color, label: label),
+    return Semantics(
+      button: true,
+      label: '$label benchmark',
+      child: GestureDetector(
+        onTap: () {
+          if (!state.roomIsReady) {
+            showAppSnackBar(
+              context,
+              message: 'Create a room with + first, then Benchmark opens from these rings.',
+            );
+            return;
+          }
+          state.setBenchmarkMode(mode);
+          state.setTab(benchmarkTabIndex);
+        },
+        child: ScoreRing(score: score, size: size, color: color, label: label),
+      ),
     );
   }
 
@@ -640,9 +652,25 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const Spacer(),
             // Create lives in + FAB / Quick Actions; Scan is the bottom-nav Scan tab. Checkpoints + Publish here.
-            TextButton(
-              onPressed: () => publishCurrentLayoutToCommunity(context),
-              child: const Text('Publish', style: TextStyle(fontWeight: FontWeight.w700)),
+            Builder(
+              builder: (ctx) {
+                final guest = ctx.watch<AuthService>().isGuest;
+                final empty = !state.roomIsReady || state.furniture.isEmpty;
+                final muted = guest && empty;
+                return TextButton(
+                  key: const ValueKey('hub_my_rooms_publish'),
+                  onPressed: () => publishCurrentLayoutToCommunity(ctx),
+                  child: Text(
+                    'Publish',
+                    style: TextStyle(
+                      fontWeight: muted ? FontWeight.w600 : FontWeight.w700,
+                      color: muted
+                          ? AppColors.textMuted.withValues(alpha: 0.55)
+                          : null,
+                    ),
+                  ),
+                );
+              },
             ),
             TextButton(
               onPressed: () => _showRoomHistorySheet(context, state),
@@ -650,7 +678,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpace.xs),
         if (!activeListed)
           _RoomSlotTile(
             title: state.currentRoomData.name,
@@ -969,7 +997,7 @@ class _HomeScreenState extends State<HomeScreen> {
             letterSpacing: 2,
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: AppSpace.sm),
         LayoutBuilder(
           builder: (context, constraints) {
             final narrow = constraints.maxWidth < 360;
@@ -1003,13 +1031,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Row(children: [
                     Expanded(child: actions[0]),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppSpace.sm),
                     Expanded(child: actions[1]),
                   ]),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpace.sm),
                   Row(children: [
                     Expanded(child: actions[2]),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: AppSpace.sm),
                     const Expanded(child: SizedBox.shrink()),
                   ]),
                 ],
@@ -1018,7 +1046,7 @@ class _HomeScreenState extends State<HomeScreen> {
             return Row(
               children: [
                 for (int i = 0; i < actions.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 12),
+                  if (i > 0) const SizedBox(width: AppSpace.sm),
                   Expanded(child: actions[i]),
                 ],
               ],
@@ -1499,19 +1527,23 @@ class _JourneyChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800),
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: AppSpace.sm),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(color: color.withValues(alpha: 0.4)),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800),
+          ),
         ),
       ),
     );
@@ -1528,25 +1560,29 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-          border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
-          boxShadow: [BoxShadow(color: color.withValues(alpha: 0.1), blurRadius: 15)],
-        ),
-        child: Column(
-          children: [
-            SvgIcon(svgString, size: 26, color: color),
-            const SizedBox(height: AppSpace.xs),
-            Text(
-              label,
-              style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
-            ),
-          ],
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            border: Border.all(color: color.withValues(alpha: 0.4), width: 1),
+            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.1), blurRadius: 15)],
+          ),
+          child: Column(
+            children: [
+              SvgIcon(svgString, size: 26, color: color),
+              const SizedBox(height: AppSpace.xs),
+              Text(
+                label,
+                style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
         ),
       ),
     );

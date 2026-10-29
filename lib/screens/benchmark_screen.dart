@@ -239,14 +239,18 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpace.screen,
-                AppSpace.sm,
-                AppSpace.screen,
-                AppSpace.xs,
+            Material(
+              key: const ValueKey('benchmark_mode_sticky'),
+              color: AppColors.bg,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.screen,
+                  AppSpace.sm,
+                  AppSpace.screen,
+                  AppSpace.xs,
+                ),
+                child: _buildMobileHeader(state),
               ),
-              child: _buildMobileHeader(state),
             ),
             Expanded(
               child: Padding(
@@ -295,12 +299,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               letterSpacing: 2.8,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: AppSpace.xxs + 2),
           const Align(
             alignment: Alignment.centerLeft,
             child: ActiveRoomChip(),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpace.xs),
           RoomStatusStrip(
             compact: true,
             onTapScores: () {
@@ -308,9 +312,9 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               context.read<AppState>().openBenchmarkResults();
             },
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpace.xs),
           _buildModeScoreHero(state, expand: true),
-          const SizedBox(height: 10),
+          const SizedBox(height: AppSpace.xs + 2),
           _buildModeSelector(state, compact: true),
         ],
       ),
@@ -374,12 +378,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             letterSpacing: 2.8,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: AppSpace.xxs),
         const Align(
           alignment: Alignment.centerLeft,
           child: ActiveRoomChip(),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpace.xs),
         _buildModeSelector(state, compact: true),
       ],
     );
@@ -393,21 +397,73 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       ('spatial', 'Space', AppColors.spatialColor),
       ('community', 'Community', AppColors.cyan),
     ];
+    final narrow = MediaQuery.sizeOf(context).width < 420;
+    final core = narrow
+        ? modes.where((m) => m.$1 != 'community').toList(growable: false)
+        : modes;
+    final communitySelected = state.benchmarkMode == 'community';
 
-    return BenchmarkSegmentBar(
+    final bar = BenchmarkSegmentBar(
+      key: const ValueKey('benchmark_mode_row'),
       gap: compact ? 5 : 6,
       children: [
-        for (final mode in modes)
+        for (final mode in core)
           BenchmarkChip(
             label: mode.$2,
             selected: state.benchmarkMode == mode.$1,
             color: mode.$3,
-            compact: compact,
+            compact: compact || narrow,
             onTap: () {
               state.setBenchmarkMode(mode.$1);
               _setOrbitDragging(false);
             },
           ),
+      ],
+    );
+
+    if (!narrow) return bar;
+
+    return Row(
+      children: [
+        Expanded(child: bar),
+        const SizedBox(width: AppSpace.xs),
+        Semantics(
+          button: true,
+          selected: communitySelected,
+          label: 'Community',
+          child: Material(
+            key: const ValueKey('benchmark_community_overflow'),
+            color: communitySelected
+                ? AppColors.cyan.withValues(alpha: 0.28)
+                : AppColors.card,
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              onTap: () {
+                state.setBenchmarkMode('community');
+                _setOrbitDragging(false);
+              },
+              child: Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  border: Border.all(
+                    color: communitySelected
+                        ? AppColors.cyan.withValues(alpha: 0.55)
+                        : AppColors.border,
+                  ),
+                ),
+                child: Icon(
+                  Icons.forum_outlined,
+                  size: 20,
+                  color: communitySelected ? AppColors.cyan : AppColors.textMuted,
+                ),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -514,7 +570,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         resultsExtra: resultsExtra,
         applyEnabled: !applyBlocked && (_layouts?.rightIsAutoRig ?? true),
         applyBlockedReason: applyBlockedReason,
-        onApply: applyBlocked ? null : () => _applyAirflowImproved(state),
+        onApply: () => _applyAirflowImproved(state),
         onRefresh: () => _rebuildFromRoom(state),
       );
     }

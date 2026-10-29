@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_state.dart';
 import '../models/benchmark_compare_source.dart';
@@ -21,8 +24,11 @@ class CommunityBenchmarkPanel extends StatefulWidget {
 }
 
 class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
+  static const _feedCacheKey = 'room_rig.community_feed_cache_v1';
+
   var _loading = true;
   String? _error;
+  var _showingStale = false;
   List<PublishedLayout> _baselines = const [];
   List<PublishedLayout> _monthly = const [];
   List<PublishedLayout> _recent = const [];
@@ -36,10 +42,66 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
   }
 
+  List<PublishedLayout> _decodeList(dynamic raw) {
+    if (raw is! List) return const [];
+    final out = <PublishedLayout>[];
+    for (final e in raw) {
+      if (e is Map) {
+        out.add(PublishedLayout.fromCacheJson(Map<String, dynamic>.from(e)));
+      }
+    }
+    return out;
+  }
+
+  Future<bool> _restoreFeedCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_feedCacheKey);
+      if (raw == null || raw.isEmpty) return false;
+      final map = jsonDecode(raw);
+      if (map is! Map) return false;
+      final baselines = _decodeList(map['baselines']);
+      final monthly = _decodeList(map['monthly']);
+      final recent = _decodeList(map['recent']);
+      final top = _decodeList(map['top']);
+      if (baselines.isEmpty && monthly.isEmpty && recent.isEmpty && top.isEmpty) {
+        return false;
+      }
+      if (!mounted) return false;
+      for (final l in [...baselines, ...monthly, ...recent, ...top]) {
+        context.read<AppState>().cachePublishedLayout(l);
+      }
+      setState(() {
+        _baselines = baselines;
+        _monthly = monthly;
+        _recent = recent;
+        _top = top;
+        _showingStale = true;
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _persistFeedCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = jsonEncode({
+        'baselines': _baselines.map((e) => e.toCacheJson()).toList(growable: false),
+        'monthly': _monthly.map((e) => e.toCacheJson()).toList(growable: false),
+        'recent': _recent.map((e) => e.toCacheJson()).toList(growable: false),
+        'top': _top.map((e) => e.toCacheJson()).toList(growable: false),
+      });
+      await prefs.setString(_feedCacheKey, payload);
+    } catch (_) {}
+  }
+
   Future<void> _reload() async {
     setState(() {
       _loading = true;
       _error = null;
+      _showingStale = false;
     });
     final repo = context.read<AppState>().publishedLayoutRepository;
     try {
@@ -57,12 +119,18 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
         _recent = recent;
         _top = top;
         _loading = false;
+        _showingStale = false;
+        _error = null;
       });
+      await _persistFeedCache();
     } catch (e) {
+      if (!mounted) return;
+      final restored = await _restoreFeedCache();
       if (!mounted) return;
       setState(() {
         _error = 'Could not load Community feed. Check your connection.';
         _loading = false;
+        _showingStale = restored;
       });
     }
   }
@@ -145,10 +213,17 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
       );
       return;
     }
-    context.read<AppState>().setBenchmarkMode('airflow');
+    final state = context.read<AppState>();
+    // Keep the user's current Benchmark mode (do not silently force Airflow).
+    final mode = state.benchmarkMode;
+    final modeNote = mode == 'community'
+        ? 'Still on Community — switch to Airflow/Lighting/Ergo/Space to score Compare.'
+        : 'Staying on $mode mode.';
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Compare right side set to this Community layout'),
+      SnackBar(
+        content: Text(
+          'Compare right side set to this Community layout. $modeNote',
+        ),
       ),
     );
   }
@@ -190,19 +265,101 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
     await _clone(layout);
   }
 
+
   @override
   Widget build(BuildContext context) {
     final feed = _feedTab == 0 ? _recent : _top;
+    final signedIn = context.watch<AuthService>().isSignedIn;
+    final hasFeed = _baselines.isNotEmpty ||
+        _monthly.isNotEmpty ||
+        _recent.isNotEmpty ||
+        _top.isNotEmpty;
+    final showStaleFeed = _showingStale && hasFeed && _error != null;
+
+    final feedChildren = <Widget>[
+      if (showStaleFeed) ...[
+        Material(
+          key: const ValueKey('community_stale_banner'),
+          color: AppColors.amber.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpace.sm),
+            child: Row(
+              children: [
+                const Icon(Icons.cloud_off_rounded, color: AppColors.amber, size: 18),
+                const SizedBox(width: AppSpace.xs),
+                Expanded(
+                  child: Text(
+                    'Offline — showing last loaded Community feed.',
+                    style: const TextStyle(
+                      color: AppColors.amber,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _loading ? null : _reload,
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: AppSpace.sm),
+      ],
+      _sectionTitle('Baselines'),
+      if (_baselines.isEmpty)
+        const _EmptyHint('No admin baselines yet.')
+      else
+        ..._baselines.map(_post),
+      const SizedBox(height: AppSpace.sm),
+      _sectionTitle("This month's top 3"),
+      if (_monthly.isEmpty)
+        const _EmptyHint(
+          'No featured layouts yet — vote on posts to fill this next month.',
+        )
+      else
+        ..._monthly.map(_post),
+      const SizedBox(height: AppSpace.sm),
+      Row(
+        children: [
+          _sectionTitle(_feedTab == 0 ? 'Recent' : 'Top'),
+          const Spacer(),
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(value: 0, label: Text('Recent')),
+              ButtonSegment(value: 1, label: Text('Top')),
+            ],
+            selected: {_feedTab},
+            onSelectionChanged: (s) => setState(() => _feedTab = s.first),
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpace.xs),
+      if (feed.isEmpty)
+        const _EmptyHint(
+          'No community layouts yet. Be the first to publish.',
+        )
+      else
+        ...feed.map(_post),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.fromLTRB(
+            AppSpace.md,
+            AppSpace.xs,
+            AppSpace.md,
+            AppSpace.xs,
+          ),
           child: Row(
             children: [
               const Expanded(
                 child: Text(
-                  'Community — scroll, preview, vote. Sign in to publish / clone.',
+                  'Community — scroll, preview, vote.',
                   style: TextStyle(
                     color: AppColors.textMuted,
                     fontSize: 12,
@@ -222,27 +379,56 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
             ],
           ),
         ),
+        if (!signedIn)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpace.md,
+              0,
+              AppSpace.md,
+              AppSpace.xs,
+            ),
+            child: Material(
+              key: const ValueKey('community_guest_hint'),
+              color: AppColors.cyan.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              child: const Padding(
+                padding: EdgeInsets.all(AppSpace.sm),
+                child: Text(
+                  'Sign in to unlock publish, vote, clone, and compare.',
+                  style: TextStyle(
+                    color: AppColors.cyan,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (_loading)
           const Expanded(
             child: Center(
               child: CircularProgressIndicator(color: AppColors.cyan),
             ),
           )
-        else if (_error != null)
+        else if (_error != null && !showStaleFeed)
           Expanded(
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(AppSpace.xl),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       _error!,
+                      key: const ValueKey('community_offline_error'),
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: AppColors.textSecondary),
                     ),
-                    const SizedBox(height: 12),
-                    FilledButton(onPressed: _reload, child: const Text('Retry')),
+                    const SizedBox(height: AppSpace.sm),
+                    FilledButton(
+                      onPressed: _reload,
+                      child: const Text('Retry'),
+                    ),
                   ],
                 ),
               ),
@@ -253,45 +439,13 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
             child: RefreshIndicator(
               onRefresh: _reload,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-                children: [
-                  _sectionTitle('Baselines'),
-                  if (_baselines.isEmpty)
-                    const _EmptyHint('No admin baselines yet.')
-                  else
-                    ..._baselines.map(_post),
-                  const SizedBox(height: 12),
-                  _sectionTitle("This month's top 3"),
-                  if (_monthly.isEmpty)
-                    const _EmptyHint(
-                      'No featured layouts yet — vote on posts to fill this next month.',
-                    )
-                  else
-                    ..._monthly.map(_post),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _sectionTitle(_feedTab == 0 ? 'Recent' : 'Top'),
-                      const Spacer(),
-                      SegmentedButton<int>(
-                        segments: const [
-                          ButtonSegment(value: 0, label: Text('Recent')),
-                          ButtonSegment(value: 1, label: Text('Top')),
-                        ],
-                        selected: {_feedTab},
-                        onSelectionChanged: (s) =>
-                            setState(() => _feedTab = s.first),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (feed.isEmpty)
-                    const _EmptyHint(
-                      'No community layouts yet. Be the first to publish.',
-                    )
-                  else
-                    ...feed.map(_post),
-                ],
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpace.sm,
+                  0,
+                  AppSpace.sm,
+                  AppSpace.xl,
+                ),
+                children: feedChildren,
               ),
             ),
           ),
@@ -300,6 +454,7 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
   }
 
   Widget _post(PublishedLayout layout) {
+
     return _CommunityPostCard(
       layout: layout,
       previewActive: _previewId == layout.id,
