@@ -25,28 +25,48 @@ jobs:
           cache: npm
           cache-dependency-path: site/package-lock.json
 
+      - name: Require public Supabase env
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NEXT_PUBLIC_SUPABASE_URL}" ] || [ -z "${NEXT_PUBLIC_SUPABASE_ANON_KEY}" ]; then
+            echo "::error::Missing SUPABASE_URL or SUPABASE_ANON_KEY secrets (mapped to NEXT_PUBLIC_*)."
+            exit 1
+          fi
+          echo "Public Supabase env present (values not printed)."
+
       - name: Install & build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           NEXT_PUBLIC_GITHUB_REPO: yksu0/Room_Rig
         run: |
+          set -euo pipefail
           npm ci
           npm run build
 
       - name: Deploy to Vercel
-        working-directory: .
+        working-directory: site
         env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_GITHUB_REPO: yksu0/Room_Rig
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
+          : "${NEXT_PUBLIC_SUPABASE_URL:?SUPABASE_URL secret missing}"
+          : "${NEXT_PUBLIC_SUPABASE_ANON_KEY:?SUPABASE_ANON_KEY secret missing}"
+          : "${VERCEL_ORG_ID:?VERCEL_ORG_ID secret missing}"
+          : "${VERCEL_PROJECT_ID:?VERCEL_PROJECT_ID secret missing}"
+          : "${VERCEL_TOKEN:?VERCEL_TOKEN secret missing}"
           npm install -g vercel@latest
+          # project.json must live under site/.vercel (same cwd as pull/build/deploy)
           mkdir -p .vercel
           printf '%s\n' "{\"orgId\":\"${VERCEL_ORG_ID}\",\"projectId\":\"${VERCEL_PROJECT_ID}\"}" > .vercel/project.json
-          # Pull env into site/, then deploy the Next project from site/
-          cd site
           vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
           vercel build --prod --token="$VERCEL_TOKEN"
           vercel deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"
