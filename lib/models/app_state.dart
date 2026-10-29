@@ -1749,16 +1749,38 @@ class AppState extends ChangeNotifier {
         'spatial': spatialScore.round(),
       };
 
+  /// Snapshot a saved room for publish (live furniture if [roomId] is active).
+  PublishedLayoutSnapshot publishSnapshotForRoom(String roomId) {
+    _stashActiveRoom(upload: false);
+    if (roomId == _activeRoomId) return currentRoomPublishSnapshot();
+    for (final r in _rooms) {
+      if (r.id == roomId) {
+        return PublishedLayoutSnapshot(
+          name: r.name,
+          presetName: r.presetName,
+          gridCols: RoomScale.colsFrom(r.layout, fallback: 6),
+          gridRows: RoomScale.rowsFrom(r.layout, fallback: 8),
+          furniture: r.furniture.map((f) => f.copyWith()).toList(growable: false),
+        );
+      }
+    }
+    return currentRoomPublishSnapshot();
+  }
+
   Future<PublishedLayout> publishCurrentRoom({
     required String authorId,
     required String title,
+    String? description,
     List<String> tags = const [],
+    String? roomId,
   }) async {
+    final id = roomId ?? _activeRoomId;
     final published = await _publishedLayouts.publish(
       authorId: authorId,
       title: title,
-      layout: currentRoomPublishSnapshot(),
-      scores: currentRoomPublishScores(),
+      description: description,
+      layout: publishSnapshotForRoom(id),
+      scores: id == _activeRoomId ? currentRoomPublishScores() : null,
       tags: tags,
     );
     cachePublishedLayout(published);

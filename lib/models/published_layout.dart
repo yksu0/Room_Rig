@@ -51,6 +51,7 @@ class PublishedLayout {
   final String? authorName;
   final String? authorAvatarUrl;
   final String title;
+  final String? description;
   final PublishedLayoutSnapshot layout;
   final Map<String, dynamic>? scores;
   final List<String> tags;
@@ -70,6 +71,7 @@ class PublishedLayout {
     this.authorName,
     this.authorAvatarUrl,
     required this.title,
+    this.description,
     required this.layout,
     this.scores,
     this.tags = const [],
@@ -98,6 +100,7 @@ class PublishedLayout {
       authorName: authorName,
       authorAvatarUrl: authorAvatarUrl,
       title: title,
+      description: description,
       layout: layout,
       scores: scores,
       tags: tags,
@@ -133,6 +136,7 @@ class PublishedLayout {
       authorName: author?['display_name'] as String?,
       authorAvatarUrl: author?['avatar_url'] as String?,
       title: row['title'] as String? ?? 'Untitled',
+      description: row['description'] as String?,
       layout: PublishedLayoutSnapshot.fromJson(layoutMap),
       scores: scoresRaw is Map
           ? Map<String, dynamic>.from(scoresRaw)
@@ -163,4 +167,18 @@ const kLayoutRatingTagOptions = [
   'lighting',
   'ergonomics',
   'spatial',
+];
+
+/// Suggested topic tags when composing a Community post.
+const kCommunityPostTagOptions = [
+  'airflow',
+  'lighting',
+  'ergonomics',
+  'spatial',
+  'gaming',
+  'office',
+  'bedroom',
+  'small-room',
+  'before-after',
+  'budget',
 ];

@@ -90,6 +90,7 @@ class PublishedLayoutRepository {
   Future<PublishedLayout> publish({
     required String authorId,
     required String title,
+    String? description,
     required PublishedLayoutSnapshot layout,
     Map<String, dynamic>? scores,
     List<String> tags = const [],
@@ -98,11 +99,13 @@ class PublishedLayoutRepository {
     if (client == null) {
       throw StateError('Supabase is not configured');
     }
+    final desc = description?.trim();
     final inserted = await client
         .from('published_layouts')
         .insert({
           'author_id': authorId,
           'title': title.trim(),
+          'description': (desc == null || desc.isEmpty) ? null : desc,
           'layout': layout.toJson(),
           'scores': ?scores,
           'tags': tags,

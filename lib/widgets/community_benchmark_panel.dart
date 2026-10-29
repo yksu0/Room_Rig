@@ -470,6 +470,48 @@ class _CommunityPostCard extends StatelessWidget {
                         fontSize: 11,
                       ),
                     ),
+                    if ((layout.description ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        layout.description!.trim(),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                    if (layout.tags.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: [
+                          for (final t in layout.tags.take(8))
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.cyan.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: AppColors.cyan.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: Text(
+                                t,
+                                style: const TextStyle(
+                                  color: AppColors.cyan,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     // Preview pane — dormant until activated (one 3D scene at a time).
                     AspectRatio(
