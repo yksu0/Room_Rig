@@ -5,6 +5,10 @@ import Link from "next/link";
 import { FadeIn, Section } from "@/components/Section";
 import { createClient } from "@/lib/supabase/client";
 import { fetchIsAdmin } from "@/lib/auth";
+import {
+  parseAndValidateBaselineJson,
+  type FieldError,
+} from "@/lib/layoutSchema";
 import type { LayoutRatingStats, PublishedLayout } from "@/lib/types";
 
 type Row = PublishedLayout & { stats?: LayoutRatingStats | null };
@@ -13,8 +17,19 @@ const emptyBaseline = {
   title: "",
   description: "",
   tags: "baseline",
-  layoutJson: '{\n  "room": { "width": 3.6, "depth": 4.8 },\n  "furniture": []\n}',
-  scoresJson: '{\n  "airflow": 70,\n  "lighting": 72,\n  "ergonomics": 68,\n  "spatial": 74\n}',
+  layoutJson: `{
+  "name": "New Baseline",
+  "presetName": "custom",
+  "gridCols": 6,
+  "gridRows": 8,
+  "furniture": []
+}`,
+  scoresJson: `{
+  "airflow": 70,
+  "lighting": 72,
+  "ergonomics": 68,
+  "spatial": 74
+}`,
 };
 
 export default function AdminPage() {
@@ -22,8 +37,10 @@ export default function AdminPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [monthly, setMonthly] = useState<PublishedLayout[]>([]);
   const [status, setStatus] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<FieldError[]>([]);
   const [baselineForm, setBaselineForm] = useState(emptyBaseline);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [cloneId, setCloneId] = useState("");
 
   const load = useCallback(async () => {
     const sb = createClient();
@@ -53,9 +70,7 @@ export default function AdminPage() {
     ]);
 
     if (layoutsRes.error) {
-      setStatus(
-        `Load warning: ${layoutsRes.error.message}. Admin SELECT for hidden rows needs the RLS migration.`,
-      );
+      setStatus(`Load warning: ${layoutsRes.error.message}.`);
     }
 
     const statsMap = new Map(
@@ -81,6 +96,7 @@ export default function AdminPage() {
 
   const baselines = useMemo(() => rows.filter((r) => r.is_admin_baseline), [rows]);
   const community = useMemo(() => rows.filter((r) => !r.is_admin_baseline), [rows]);
+  const cloneOptions = useMemo(() => rows, [rows]);
 
   async function toggleHidden(row: Row) {
     setStatus("Updating hidden…");
@@ -89,7 +105,7 @@ export default function AdminPage() {
       .from("published_layouts")
       .update({ hidden: !row.hidden })
       .eq("id", row.id);
-    setStatus(error ? `Hide failed: ${error.message} (apply admin_rls.sql)` : "Updated.");
+    setStatus(error ? `Hide failed: ${error.message}` : "Updated.");
     await load();
   }
 
@@ -100,7 +116,7 @@ export default function AdminPage() {
       ? null
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const { error } = await sb.from("published_layouts").update({ featured_until }).eq("id", row.id);
-    setStatus(error ? `Feature failed: ${error.message} (apply admin_rls.sql)` : "Updated.");
+    setStatus(error ? `Feature failed: ${error.message}` : "Updated.");
     await load();
   }
 
@@ -113,20 +129,50 @@ export default function AdminPage() {
     await load();
   }
 
+  function applyClone(id: string) {
+    setCloneId(id);
+    const row = rows.find((r) => r.id === id);
+    if (!row) return;
+    setEditingId(null);
+    setFieldErrors([]);
+    setBaselineForm({
+      title: row.is_admin_baseline ? `${row.title} (copy)` : row.title,
+      description: row.description ?? "",
+      tags: (row.tags ?? []).join(", ") || "baseline",
+      layoutJson: JSON.stringify(row.layout ?? {}, null, 2),
+      scoresJson: JSON.stringify(
+        row.scores ?? { airflow: 70, lighting: 72, ergonomics: 68, spatial: 74 },
+        null,
+        2,
+      ),
+    });
+    setStatus(`Cloned fields from “${row.title}”. Review and save as a new baseline.`);
+  }
+
   async function saveBaseline(e: FormEvent) {
     e.preventDefault();
     setStatus("Saving baseline…");
-    let layout: unknown;
-    let scores: unknown;
-    try {
-      layout = JSON.parse(baselineForm.layoutJson);
-      scores = JSON.parse(baselineForm.scoresJson);
-    } catch {
-      setStatus("Invalid JSON in layout or scores.");
+    setFieldErrors([]);
+
+    const title = baselineForm.title.trim();
+    if (!title) {
+      setFieldErrors([{ field: "title", message: "required" }]);
+      setStatus("Fix the highlighted fields.");
       return;
     }
+
+    const { layout, scores, errors } = parseAndValidateBaselineJson(
+      baselineForm.layoutJson,
+      baselineForm.scoresJson,
+    );
+    if (errors.length) {
+      setFieldErrors(errors);
+      setStatus("Fix the highlighted fields.");
+      return;
+    }
+
     const payload = {
-      title: baselineForm.title.trim(),
+      title,
       description: baselineForm.description.trim() || null,
       tags: baselineForm.tags
         .split(",")
@@ -143,17 +189,21 @@ export default function AdminPage() {
       ? await sb.from("published_layouts").update(payload).eq("id", editingId)
       : await sb.from("published_layouts").insert(payload);
     if (error) {
-      setStatus(`Baseline save failed: ${error.message} (apply admin_rls.sql)`);
+      setStatus(`Baseline save failed: ${error.message}`);
     } else {
       setStatus(editingId ? "Baseline updated." : "Baseline created.");
       setBaselineForm(emptyBaseline);
       setEditingId(null);
+      setCloneId("");
+      setFieldErrors([]);
       await load();
     }
   }
 
   function startEdit(row: Row) {
     setEditingId(row.id);
+    setCloneId("");
+    setFieldErrors([]);
     setBaselineForm({
       title: row.title,
       description: row.description ?? "",
@@ -161,6 +211,12 @@ export default function AdminPage() {
       layoutJson: JSON.stringify(row.layout ?? {}, null, 2),
       scoresJson: JSON.stringify(row.scores ?? {}, null, 2),
     });
+  }
+
+  function errorsFor(prefix: string) {
+    return fieldErrors.filter(
+      (e) => e.field === prefix || e.field.startsWith(`${prefix}.`) || e.field.startsWith(`${prefix}[`),
+    );
   }
 
   if (gate === "loading") {
@@ -186,7 +242,7 @@ export default function AdminPage() {
     return (
       <Section title="Admin">
         <div className="max-w-xl rounded-rr-lg border border-border bg-card p-5 text-sm text-ink-secondary">
-          This account is not flagged as admin. After the security fix,{" "}
+          This account is not flagged as admin.{" "}
           <code className="text-cyan">public.is_admin()</code> must return true for your user
           (profiles.is_admin via SECURITY DEFINER — not client-writable).
         </div>
@@ -194,12 +250,17 @@ export default function AdminPage() {
     );
   }
 
+  const layoutFieldErrors = errorsFor("layout");
+  const scoresFieldErrors = errorsFor("scores");
+  const titleErrors = errorsFor("title");
+
   return (
     <Section eyebrow="Admin" title="Community curation">
       <FadeIn>
         <p className="mb-2 max-w-3xl text-sm text-ink-secondary">
-          Hide posts, feature layouts, and manage baselines. Write actions require{" "}
-          <code className="text-cyan">admin_rls.sql</code> applied on Supabase.
+          Hide posts, feature layouts, and manage baselines. Admin writes use{" "}
+          <code className="text-cyan">profiles.is_admin</code> via{" "}
+          <code className="text-cyan">public.is_admin()</code>.
         </p>
         <p className="mb-8 min-h-5 text-sm text-amber" role="status">
           {status}
@@ -297,13 +358,40 @@ export default function AdminPage() {
             {editingId ? "Edit baseline" : "Create baseline"}
           </h3>
           <form onSubmit={saveBaseline} className="space-y-3 rounded-rr-lg border border-border bg-card p-4">
-            <input
-              required
-              placeholder="Title"
-              value={baselineForm.title}
-              onChange={(e) => setBaselineForm((f) => ({ ...f, title: e.target.value }))}
-              className="w-full rounded-rr border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-cyan"
-            />
+            <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted">
+              Clone from existing
+              <select
+                value={cloneId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id) applyClone(id);
+                  else setCloneId("");
+                }}
+                className="mt-1 w-full rounded-rr border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-cyan"
+              >
+                <option value="">— Start blank or pick a layout —</option>
+                {cloneOptions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.is_admin_baseline ? "Baseline" : "Community"}: {r.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div>
+              <input
+                required
+                placeholder="Title"
+                value={baselineForm.title}
+                onChange={(e) => setBaselineForm((f) => ({ ...f, title: e.target.value }))}
+                className="w-full rounded-rr border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-cyan"
+                aria-invalid={titleErrors.length > 0}
+              />
+              {titleErrors.map((err) => (
+                <p key={err.field} className="mt-1 text-xs text-red">
+                  {err.field}: {err.message}
+                </p>
+              ))}
+            </div>
             <input
               placeholder="Description"
               value={baselineForm.description}
@@ -324,8 +412,14 @@ export default function AdminPage() {
                 value={baselineForm.layoutJson}
                 onChange={(e) => setBaselineForm((f) => ({ ...f, layoutJson: e.target.value }))}
                 className="mt-1 w-full rounded-rr border border-border bg-surface px-3 py-2 font-mono text-xs outline-none focus:border-cyan"
+                aria-invalid={layoutFieldErrors.length > 0}
               />
             </label>
+            {layoutFieldErrors.map((err) => (
+              <p key={err.field} className="text-xs text-red">
+                {err.field}: {err.message}
+              </p>
+            ))}
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted">
               Scores JSON
               <textarea
@@ -334,8 +428,14 @@ export default function AdminPage() {
                 value={baselineForm.scoresJson}
                 onChange={(e) => setBaselineForm((f) => ({ ...f, scoresJson: e.target.value }))}
                 className="mt-1 w-full rounded-rr border border-border bg-surface px-3 py-2 font-mono text-xs outline-none focus:border-cyan"
+                aria-invalid={scoresFieldErrors.length > 0}
               />
             </label>
+            {scoresFieldErrors.map((err) => (
+              <p key={err.field} className="text-xs text-red">
+                {err.field}: {err.message}
+              </p>
+            ))}
             <div className="flex gap-2">
               <button type="submit" className="rounded-rr bg-accent-grad px-4 py-2 text-sm font-extrabold text-black">
                 {editingId ? "Update" : "Create"}
@@ -345,6 +445,8 @@ export default function AdminPage() {
                   type="button"
                   onClick={() => {
                     setEditingId(null);
+                    setCloneId("");
+                    setFieldErrors([]);
                     setBaselineForm(emptyBaseline);
                   }}
                   className="rounded-rr border border-border px-4 py-2 text-sm font-bold text-ink-secondary"
@@ -370,6 +472,13 @@ export default function AdminPage() {
                     className="rounded border border-border px-2 py-1 text-xs font-bold hover:text-cyan"
                   >
                     Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => applyClone(b.id)}
+                    className="rounded border border-border px-2 py-1 text-xs font-bold hover:text-cyan"
+                  >
+                    Clone
                   </button>
                   <button
                     type="button"
