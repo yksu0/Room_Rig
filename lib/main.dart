@@ -21,6 +21,7 @@ import 'screens/room_customizer_screen.dart';
 import 'screens/benchmark_screen.dart';
 import 'screens/set_password_screen.dart';
 import 'widgets/room_model_scene_pointer_guard.dart';
+import 'widgets/guest_import_dialog.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -238,30 +239,11 @@ class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
     final ok = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text(
-          'Keep this device\'s room?',
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        content: Text(
-          n == 1
-              ? 'A room made on this device as a guest is still here. '
-                  'Add it to your account, or discard it from this phone.'
-              : '$n rooms made on this device as a guest are still here. '
-                  'Add them to your account, or discard them from this phone.',
-          style: const TextStyle(color: AppColors.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Discard'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Add to account'),
-          ),
-        ],
+      builder: (ctx) => buildGuestImportDialog(
+        context: ctx,
+        roomCount: n,
+        onDiscard: () => Navigator.pop(ctx, false),
+        onKeep: () => Navigator.pop(ctx, true),
       ),
     );
     if (!mounted) return;
