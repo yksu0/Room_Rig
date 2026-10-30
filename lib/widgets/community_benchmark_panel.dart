@@ -412,32 +412,56 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
             ),
           ),
         if (_loading)
-          const Expanded(
+          Expanded(
             child: Center(
-              child: CircularProgressIndicator(color: AppColors.cyan),
+              child: Semantics(
+                label: 'Loading Community feed',
+                child: const CircularProgressIndicator(color: AppColors.cyan),
+              ),
             ),
           )
         else if (_error != null && !showStaleFeed)
           Expanded(
             child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(AppSpace.xl),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      _error!,
-                      key: const ValueKey('community_offline_error'),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.textSecondary),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final phone = constraints.maxWidth < 412;
+                  return Padding(
+                    padding: EdgeInsets.all(phone ? AppSpace.md : AppSpace.xl),
+                    child: Semantics(
+                      liveRegion: true,
+                      label: _error!,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.cloud_off_rounded,
+                            key: const ValueKey('community_offline_error_icon'),
+                            color: AppColors.amber,
+                            size: phone ? 36 : 44,
+                          ),
+                          SizedBox(height: phone ? AppSpace.sm : AppSpace.md),
+                          Text(
+                            _error!,
+                            key: const ValueKey('community_offline_error'),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: phone ? 13 : 14,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpace.sm),
+                          FilledButton(
+                            onPressed: _reload,
+                            child: const Text('Retry'),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: AppSpace.sm),
-                    FilledButton(
-                      onPressed: _reload,
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           )

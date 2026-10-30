@@ -202,4 +202,34 @@ void main() {
     await tester.pump();
     expect(state.benchmarkMode, 'community');
   });
+
+  testWidgets('Community offline empty state at 360dp shows icon + Retry', (tester) async {
+    ignoreLayoutNoise();
+    await tester.binding.setSurfaceSize(const Size(360, 740));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final state = AppState(publishedLayouts: _ThrowingFeedRepo());
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthService()),
+          ChangeNotifierProvider(create: (_) => ProfileService()),
+          ChangeNotifierProvider.value(value: state),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: const Scaffold(body: CommunityBenchmarkPanel()),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.byKey(const ValueKey('community_offline_error')), findsOneWidget);
+    expect(find.byKey(const ValueKey('community_offline_error_icon')), findsOneWidget);
+    expect(find.textContaining('Could not load Community feed'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.byKey(const ValueKey('community_stale_banner')), findsNothing);
+  });
 }
