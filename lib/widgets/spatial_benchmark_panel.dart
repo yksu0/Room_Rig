@@ -32,8 +32,8 @@ class SpatialBenchmarkPanel extends StatefulWidget {
 
 class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
   _SpatialStep _step = _SpatialStep.layout;
-  BenchmarkLayoutKind _layoutVariant = BenchmarkLayoutKind.myRoom;
-  BenchmarkLayoutKind _analyzeVariant = BenchmarkLayoutKind.myRoom;
+  BenchmarkLayoutKind _layoutVariant = BenchmarkLayoutKind.currentRoom;
+  BenchmarkLayoutKind _analyzeVariant = BenchmarkLayoutKind.currentRoom;
   _LayoutView _layoutView = _LayoutView.heatmap;
   int _layoutOrbitResetNonce = 0;
 
@@ -89,12 +89,12 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
     );
     _layouts = layouts;
     _myRoomMetrics = SpatialAnalyzer.evaluate(
-      furniture: layouts.myRoom,
+      furniture: layouts.currentRoom,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
     );
     _improvedMetrics = SpatialAnalyzer.evaluate(
-      furniture: layouts.improved,
+      furniture: layouts.autoRig,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
     );
@@ -102,8 +102,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
     if (resetStep) {
       _step = _SpatialStep.layout;
       final pending = state.benchmarkLayoutFocusToken != _seenFocusToken;
-      var kind = pending ? state.benchmarkLayoutFocus : BenchmarkLayoutKind.myRoom;
-      if (kind == BenchmarkLayoutKind.sample) kind = BenchmarkLayoutKind.myRoom;
+      var kind = pending ? state.benchmarkLayoutFocus : BenchmarkLayoutKind.currentRoom;
       _seenFocusToken = state.benchmarkLayoutFocusToken;
       _layoutVariant = kind;
       _analyzeVariant = kind;
@@ -116,7 +115,6 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
     if (state.benchmarkLayoutFocusToken != _seenFocusToken) {
       _seenFocusToken = state.benchmarkLayoutFocusToken;
       var kind = state.benchmarkLayoutFocus;
-      if (kind == BenchmarkLayoutKind.sample) kind = BenchmarkLayoutKind.myRoom;
       _layoutVariant = kind;
       _analyzeVariant = kind;
     }
@@ -124,8 +122,8 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
       _seenResultsFocusToken = state.benchmarkResultsFocusToken;
       _showResults = true;
       _step = _SpatialStep.results;
-      _analyzeVariant = BenchmarkLayoutKind.improved;
-      _layoutVariant = BenchmarkLayoutKind.improved;
+      _analyzeVariant = BenchmarkLayoutKind.autoRig;
+      _layoutVariant = BenchmarkLayoutKind.autoRig;
     }
     final key =
         '${benchmarkCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchmarkAlternateCursor}';
@@ -139,11 +137,10 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
 
   SpatialMetrics? get _activeMetrics {
     switch (_analyzeVariant) {
-      case BenchmarkLayoutKind.improved:
+      case BenchmarkLayoutKind.autoRig:
         return _improvedMetrics;
-      case BenchmarkLayoutKind.sample:
-      case BenchmarkLayoutKind.myRoom:
-        return _myRoomMetrics;
+      case BenchmarkLayoutKind.currentRoom:
+              return _myRoomMetrics;
     }
   }
 
@@ -161,16 +158,16 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
         _ => _SpatialStep.results,
       };
 
-  String get _layoutHint => _layouts?.fellBackToSample ?? false
-      ? 'No baseline — this runs on the reference room. Add furniture in Room, then Set baseline.'
+  String get _layoutHint => _layouts?.isEmpty ?? false
+      ? 'No room to score — create or stock a room first, then return to Benchmark.'
       : 'Scores Baseline vs Auto-Rig (same engine as Room Tools → Auto-Rig). Apply writes Auto-Rig onto your Room.';
 
   List<String> _notesFor(BenchmarkLayoutKind kind) {
     switch (kind) {
-      case BenchmarkLayoutKind.myRoom:
-        if (_layouts?.fellBackToSample ?? false) {
+      case BenchmarkLayoutKind.currentRoom:
+        if (_layouts?.isEmpty ?? false) {
           return const [
-            'No baseline — showing the reference room',
+            'No furniture yet — create a room before Benchmark can score',
             'Add furniture on Room, then Set baseline (Compare)',
           ];
         }
@@ -178,16 +175,11 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
           'Pinned Baseline inventory for this lot',
           'Room edits do not move Baseline until you Set baseline again',
         ];
-      case BenchmarkLayoutKind.improved:
+      case BenchmarkLayoutKind.autoRig:
         final reasons = _layouts?.improvedReasons ?? const <String>[];
         return reasons.isEmpty
             ? const ['No rearrange found that opens the floor more than Baseline']
             : reasons;
-      case BenchmarkLayoutKind.sample:
-        return const [
-          'Reference room used to sanity-check the analyzer',
-          'Door aisle blocked — floor packed tight against walkways',
-        ];
     }
   }
 
@@ -202,15 +194,15 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
     setState(() {
       _showResults = true;
       _step = _SpatialStep.results;
-      _analyzeVariant = BenchmarkLayoutKind.improved;
-      _layoutVariant = BenchmarkLayoutKind.improved;
+      _analyzeVariant = BenchmarkLayoutKind.autoRig;
+      _layoutVariant = BenchmarkLayoutKind.autoRig;
       _layoutView = _LayoutView.compare;
     });
   }
 
   BenchmarkValidation _validationForImproved(AppState state) {
     return BenchmarkValidator.validateLayout(
-      furniture: _furnitureFor(BenchmarkLayoutKind.improved),
+      furniture: _furnitureFor(BenchmarkLayoutKind.autoRig),
       gridCols: state.currentRoomData.gridCols,
       gridRows: state.currentRoomData.gridRows,
       mode: 'spatial',
@@ -235,14 +227,14 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
       if (!await confirmBenchmarkApply(
         context,
         validation: applyValidation,
-        fellBackToSample: _layouts?.fellBackToSample ?? false,
+        isEmpty: _layouts?.isEmpty ?? false,
       )) {
         return;
       }
       if (!context.mounted) return;
       final before = List<FurnitureItem>.from(state.committedFurniture);
       state.applyFurnitureLayout(
-        _furnitureFor(BenchmarkLayoutKind.improved),
+        _furnitureFor(BenchmarkLayoutKind.autoRig),
         markOptimized: true,
         lockMode: 'spatial',
       );
@@ -386,7 +378,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
               onTryAlternate: () {
                 context.read<AppState>().cycleBenchmarkAlternate();
                 setState(() {
-                  _layoutVariant = BenchmarkLayoutKind.improved;
+                  _layoutVariant = BenchmarkLayoutKind.autoRig;
                   _layoutView = _LayoutView.compare;
                 });
               },
@@ -474,19 +466,18 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            BenchmarkInspectLockBlock(furniture: _furnitureFor(BenchmarkLayoutKind.myRoom)),
+            BenchmarkInspectLockBlock(furniture: _furnitureFor(BenchmarkLayoutKind.currentRoom)),
             Text(
               _layoutView == _LayoutView.compare
                   ? 'Baseline vs Auto-Rig — same Auto-Rig mix as Room'
                   : switch (_layoutVariant) {
-                      BenchmarkLayoutKind.myRoom =>
-                        (_layouts?.fellBackToSample ?? false)
-                            ? 'Reference room — no baseline inventory'
-                            : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.myRoom).length} pinned items',
-                      BenchmarkLayoutKind.improved =>
+                      BenchmarkLayoutKind.currentRoom =>
+                        (_layouts?.isEmpty ?? false)
+                            ? 'Empty room — add furniture before scoring'
+                            : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
+                      BenchmarkLayoutKind.autoRig =>
                         _layouts?.improvedCaption ?? 'Auto-Rig · from Baseline',
-                      BenchmarkLayoutKind.sample => 'Sample room — door aisle blocked, floor packed',
-                    },
+                  },
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w700,
@@ -502,15 +493,13 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
                   children: [
                     Icon(
                       switch (_layoutVariant) {
-                        BenchmarkLayoutKind.improved => Icons.check_circle_outline,
-                        BenchmarkLayoutKind.myRoom => Icons.grid_view_rounded,
-                        BenchmarkLayoutKind.sample => Icons.warning_amber_rounded,
-                      },
+                        BenchmarkLayoutKind.autoRig => Icons.check_circle_outline,
+                        BenchmarkLayoutKind.currentRoom => Icons.grid_view_rounded,
+                  },
                       size: 14,
                       color: switch (_layoutVariant) {
-                        BenchmarkLayoutKind.improved => AppColors.green,
-                        BenchmarkLayoutKind.myRoom => AppColors.cyan,
-                        BenchmarkLayoutKind.sample => AppColors.amber,
+                        BenchmarkLayoutKind.autoRig => AppColors.green,
+                                                BenchmarkLayoutKind.currentRoom => AppColors.amber,
                       },
                     ),
                     const SizedBox(width: 8),
@@ -601,8 +590,8 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
       return BenchmarkSideBySidePlans(
         gridCols: room.gridCols,
         gridRows: room.gridRows,
-        myRoom: _furnitureFor(BenchmarkLayoutKind.myRoom),
-        improved: _furnitureFor(BenchmarkLayoutKind.improved),
+        currentRoom: _furnitureFor(BenchmarkLayoutKind.currentRoom),
+        autoRig: _furnitureFor(BenchmarkLayoutKind.autoRig),
         accentColor: AppColors.spatialColor,
       );
     }
@@ -726,7 +715,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
           onTryAlternate: () {
             context.read<AppState>().cycleBenchmarkAlternate();
             setState(() {
-              _layoutVariant = BenchmarkLayoutKind.improved;
+              _layoutVariant = BenchmarkLayoutKind.autoRig;
               _layoutView = _LayoutView.compare;
             });
           },
@@ -740,15 +729,13 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
                 _layoutView == _LayoutView.compare
                     ? 'Baseline vs Auto-Rig — same Auto-Rig mix as Room'
                     : switch (_layoutVariant) {
-                        BenchmarkLayoutKind.myRoom =>
-                          (_layouts?.fellBackToSample ?? false)
-                              ? 'Reference room — no baseline inventory'
-                              : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.myRoom).length} pinned items',
-                        BenchmarkLayoutKind.improved =>
+                        BenchmarkLayoutKind.currentRoom =>
+                          (_layouts?.isEmpty ?? false)
+                              ? 'Empty room — add furniture before scoring'
+                              : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
+                        BenchmarkLayoutKind.autoRig =>
                           _layouts?.improvedCaption ??
                               'Auto-Rig · from Baseline',
-                        BenchmarkLayoutKind.sample =>
-                          'Sample room — door aisle blocked, floor packed',
                       },
                 style: const TextStyle(
                   color: AppColors.textPrimary,
@@ -761,8 +748,8 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
                 BenchmarkSideBySidePlans(
                   gridCols: room.gridCols,
                   gridRows: room.gridRows,
-                  myRoom: _furnitureFor(BenchmarkLayoutKind.myRoom),
-                  improved: _furnitureFor(BenchmarkLayoutKind.improved),
+                  currentRoom: _furnitureFor(BenchmarkLayoutKind.currentRoom),
+                  autoRig: _furnitureFor(BenchmarkLayoutKind.autoRig),
                   accentColor: AppColors.spatialColor,
                 )
               else if (_layoutView == _LayoutView.heatmap)
@@ -825,15 +812,13 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
                     children: [
                       Icon(
                         switch (_layoutVariant) {
-                          BenchmarkLayoutKind.improved => Icons.check_circle_outline,
-                          BenchmarkLayoutKind.myRoom => Icons.grid_view_rounded,
-                          BenchmarkLayoutKind.sample => Icons.warning_amber_rounded,
-                        },
+                          BenchmarkLayoutKind.autoRig => Icons.check_circle_outline,
+                          BenchmarkLayoutKind.currentRoom => Icons.grid_view_rounded,
+                  },
                         size: 14,
                         color: switch (_layoutVariant) {
-                          BenchmarkLayoutKind.improved => AppColors.green,
-                          BenchmarkLayoutKind.myRoom => AppColors.cyan,
-                          BenchmarkLayoutKind.sample => AppColors.amber,
+                          BenchmarkLayoutKind.autoRig => AppColors.green,
+                                                    BenchmarkLayoutKind.currentRoom => AppColors.amber,
                         },
                       ),
                       const SizedBox(width: 8),

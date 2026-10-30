@@ -68,7 +68,7 @@ void main() {
       rightIsAutoRig: true,
     );
     expect(
-      layouts.improved.map((f) => f.id).toSet(),
+      layouts.autoRig.map((f) => f.id).toSet(),
       left.map((f) => f.id).toSet(),
     );
     expect(layouts.rightIsAutoRig, isTrue);
@@ -98,7 +98,7 @@ void main() {
     expect(layouts.rightIsAutoRig, isFalse);
     expect(layouts.improvedReasons, isEmpty);
     expect(
-      BenchmarkLayoutBuilder.fingerprintOf(layouts.improved),
+      BenchmarkLayoutBuilder.fingerprintOf(layouts.autoRig),
       BenchmarkLayoutBuilder.fingerprintOf(right),
     );
   });
@@ -121,20 +121,20 @@ void main() {
 
   test('hidden items are left out of the simulated layout', () {
     final state = _roomWithPreset();
-    final visible = _build(BenchmarkMode.airflow, state.furniture).myRoom.length;
+    final visible = _build(BenchmarkMode.airflow, state.furniture).currentRoom.length;
 
     state.toggleFurnitureHidden('shelf');
     final after = _build(BenchmarkMode.airflow, state.furniture);
 
-    expect(after.myRoom.length, visible - 1);
-    expect(after.myRoom.any((f) => f.id == 'shelf'), isFalse);
+    expect(after.currentRoom.length, visible - 1);
+    expect(after.currentRoom.any((f) => f.id == 'shelf'), isFalse);
   });
 
   test('the field genuinely changes when furniture moves', () {
     final state = _roomWithPreset();
 
     AirflowSimSnapshot sim() => AirflowSimulator.build(
-          furniture: _build(BenchmarkMode.airflow, state.furniture).myRoom,
+          furniture: _build(BenchmarkMode.airflow, state.furniture).currentRoom,
           optimized: false,
           particleCount: 0,
           ambientCount: 0,
@@ -166,7 +166,7 @@ void main() {
     String? shared;
     for (final mode in BenchmarkMode.values) {
       final layouts = _build(mode, state.furniture, leftFurniture: left);
-      final fp = BenchmarkLayoutBuilder.fingerprintOf(layouts.improved);
+      final fp = BenchmarkLayoutBuilder.fingerprintOf(layouts.autoRig);
       shared ??= fp;
       expect(fp, shared, reason: '${mode.name} Auto-Rig must match other modes');
     }
@@ -189,7 +189,7 @@ void main() {
 
     for (final mode in BenchmarkMode.values) {
       final layouts = _build(mode, state.furniture);
-      layouts.myRoom.first.copyWith(gridX: 99);
+      layouts.currentRoom.first.copyWith(gridX: 99);
       expect(
         BenchmarkLayoutBuilder.fingerprintOf(state.furniture),
         before,

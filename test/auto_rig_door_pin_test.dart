@@ -64,7 +64,7 @@ void main() {
       gridCols: room.gridCols,
       gridRows: room.gridRows,
     );
-    final improvedDoor = doorOf(layouts.improved)!;
+    final improvedDoor = doorOf(layouts.autoRig)!;
     expect(improvedDoor.gridX, door.gridX);
     expect(improvedDoor.gridY, door.gridY);
     expect(improvedDoor.yawDegrees, door.yawDegrees);

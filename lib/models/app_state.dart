@@ -3134,7 +3134,7 @@ class AppState extends ChangeNotifier {
   /// overwriting the user's furniture with it. The token makes it a one-shot
   /// request, so the panels can honour it once and then let the user pick
   /// freely again.
-  BenchmarkLayoutKind _benchmarkLayoutFocus = BenchmarkLayoutKind.myRoom;
+  BenchmarkLayoutKind _benchmarkLayoutFocus = BenchmarkLayoutKind.currentRoom;
   int _benchmarkLayoutFocusToken = 0;
 
   /// Which ranked Auto-Rig candidate Benchmark Improved is previewing (shared).

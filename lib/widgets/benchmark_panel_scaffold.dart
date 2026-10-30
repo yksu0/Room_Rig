@@ -187,15 +187,15 @@ class BenchmarkVariantChips extends StatelessWidget {
       children: [
         BenchmarkChip(
           label: left,
-          selected: selected == BenchmarkLayoutKind.myRoom,
+          selected: selected == BenchmarkLayoutKind.currentRoom,
           color: AppColors.cyan,
-          onTap: () => onChanged(BenchmarkLayoutKind.myRoom),
+          onTap: () => onChanged(BenchmarkLayoutKind.currentRoom),
         ),
         BenchmarkChip(
           label: right,
-          selected: selected == BenchmarkLayoutKind.improved,
+          selected: selected == BenchmarkLayoutKind.autoRig,
           color: AppColors.green,
-          onTap: () => onChanged(BenchmarkLayoutKind.improved),
+          onTap: () => onChanged(BenchmarkLayoutKind.autoRig),
         ),
       ],
     );
@@ -502,8 +502,8 @@ bool benchmarkLayoutsInSync(BenchmarkLayouts? layouts, {
 class BenchmarkSideBySidePlans extends StatelessWidget {
   final int gridCols;
   final int gridRows;
-  final List<FurnitureItem> myRoom;
-  final List<FurnitureItem> improved;
+  final List<FurnitureItem> currentRoom;
+  final List<FurnitureItem> autoRig;
   final Color accentColor;
   final String leftLabel;
   final String rightLabel;
@@ -512,8 +512,8 @@ class BenchmarkSideBySidePlans extends StatelessWidget {
     super.key,
     required this.gridCols,
     required this.gridRows,
-    required this.myRoom,
-    required this.improved,
+    required this.currentRoom,
+    required this.autoRig,
     this.accentColor = AppColors.cyan,
     this.leftLabel = 'Left',
     this.rightLabel = 'Right',
@@ -541,7 +541,7 @@ class BenchmarkSideBySidePlans extends StatelessWidget {
                 child: _pane(
                   label: left,
                   color: AppColors.cyan,
-                  furniture: myRoom,
+                  furniture: currentRoom,
                 ),
               ),
               const SizedBox(width: 8),
@@ -549,7 +549,7 @@ class BenchmarkSideBySidePlans extends StatelessWidget {
                 child: _pane(
                   label: right,
                   color: AppColors.green,
-                  furniture: improved,
+                  furniture: autoRig,
                 ),
               ),
             ],
@@ -1412,17 +1412,17 @@ class BenchmarkComparePanel extends StatelessWidget {
 Future<bool> confirmBenchmarkApply(
   BuildContext context, {
   required BenchmarkValidation validation,
-  bool fellBackToSample = false,
+  bool isEmpty = false,
 }) async {
-  if (fellBackToSample) {
+  if (isEmpty) {
     await showDialog<void>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.55),
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text('Cannot apply demo layout', style: TextStyle(color: AppColors.textPrimary)),
+        title: const Text('Cannot apply layout', style: TextStyle(color: AppColors.textPrimary)),
         content: const Text(
-          'No baseline inventory, so Benchmark is showing a reference room. '
+          'No furniture in this room yet. Create or stock a room before applying Auto-Rig. '
           'Add furniture on Room (or load a preset), then Set baseline before applying.',
           style: TextStyle(color: AppColors.textSecondary),
         ),
@@ -1582,8 +1582,8 @@ String summarizeLayoutDiff(List<FurnitureItem> before, List<FurnitureItem> after
 /// True when improved furniture matches my-room — Apply would be a no-op.
 bool improvedLayoutIsNoOp(BenchmarkLayouts? layouts) {
   if (layouts == null) return false;
-  return BenchmarkLayoutBuilder.fingerprintOf(layouts.myRoom) ==
-      BenchmarkLayoutBuilder.fingerprintOf(layouts.improved);
+  return BenchmarkLayoutBuilder.fingerprintOf(layouts.currentRoom) ==
+      BenchmarkLayoutBuilder.fingerprintOf(layouts.autoRig);
 }
 
 Widget benchmarkImprovedNoOpBanner({String message = 'Auto-Rig matches Baseline — nothing new to apply.'}) {

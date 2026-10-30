@@ -48,12 +48,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   }
 
   _AirflowStep _airflowStep = _AirflowStep.layout;
-  BenchmarkLayoutKind _layoutVariant = BenchmarkLayoutKind.myRoom;
+  BenchmarkLayoutKind _layoutVariant = BenchmarkLayoutKind.currentRoom;
   _RoomViewMode _roomViewMode = _RoomViewMode.twoD;
   AirflowVizMode _simVizMode = AirflowVizMode.orbit3D;
   bool _showParticles = true;
   bool _showHeatmap = true;
-  BenchmarkLayoutKind _simVariant = BenchmarkLayoutKind.myRoom;
+  BenchmarkLayoutKind _simVariant = BenchmarkLayoutKind.currentRoom;
 
   BenchmarkLayouts? _layouts;
   String? _layoutSyncKey;
@@ -86,11 +86,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
 
   AirflowSimSnapshot? get _activeSim {
     switch (_simVariant) {
-      case BenchmarkLayoutKind.improved:
+      case BenchmarkLayoutKind.autoRig:
         return _improvedSim;
-      case BenchmarkLayoutKind.sample:
-      case BenchmarkLayoutKind.myRoom:
-        // Sample chip removed; empty-Room fallback already uses sample as myRoom.
+      case BenchmarkLayoutKind.currentRoom:
+              // Current Room (baseline) field.
         return _myRoomSim;
     }
   }
@@ -104,7 +103,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   /// the score rings, and the check rows all describe the same furniture.
   BenchmarkValidation _validationForSimVariant(AppState state) {
     final kind = _airflowStep == _AirflowStep.results
-        ? BenchmarkLayoutKind.improved
+        ? BenchmarkLayoutKind.autoRig
         : _simVariant;
     return BenchmarkValidator.validateLayout(
       furniture: _furnitureFor(kind),
@@ -141,12 +140,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     _layouts = layouts;
     final bounds = SimRoomBounds.fromRoomData(room);
     _myRoomSim = AirflowSimulator.build(
-      furniture: layouts.myRoom,
+      furniture: layouts.currentRoom,
       optimized: false,
       bounds: bounds,
     );
     _improvedSim = AirflowSimulator.build(
-      furniture: layouts.improved,
+      furniture: layouts.autoRig,
       optimized: true,
       bounds: bounds,
     );
@@ -156,13 +155,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       // A pending focus request (the Room's "Sim Prototype" button) wins once;
       // after that a reset lands back on the user's own room.
       final pending = state.benchmarkLayoutFocusToken != _seenFocusToken;
-      var kind = pending ? state.benchmarkLayoutFocus : BenchmarkLayoutKind.myRoom;
-      if (kind == BenchmarkLayoutKind.sample) kind = BenchmarkLayoutKind.myRoom;
+      var kind = pending ? state.benchmarkLayoutFocus : BenchmarkLayoutKind.currentRoom;
       _seenFocusToken = state.benchmarkLayoutFocusToken;
       _layoutVariant = kind;
       _simVariant = kind;
       _showResults = false;
-      if (kind == BenchmarkLayoutKind.sample) {
+      if (kind == BenchmarkLayoutKind.currentRoom) {
         _roomViewMode = _RoomViewMode.twoD;
       }
     }
@@ -182,8 +180,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       _layoutVariant = state.benchmarkLayoutFocus;
       _simVariant = state.benchmarkLayoutFocus;
       _selectedFurnitureId = null;
-      // Sample focus needs the single-pane caption, not the Compare strip.
-      if (state.benchmarkLayoutFocus == BenchmarkLayoutKind.sample) {
+      if (state.benchmarkLayoutFocus == BenchmarkLayoutKind.currentRoom) {
         _roomViewMode = _RoomViewMode.twoD;
       }
     }
@@ -191,8 +188,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       _seenResultsFocusToken = state.benchmarkResultsFocusToken;
       _showResults = true;
       _airflowStep = _AirflowStep.results;
-      _simVariant = BenchmarkLayoutKind.improved;
-      _layoutVariant = BenchmarkLayoutKind.improved;
+      _simVariant = BenchmarkLayoutKind.autoRig;
+      _layoutVariant = BenchmarkLayoutKind.autoRig;
     }
     final key =
         '${benchmarkCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchmarkAlternateCursor}';
@@ -207,8 +204,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     setState(() {
       _showResults = true;
       _airflowStep = _AirflowStep.results;
-      _simVariant = BenchmarkLayoutKind.improved;
-      _layoutVariant = BenchmarkLayoutKind.improved;
+      _simVariant = BenchmarkLayoutKind.autoRig;
+      _layoutVariant = BenchmarkLayoutKind.autoRig;
       _roomViewMode = _RoomViewMode.compare;
     });
   }
@@ -474,14 +471,14 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     if (!await confirmBenchmarkApply(
       context,
       validation: validation,
-      fellBackToSample: _layouts?.fellBackToSample ?? false,
+      isEmpty: _layouts?.isEmpty ?? false,
     )) {
       return;
     }
     if (!mounted) return;
     final before = List<FurnitureItem>.from(state.committedFurniture);
     state.applyFurnitureLayout(
-      _furnitureFor(BenchmarkLayoutKind.improved),
+      _furnitureFor(BenchmarkLayoutKind.autoRig),
       markOptimized: true,
       lockMode: 'airflow',
     );
@@ -547,8 +544,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           buttonLabel: 'RUN VOXEL AIRFLOW BENCHMARK',
           icon: RoomSvg.scan,
           onRun: _runBenchmark,
-          hint: _layouts?.fellBackToSample ?? false
-              ? 'No baseline — Baseline / Auto-Rig use the reference sample.'
+          hint: _layouts?.isEmpty ?? false
+              ? 'No room to score — create or stock a room first, then return to Benchmark.'
               : 'Scores Baseline vs Auto-Rig (same engine as Room Tools → Auto-Rig). Apply writes Auto-Rig onto your Room.',
         ),
         middleRunAction: BenchmarkRunAction(
@@ -556,7 +553,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           icon: RoomSvg.trendingUp,
           onRun: () {
             setState(() {
-              _simVariant = BenchmarkLayoutKind.improved;
+              _simVariant = BenchmarkLayoutKind.autoRig;
               _airflowStep = _AirflowStep.results;
               _showResults = true;
             });
@@ -653,7 +650,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
               onTryAlternate: () {
                 context.read<AppState>().cycleBenchmarkAlternate();
                 setState(() {
-                  _layoutVariant = BenchmarkLayoutKind.improved;
+                  _layoutVariant = BenchmarkLayoutKind.autoRig;
                   _roomViewMode = _RoomViewMode.compare;
                 });
               },
@@ -668,8 +665,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
             ],
             const SizedBox(height: 8),
             Text(
-              _layouts?.fellBackToSample ?? false
-                  ? 'No baseline — Baseline / Auto-Rig use the reference sample.'
+              _layouts?.isEmpty ?? false
+                  ? 'No room to score — create or stock a room first, then return to Benchmark.'
                   : 'Scores Baseline vs Auto-Rig (same engine as Room Tools → Auto-Rig). Apply writes Auto-Rig onto your Room.',
               style: TextStyle(
                 color: AppColors.textSecondary,
@@ -732,7 +729,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                 icon: RoomSvg.trendingUp,
                 onTap: () {
                   setState(() {
-                    _simVariant = BenchmarkLayoutKind.improved;
+                    _simVariant = BenchmarkLayoutKind.autoRig;
                     _airflowStep = _AirflowStep.results;
                     _showResults = true;
                   });
@@ -752,8 +749,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         return BenchmarkSideBySidePlans(
           gridCols: room.gridCols,
           gridRows: room.gridRows,
-          myRoom: _furnitureFor(BenchmarkLayoutKind.myRoom),
-          improved: _furnitureFor(BenchmarkLayoutKind.improved),
+          currentRoom: _furnitureFor(BenchmarkLayoutKind.currentRoom),
+          autoRig: _furnitureFor(BenchmarkLayoutKind.autoRig),
         );
       }
       return ColoredBox(
@@ -839,19 +836,17 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          BenchmarkInspectLockBlock(furniture: _furnitureFor(BenchmarkLayoutKind.myRoom)),
+          BenchmarkInspectLockBlock(furniture: _furnitureFor(BenchmarkLayoutKind.currentRoom)),
           Text(
             _roomViewMode == _RoomViewMode.compare
                 ? 'Baseline vs Auto-Rig'
                 : switch (_layoutVariant) {
-                    BenchmarkLayoutKind.myRoom =>
-                      (_layouts?.fellBackToSample ?? false)
-                          ? 'Reference sample — no baseline inventory'
-                          : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.myRoom).length} pinned items',
-                    BenchmarkLayoutKind.improved =>
+                    BenchmarkLayoutKind.currentRoom =>
+                      (_layouts?.isEmpty ?? false)
+                          ? 'Empty room — add furniture before scoring'
+                          : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
+                    BenchmarkLayoutKind.autoRig =>
                       _layouts?.improvedCaption ?? 'Auto-Rig',
-                    BenchmarkLayoutKind.sample =>
-                      'Sample room — AC in a corner, weak coverage',
                   },
             style: const TextStyle(
               color: AppColors.textPrimary,
@@ -1019,10 +1014,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
 
   List<String> _notesFor(BenchmarkLayoutKind kind) {
     switch (kind) {
-      case BenchmarkLayoutKind.myRoom:
-        if (_layouts?.fellBackToSample ?? false) {
+      case BenchmarkLayoutKind.currentRoom:
+        if (_layouts?.isEmpty ?? false) {
           return const [
-            'No baseline — showing the reference sample room',
+            'No furniture yet — create a room before Benchmark can score',
             'Add furniture on Room, then Set baseline (Compare) before scoring',
           ];
         }
@@ -1030,7 +1025,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           'Pinned Baseline inventory for this lot',
           'Room edits do not move Baseline until you Set baseline again',
         ];
-      case BenchmarkLayoutKind.improved:
+      case BenchmarkLayoutKind.autoRig:
         final reasons = _layouts?.improvedReasons ?? const <String>[];
         final head = <String>[
           'Preview only — same Auto-Rig engine as Room. Your Room is unchanged until Apply.',
@@ -1042,11 +1037,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           ];
         }
         return [...head, ...reasons];
-      case BenchmarkLayoutKind.sample:
-        return const [
-          'Reference room used to sanity-check the simulator',
-          'AC buried in a corner — throw covers only a sliver of the floor',
-        ];
     }
   }
 

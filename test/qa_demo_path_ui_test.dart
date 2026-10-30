@@ -103,7 +103,7 @@ void main() {
         gridCols: room.gridCols,
         gridRows: room.gridRows,
       );
-      state.applyFurnitureLayout(layouts.improved, markOptimized: true);
+      state.applyFurnitureLayout(layouts.autoRig, markOptimized: true);
       await tester.pump();
     }
 

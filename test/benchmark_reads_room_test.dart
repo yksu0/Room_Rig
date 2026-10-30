@@ -70,7 +70,7 @@ void main() {
         gridCols: state.currentRoomData.gridCols,
         gridRows: state.currentRoomData.gridRows,
       );
-      final benchmarked = layouts.myRoom.firstWhere((f) => f.id == 'bed');
+      final benchmarked = layouts.currentRoom.firstWhere((f) => f.id == 'bed');
 
       expect(benchmarked.gridX, bed.gridX);
       expect(benchmarked.gridY, bed.gridY);
@@ -78,7 +78,7 @@ void main() {
           reason: 'the benchmark must not have moved it back');
     });
 
-    testWidgets('the $mode benchmark defaults to Current Room, not the sample', (tester) async {
+    testWidgets('the $mode benchmark defaults to Current Room and Auto-Rig chips', (tester) async {
       await pumpBenchmark(tester, mode);
       expect(find.text('Current Room'), findsWidgets);
       expect(find.text('Auto-Rig'), findsWidgets);
@@ -116,7 +116,7 @@ void main() {
         .map((w) => w.key)
         .whereType<ValueKey<String>>()
         .map((k) => k.value)
-        .where((v) => v.startsWith('myRoom_'))
+        .where((v) => v.startsWith('currentRoom_'))
         .toSet();
 
     final before = previewKeys();
@@ -161,27 +161,32 @@ void main() {
       gridCols: state.currentRoomData.gridCols,
       gridRows: state.currentRoomData.gridRows,
     );
-    expect(layouts.myRoom.firstWhere((f) => f.id == 'shelf').gridX, shelf.gridX);
+    expect(layouts.currentRoom.firstWhere((f) => f.id == 'shelf').gridX, shelf.gridX);
   });
 
-  testWidgets('asking for the sample room shows it without touching the Room', (tester) async {
+  testWidgets('an empty room shows create-a-room empty state and never loads a reference room', (tester) async {
     final state = await pumpBenchmark(tester, 'airflow');
-    final expected = fp(state.furniture);
-
-    // What the Room's "Sample Room" button does.
-    state.focusBenchmarkLayout(BenchmarkLayoutKind.sample);
-    state.setTab(benchmarkTabIndex);
+    // Clear inventory so Benchmark has nothing to score (no silent reference room).
+    state.applyFurnitureLayout(const []);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(fp(state.furniture), expected, reason: 'the sample was stamped over the Room');
-    expect(find.text('Sample room — AC in a corner, weak coverage'), findsOneWidget);
+    final layouts = BenchmarkLayoutBuilder.build(
+      mode: BenchmarkMode.airflow,
+      roomFurniture: state.furniture,
+      gridCols: state.currentRoomData.gridCols,
+      gridRows: state.currentRoomData.gridRows,
+    );
+    expect(layouts.isEmpty, isTrue);
+    expect(layouts.currentRoom, isEmpty);
+    expect(layouts.autoRig, isEmpty);
 
-    // And it is a one-shot: the user can go straight back to their own room.
-    await tester.tap(find.text('Current Room').first);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Current Room'), findsWidgets);
+    expect(
+      find.textContaining('create or stock a room'),
+      findsWidgets,
+      reason: 'empty room must prompt the user instead of silently loading a reference',
+    );
+    expect(find.text('Empty room — add furniture before scoring'), findsWidgets);
   });
 
   testWidgets('applying an improved layout keeps the room you were in', (tester) async {
@@ -195,12 +200,12 @@ void main() {
       gridCols: state.currentRoomData.gridCols,
       gridRows: state.currentRoomData.gridRows,
     );
-    state.applyFurnitureLayout(layouts.improved, markOptimized: true);
+    state.applyFurnitureLayout(layouts.autoRig, markOptimized: true);
 
     expect(state.selectedPreset, before, reason: 'apply must not swap the room preset');
     expect(
       state.furniture.map((f) => f.id).toSet(),
-      layouts.improved.map((f) => f.id).toSet(),
+      layouts.autoRig.map((f) => f.id).toSet(),
     );
   });
 }

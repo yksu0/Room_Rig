@@ -16,27 +16,23 @@ enum BenchmarkMode { airflow, lighting, ergonomics, spatial }
 
 /// Which layout a Benchmark view is showing.
 enum BenchmarkLayoutKind {
-  /// Left compare source (legacy name kept for focus flags / call sites).
-  myRoom,
+  /// Left compare source (Current Room / baseline).
+  currentRoom,
 
   /// Right compare source (Auto-Rig or other picked layout).
-  improved,
-
-  /// The hand-authored reference room, kept for comparison.
-  sample,
+  autoRig,
 }
 
 class BenchmarkLayouts {
   final BenchmarkMode mode;
-  final List<FurnitureItem> myRoom;
-  final List<FurnitureItem> improved;
-  final List<FurnitureItem> sample;
+  final List<FurnitureItem> currentRoom;
+  final List<FurnitureItem> autoRig;
 
   /// Why the optimizer moved what it moved (when right is Auto-Rig).
   final List<String> improvedReasons;
 
-  /// True when left inventory was empty and fell back to the reference room.
-  final bool fellBackToSample;
+  /// True when left inventory is empty — never invent a reference room.
+  final bool isEmpty;
 
   final String fingerprint;
 
@@ -53,11 +49,10 @@ class BenchmarkLayouts {
 
   const BenchmarkLayouts({
     required this.mode,
-    required this.myRoom,
-    required this.improved,
-    required this.sample,
+    required this.currentRoom,
+    required this.autoRig,
     required this.improvedReasons,
-    required this.fellBackToSample,
+    required this.isEmpty,
     required this.fingerprint,
     required this.weights,
     this.rankLabel = '',
@@ -76,8 +71,8 @@ class BenchmarkLayouts {
   /// Chip / banner line for the right variant.
   String get improvedCaption {
     final mix = weightsSummary;
-    if (fellBackToSample) {
-      return '$rightCaption — reference room · $mix';
+    if (isEmpty) {
+      return '$rightCaption — create a room first · $mix';
     }
     if (rightIsAutoRig && rankLabel.isNotEmpty) return '$rankLabel · $mix';
     if (rightIsAutoRig) return '$rightCaption · $mix';
@@ -85,16 +80,14 @@ class BenchmarkLayouts {
   }
 
   bool get canTryAlternate =>
-      rightIsAutoRig && candidateCount > 1 && !fellBackToSample;
+      rightIsAutoRig && candidateCount > 1 && !isEmpty;
 
   List<FurnitureItem> forKind(BenchmarkLayoutKind kind) {
     switch (kind) {
-      case BenchmarkLayoutKind.myRoom:
-        return myRoom;
-      case BenchmarkLayoutKind.improved:
-        return improved;
-      case BenchmarkLayoutKind.sample:
-        return sample;
+      case BenchmarkLayoutKind.currentRoom:
+        return currentRoom;
+      case BenchmarkLayoutKind.autoRig:
+        return autoRig;
     }
   }
 }
@@ -123,6 +116,7 @@ class BenchmarkLayoutBuilder {
 
   static void clearCandidateCache() => _candidateCache.clear();
 
+  /// Hand-authored reference inventory (tests / demos only — never a silent UI fallback).
   static List<FurnitureItem> sampleFor(BenchmarkMode mode) {
     return RoomPresets.getPreset(RoomPreset.gamingSetup)
         .furniture
@@ -145,7 +139,9 @@ class BenchmarkLayoutBuilder {
 
   /// Build left vs right layouts.
   ///
-  /// [leftFurniture] is the resolved left inventory (or empty → sample fallback).
+  /// [leftFurniture] is the resolved left inventory. When empty, both sides stay
+  /// empty and [BenchmarkLayouts.isEmpty] is true — callers must show an empty
+  /// state (never load a reference room silently).
   /// When [rightIsAutoRig] is true, right is optimized from [autoRigSeed] (usually left).
   /// Otherwise [rightFurniture] is used as-is.
   static BenchmarkLayouts build({
@@ -172,69 +168,55 @@ class BenchmarkLayoutBuilder {
         .where((f) => !f.hidden)
         .map((f) => f.copyWith())
         .toList(growable: false);
-    final sample = sampleFor(mode);
-    final fellBack = live.isEmpty;
-    final myRoom = fellBack ? sample : live;
+    final empty = live.isEmpty;
+    final current = live;
     final w = weights.normalized();
     final seed = (autoRigSeed != null && autoRigSeed.isNotEmpty)
         ? autoRigSeed
             .where((f) => !f.hidden)
             .map((f) => f.copyWith())
             .toList(growable: false)
-        : myRoom;
-    final fp = '${fingerprintOf(myRoom)}|${rightIsAutoRig ? 'ar' : fingerprintOf(rightFurniture ?? const [])}|${fingerprintOf(seed)}';
+        : current;
+    final fp =
+        '${fingerprintOf(current)}|${rightIsAutoRig ? 'ar' : fingerprintOf(rightFurniture ?? const [])}|${fingerprintOf(seed)}';
+
+    if (empty) {
+      return BenchmarkLayouts(
+        mode: mode,
+        currentRoom: const [],
+        autoRig: const [],
+        improvedReasons: const <String>[
+          'No furniture yet — create or stock a room before Benchmark can score.',
+        ],
+        isEmpty: true,
+        fingerprint: fp,
+        weights: w,
+        leftCaption: leftCaption,
+        rightCaption: rightCaption,
+        rightIsAutoRig: rightIsAutoRig,
+        requestedAlternateIndex: alternateIndex,
+      );
+    }
 
     if (!rightIsAutoRig) {
       final right = (rightFurniture == null || rightFurniture.isEmpty)
-          ? myRoom
+          ? current
           : rightFurniture
               .where((f) => !f.hidden)
               .map((f) => f.copyWith())
               .toList(growable: false);
       return BenchmarkLayouts(
         mode: mode,
-        myRoom: myRoom,
-        improved: right,
-        sample: sample,
+        currentRoom: current,
+        autoRig: right,
         improvedReasons: const [],
-        fellBackToSample: fellBack,
+        isEmpty: false,
         fingerprint: fp,
         weights: w,
         leftCaption: leftCaption,
         rightCaption: rightCaption,
         rightIsAutoRig: false,
         requestedAlternateIndex: alternateIndex,
-      );
-    }
-
-    if (fellBack) {
-      final ranked = _candidatesFor(
-        furniture: myRoom,
-        gridCols: gridCols,
-        gridRows: gridRows,
-        weights: w,
-        fingerprint: fingerprintOf(myRoom),
-      );
-      final pick = ranked.isEmpty
-          ? null
-          : ranked[alternateIndex.clamp(0, ranked.length - 1) % ranked.length];
-      return BenchmarkLayouts(
-        mode: mode,
-        myRoom: myRoom,
-        improved: pick?.furniture ?? sampleImprovedFor(mode, weights: w),
-        sample: sample,
-        improvedReasons: pick?.reasons ??
-            const <String>['Auto-Rig on the reference room (empty left side)'],
-        fellBackToSample: true,
-        fingerprint: fp,
-        weights: w,
-        rankLabel: pick?.rankLabel ?? '',
-        candidateCount: ranked.length.clamp(1, 99),
-        alternateIndex: 0,
-        requestedAlternateIndex: alternateIndex,
-        leftCaption: leftCaption,
-        rightCaption: rightCaption,
-        rightIsAutoRig: true,
       );
     }
 
@@ -258,11 +240,10 @@ class BenchmarkLayoutBuilder {
 
     return BenchmarkLayouts(
       mode: mode,
-      myRoom: myRoom,
-      improved: pick.furniture,
-      sample: sample,
+      currentRoom: current,
+      autoRig: pick.furniture,
       improvedReasons: pick.reasons,
-      fellBackToSample: false,
+      isEmpty: false,
       fingerprint: fp,
       weights: w,
       rankLabel: pick.rankLabel,

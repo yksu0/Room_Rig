@@ -33,8 +33,8 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulse;
   _LightStep _step = _LightStep.layout;
-  BenchmarkLayoutKind _layoutVariant = BenchmarkLayoutKind.myRoom;
-  BenchmarkLayoutKind _simVariant = BenchmarkLayoutKind.myRoom;
+  BenchmarkLayoutKind _layoutVariant = BenchmarkLayoutKind.currentRoom;
+  BenchmarkLayoutKind _simVariant = BenchmarkLayoutKind.currentRoom;
   _View _roomView = _View.twoD;
   LightingVizMode _simViz = LightingVizMode.topDown2D;
 
@@ -104,16 +104,15 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
     );
     _layouts = layouts;
     final bounds = SimRoomBounds.fromRoomData(room);
-    _myRoomSim = LightingSimulator.build(furniture: layouts.myRoom, optimized: false, bounds: bounds);
-    _improvedSim = LightingSimulator.build(furniture: layouts.improved, optimized: true, bounds: bounds);
+    _myRoomSim = LightingSimulator.build(furniture: layouts.currentRoom, optimized: false, bounds: bounds);
+    _improvedSim = LightingSimulator.build(furniture: layouts.autoRig, optimized: true, bounds: bounds);
     _ready = true;
     if (resetStep) {
       _step = _LightStep.layout;
       // A pending focus request (the Room's "Sim Prototype" button) wins once;
       // after that a reset lands back on the user's own room.
       final pending = state.benchmarkLayoutFocusToken != _seenFocusToken;
-      var kind = pending ? state.benchmarkLayoutFocus : BenchmarkLayoutKind.myRoom;
-      if (kind == BenchmarkLayoutKind.sample) kind = BenchmarkLayoutKind.myRoom;
+      var kind = pending ? state.benchmarkLayoutFocus : BenchmarkLayoutKind.currentRoom;
       _seenFocusToken = state.benchmarkLayoutFocusToken;
       _layoutVariant = kind;
       _simVariant = kind;
@@ -129,7 +128,6 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
     if (state.benchmarkLayoutFocusToken != _seenFocusToken) {
       _seenFocusToken = state.benchmarkLayoutFocusToken;
       var kind = state.benchmarkLayoutFocus;
-      if (kind == BenchmarkLayoutKind.sample) kind = BenchmarkLayoutKind.myRoom;
       _layoutVariant = kind;
       _simVariant = kind;
       _selectedFurnitureId = null;
@@ -138,8 +136,8 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
       _seenResultsFocusToken = state.benchmarkResultsFocusToken;
       _showResults = true;
       _step = _LightStep.results;
-      _simVariant = BenchmarkLayoutKind.improved;
-      _layoutVariant = BenchmarkLayoutKind.improved;
+      _simVariant = BenchmarkLayoutKind.autoRig;
+      _layoutVariant = BenchmarkLayoutKind.autoRig;
     }
     final key =
         '${benchmarkCompareFingerprint(state)}|${state.optimizeWeights.cacheKey}|${state.benchmarkAlternateCursor}';
@@ -174,26 +172,25 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
         _ => _LightStep.results,
       };
 
-  String get _layoutHint => _layouts?.fellBackToSample ?? false
-      ? 'No baseline — this runs on the reference room. Add furniture in Room, then Set baseline.'
+  String get _layoutHint => _layouts?.isEmpty ?? false
+      ? 'No room to score — create or stock a room first, then return to Benchmark.'
       : 'Scores Baseline vs Auto-Rig (same engine as Room Tools → Auto-Rig). Apply writes Auto-Rig onto your Room.';
 
   LightingSimSnapshot? get _activeSim {
     switch (_simVariant) {
-      case BenchmarkLayoutKind.improved:
+      case BenchmarkLayoutKind.autoRig:
         return _improvedSim;
-      case BenchmarkLayoutKind.sample:
-      case BenchmarkLayoutKind.myRoom:
-        return _myRoomSim;
+      case BenchmarkLayoutKind.currentRoom:
+              return _myRoomSim;
     }
   }
 
   List<String> _notesFor(BenchmarkLayoutKind kind) {
     switch (kind) {
-      case BenchmarkLayoutKind.myRoom:
-        if (_layouts?.fellBackToSample ?? false) {
+      case BenchmarkLayoutKind.currentRoom:
+        if (_layouts?.isEmpty ?? false) {
           return const [
-            'No baseline — showing the reference room',
+            'No furniture yet — create a room before Benchmark can score',
             'Add furniture on Room, then Set baseline (Compare)',
           ];
         }
@@ -201,16 +198,11 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
           'Pinned Baseline inventory for this lot',
           'Room edits do not move Baseline until you Set baseline again',
         ];
-      case BenchmarkLayoutKind.improved:
+      case BenchmarkLayoutKind.autoRig:
         final reasons = _layouts?.improvedReasons ?? const <String>[];
         return reasons.isEmpty
             ? const ['No rearrange found that lights Baseline better']
             : reasons;
-      case BenchmarkLayoutKind.sample:
-        return const [
-          'Reference room used to sanity-check the simulator',
-          'Dark task zone — daylight blocked, lamp misplaced',
-        ];
     }
   }
 
@@ -220,8 +212,8 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
     setState(() {
       _showResults = true;
       _step = _LightStep.results;
-      _simVariant = BenchmarkLayoutKind.improved;
-      _layoutVariant = BenchmarkLayoutKind.improved;
+      _simVariant = BenchmarkLayoutKind.autoRig;
+      _layoutVariant = BenchmarkLayoutKind.autoRig;
       _roomView = _View.compare;
     });
   }
@@ -245,14 +237,14 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
       if (!await confirmBenchmarkApply(
         context,
         validation: applyValidation,
-        fellBackToSample: _layouts?.fellBackToSample ?? false,
+        isEmpty: _layouts?.isEmpty ?? false,
       )) {
         return;
       }
       if (!context.mounted) return;
       final before = List<FurnitureItem>.from(state.committedFurniture);
       state.applyFurnitureLayout(
-        _furnitureFor(BenchmarkLayoutKind.improved),
+        _furnitureFor(BenchmarkLayoutKind.autoRig),
         markOptimized: true,
         lockMode: 'lighting',
       );
@@ -371,7 +363,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
               onTryAlternate: () {
                 context.read<AppState>().cycleBenchmarkAlternate();
                 setState(() {
-                  _layoutVariant = BenchmarkLayoutKind.improved;
+                  _layoutVariant = BenchmarkLayoutKind.autoRig;
                   _roomView = _View.compare;
                 });
               },
@@ -482,20 +474,18 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            BenchmarkInspectLockBlock(furniture: _furnitureFor(BenchmarkLayoutKind.myRoom)),
+            BenchmarkInspectLockBlock(furniture: _furnitureFor(BenchmarkLayoutKind.currentRoom)),
             Text(
               _roomView == _View.compare
                   ? 'Baseline vs Auto-Rig'
                   : switch (_layoutVariant) {
-                      BenchmarkLayoutKind.myRoom =>
-                        (_layouts?.fellBackToSample ?? false)
-                            ? 'Reference sample — no baseline inventory'
-                            : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.myRoom).length} pinned items',
-                    BenchmarkLayoutKind.improved =>
+                      BenchmarkLayoutKind.currentRoom =>
+                        (_layouts?.isEmpty ?? false)
+                            ? 'Empty room — add furniture before scoring'
+                            : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
+                    BenchmarkLayoutKind.autoRig =>
                         _layouts?.improvedCaption ?? 'Auto-Rig',
-                      BenchmarkLayoutKind.sample =>
-                        'Sample room — daylight blocked, lamp misplaced',
-                    },
+                  },
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w700,
@@ -510,14 +500,13 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(
-                      _layoutVariant == BenchmarkLayoutKind.sample
+                      _layoutVariant == BenchmarkLayoutKind.currentRoom
                           ? Icons.warning_amber_rounded
                           : Icons.check_circle_outline,
                       size: 14,
                       color: switch (_layoutVariant) {
-                        BenchmarkLayoutKind.sample => AppColors.amber,
-                        BenchmarkLayoutKind.myRoom => AppColors.cyan,
-                        BenchmarkLayoutKind.improved => AppColors.green,
+                        BenchmarkLayoutKind.currentRoom => AppColors.cyan,
+                        BenchmarkLayoutKind.autoRig => AppColors.green,
                       },
                     ),
                     const SizedBox(width: 8),
@@ -595,8 +584,8 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
       return BenchmarkSideBySidePlans(
         gridCols: room.gridCols,
         gridRows: room.gridRows,
-        myRoom: _furnitureFor(BenchmarkLayoutKind.myRoom),
-        improved: _furnitureFor(BenchmarkLayoutKind.improved),
+        currentRoom: _furnitureFor(BenchmarkLayoutKind.currentRoom),
+        autoRig: _furnitureFor(BenchmarkLayoutKind.autoRig),
         accentColor: AppColors.lightingColor,
       );
     }
@@ -777,7 +766,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
           onTryAlternate: () {
             context.read<AppState>().cycleBenchmarkAlternate();
             setState(() {
-              _layoutVariant = BenchmarkLayoutKind.improved;
+              _layoutVariant = BenchmarkLayoutKind.autoRig;
               _roomView = _View.compare;
             });
           },
@@ -791,15 +780,13 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
                 _roomView == _View.compare
                     ? 'Baseline vs Auto-Rig — same Auto-Rig mix as Room'
                     : switch (_layoutVariant) {
-                        BenchmarkLayoutKind.myRoom =>
-                          (_layouts?.fellBackToSample ?? false)
-                              ? 'Reference room — no baseline inventory'
-                              : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.myRoom).length} pinned items',
-                        BenchmarkLayoutKind.improved =>
+                        BenchmarkLayoutKind.currentRoom =>
+                          (_layouts?.isEmpty ?? false)
+                              ? 'Empty room — add furniture before scoring'
+                              : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
+                        BenchmarkLayoutKind.autoRig =>
                           _layouts?.improvedCaption ??
                               'Auto-Rig · from Baseline',
-                        BenchmarkLayoutKind.sample =>
-                          'Sample room — daylight blocked, lamp misplaced',
                       },
                 style: const TextStyle(
                   color: AppColors.textPrimary,
@@ -812,8 +799,8 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
                 BenchmarkSideBySidePlans(
                   gridCols: room.gridCols,
                   gridRows: room.gridRows,
-                  myRoom: _furnitureFor(BenchmarkLayoutKind.myRoom),
-                  improved: _furnitureFor(BenchmarkLayoutKind.improved),
+                  currentRoom: _furnitureFor(BenchmarkLayoutKind.currentRoom),
+                  autoRig: _furnitureFor(BenchmarkLayoutKind.autoRig),
                   accentColor: AppColors.lightingColor,
                 )
               else
@@ -866,7 +853,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
                                         child: const SizedBox.expand(),
                                       ),
                                     );
-                                  },
+                  },
                                 )
                               : _orbit(
                                   key: const ValueKey('lighting_layout_orbit'),
@@ -874,7 +861,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
                                   onDoubleTap: () {
                                     HapticFeedback.lightImpact();
                                     setState(() => _layoutOrbitResetNonce++);
-                                  },
+                  },
                                   lookAtX: room.gridCols * 0.5,
                                   lookAtZ: room.gridRows * 0.5,
                                   roomWidth: room.gridCols.toDouble(),
@@ -967,14 +954,13 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        _layoutVariant == BenchmarkLayoutKind.sample
+                        _layoutVariant == BenchmarkLayoutKind.currentRoom
                             ? Icons.warning_amber_rounded
                             : Icons.check_circle_outline,
                         size: 14,
                         color: switch (_layoutVariant) {
-                          BenchmarkLayoutKind.sample => AppColors.amber,
-                          BenchmarkLayoutKind.myRoom => AppColors.cyan,
-                          BenchmarkLayoutKind.improved => AppColors.green,
+                          BenchmarkLayoutKind.currentRoom => AppColors.cyan,
+                          BenchmarkLayoutKind.autoRig => AppColors.green,
                         },
                       ),
                       const SizedBox(width: 8),
@@ -1100,7 +1086,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
   /// Validate the layout the results header is actually showing, so the badge,
   /// the score rings, and the check rows all describe the same furniture.
   BenchmarkValidation _validationForSimVariant(AppState state) {
-    final kind = _step == _LightStep.results ? BenchmarkLayoutKind.improved : _simVariant;
+    final kind = _step == _LightStep.results ? BenchmarkLayoutKind.autoRig : _simVariant;
     return BenchmarkValidator.validateLayout(
       furniture: _furnitureFor(kind),
       gridCols: state.currentRoomData.gridCols,
