@@ -687,7 +687,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: AppSpace.xs),
         if (!activeListed)
-          _RoomSlotTile(
+          RoomSlotTile(
             title: state.currentRoomData.name,
             subtitle: 'Current lot',
             badgeLabel: '${state.furniture.length}',
@@ -705,7 +705,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onDelete: null,
           ),
         ...rooms.map(
-          (r) => _RoomSlotTile(
+          (r) => RoomSlotTile(
             title: r.name,
             subtitle: r.scanComplete
                 ? 'Scanned'
@@ -1664,7 +1664,7 @@ class _SpecRow extends StatelessWidget {
   }
 }
 
-class _RoomSlotTile extends StatelessWidget {
+class RoomSlotTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final String? badgeLabel;
@@ -1673,7 +1673,8 @@ class _RoomSlotTile extends StatelessWidget {
   final VoidCallback onDuplicate;
   final VoidCallback? onDelete;
 
-  const _RoomSlotTile({
+  const RoomSlotTile({
+    super.key,
     required this.title,
     required this.subtitle,
     this.badgeLabel,
@@ -1693,6 +1694,7 @@ class _RoomSlotTile extends StatelessWidget {
         color: selected ? AppColors.cyan.withValues(alpha: 0.12) : AppColors.card,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
+          key: const ValueKey('room_slot_tile'),
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),
           child: Container(
@@ -1760,9 +1762,12 @@ class _RoomSlotTile extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  visualDensity: VisualDensity.compact,
-                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                  padding: EdgeInsets.zero,
+                  key: const ValueKey('room_slot_duplicate'),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    tapTargetSize: MaterialTapTargetSize.padded,
+                    padding: EdgeInsets.zero,
+                  ),
                   icon: const Icon(
                     Icons.copy_outlined,
                     size: 18,
@@ -1773,9 +1778,12 @@ class _RoomSlotTile extends StatelessWidget {
                 ),
                 if (onDelete != null)
                   IconButton(
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                    padding: EdgeInsets.zero,
+                    key: const ValueKey('room_slot_delete'),
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                      tapTargetSize: MaterialTapTargetSize.padded,
+                      padding: EdgeInsets.zero,
+                    ),
                     icon: const Icon(
                       Icons.delete_outline,
                       size: 18,
