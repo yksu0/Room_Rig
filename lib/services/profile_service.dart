@@ -100,6 +100,14 @@ class ProfileService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Test-only: set the in-memory profile without hitting Supabase.
+  @visibleForTesting
+  void debugSetProfileForTests(UserProfile? profile) {
+    _profile = profile;
+    _loading = false;
+    notifyListeners();
+  }
+
   /// Fetch (or create a blank) app profile row. Never copies Google name/photo.
   /// Sign-in inside the 7-day delete window cancels pending deletion via RPC.
   Future<void> load({bool cancelPendingDeletion = true}) async {

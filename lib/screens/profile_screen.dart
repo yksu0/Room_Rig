@@ -264,8 +264,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
-    ctrl.dispose();
-    return code == null || code.trim().isEmpty ? null : code;
+    // Defer dispose until after the route finishes tearing down (avoids
+    // "TextEditingController was used after being disposed" during pop).
+    WidgetsBinding.instance.addPostFrameCallback((_) => ctrl.dispose());
+    return code == null || code.trim().isEmpty ? null : code.trim();
   }
 
   Future<void> _signOut(AuthService auth) async {

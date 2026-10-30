@@ -50,7 +50,7 @@ class AppState extends ChangeNotifier {
   static const _sharedPhoneLockKey = 'room_rig.shared_phone_lock';
   static const sharedPhoneLockIdle = Duration(minutes: 15);
 
-  final RoomRepository _roomRepo = RoomRepository();
+  final RoomRepository _roomRepo;
 
   /// When true, Room should open the Tools panel once (post-create/scan/preset).
   bool _openToolsOnRoom = false;
@@ -80,10 +80,20 @@ class AppState extends ChangeNotifier {
 
   /// Test-only: treat device as signed in without Supabase session.
   bool _debugTreatAsSignedIn = false;
+  String? _debugSignedInUserId;
 
   @visibleForTesting
-  void debugSetSignedInForTests(bool value) {
+  void debugSetSignedInForTests(bool value, {String? userId}) {
     _debugTreatAsSignedIn = value;
+    _debugSignedInUserId = value ? (userId ?? 'test-user') : null;
+  }
+
+  /// Test-only: seed guest drafts awaiting the import prompt.
+  @visibleForTesting
+  void debugSeedGuestImportPending(List<SavedRoom> rooms) {
+    _guestRoomsPendingImport = List<SavedRoom>.unmodifiable(rooms);
+    _awaitingGuestImportPrompt = rooms.isNotEmpty;
+    notifyListeners();
   }
 
   bool get isSignedIn {
@@ -92,8 +102,10 @@ class AppState extends ChangeNotifier {
     return client?.auth.currentUser != null;
   }
 
-  String? get signedInUserId =>
-      SupabaseBootstrap.clientOrNull?.auth.currentUser?.id;
+  String? get signedInUserId {
+    if (_debugSignedInUserId != null) return _debugSignedInUserId;
+    return SupabaseBootstrap.clientOrNull?.auth.currentUser?.id;
+  }
 
   String? get signedInEmail =>
       SupabaseBootstrap.clientOrNull?.auth.currentUser?.email;
@@ -308,7 +320,10 @@ class AppState extends ChangeNotifier {
   bool _sharedPhoneLock = false;
   bool get sharedPhoneLock => _sharedPhoneLock;
 
-  AppState({PublishedLayoutRepository? publishedLayouts}) {
+  AppState({
+    PublishedLayoutRepository? publishedLayouts,
+    RoomRepository? roomRepo,
+  }) : _roomRepo = roomRepo ?? RoomRepository() {
     _publishedLayouts = publishedLayouts ?? PublishedLayoutRepository();
 
     _bootstrapEmptyLot();
