@@ -397,6 +397,14 @@ class RoomSvg {
   <circle cx="12" cy="7.5" r="0.8" fill="currentColor"/>
 </svg>''';
 
+
+  static const String community = '''
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="1.4"/>
+  <circle cx="16.5" cy="9" r="2.5" stroke="currentColor" stroke-width="1.4"/>
+  <path d="M3.5 19c0-2.8 2.5-5 5.5-5s5.5 2.2 5.5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M14 19c0.2-1.8 1.6-3.2 3.5-3.6 1.4 0.3 2.5 1.4 2.5 3.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+</svg>''';
   static const String wallet = '''
 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect x="2" y="6" width="20" height="13" rx="2" stroke="currentColor" stroke-width="1.5"/>

@@ -1865,12 +1865,13 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  /// Open a community layout as the right Compare source.
+  /// Open a community layout as the right Compare source and jump to Benchmark.
   Future<bool> openPublishedInCompare(String layoutId, {String? title}) async {
     if (!isSignedIn) return false;
     final layout = await ensurePublishedLayoutCached(layoutId);
     if (layout == null) return false;
-    // Keep the caller's Benchmark mode (do not silently switch to Community/Airflow).
+    // Keep a valid scoring domain (legacy `community` mode coerces to airflow).
+    _benchmarkMode = sanitizeBenchmarkMode(_benchmarkMode);
     setBenchmarkCompareLeft(const BenchmarkCompareSource.currentRoom());
     setBenchmarkCompareRight(
       BenchmarkCompareSource.publishedLayout(
@@ -1878,6 +1879,7 @@ class AppState extends ChangeNotifier {
         title: title ?? layout.title,
       ),
     );
+    setTab(benchmarkTabIndex);
     return true;
   }
 
@@ -3120,12 +3122,25 @@ class AppState extends ChangeNotifier {
   double get totalSpent => baseRoomCost + upgradesCost;
   double get budgetRemaining => totalBudget - totalSpent;
 
-  // Benchmark simulation mode
+  // Benchmark simulation mode (own-room domains only; Community is its own tab).
+  static const Set<String> _benchmarkModes = {
+    'airflow',
+    'lighting',
+    'ergonomics',
+    'spatial',
+  };
+
   String _benchmarkMode = 'airflow';
   String get benchmarkMode => _benchmarkMode;
 
+  /// Coerce legacy / unknown values (e.g. saved `community`) to a scoring domain.
+  static String sanitizeBenchmarkMode(String? mode) {
+    if (mode != null && _benchmarkModes.contains(mode)) return mode;
+    return 'airflow';
+  }
+
   void setBenchmarkMode(String mode) {
-    _benchmarkMode = mode;
+    _benchmarkMode = sanitizeBenchmarkMode(mode);
     notifyListeners();
   }
 
@@ -3157,7 +3172,9 @@ class AppState extends ChangeNotifier {
 
   void openBenchmarkResults({String? mode}) {
     if (mode != null && mode.isNotEmpty) {
-      _benchmarkMode = mode;
+      _benchmarkMode = sanitizeBenchmarkMode(mode);
+    } else {
+      _benchmarkMode = sanitizeBenchmarkMode(_benchmarkMode);
     }
     _benchmarkResultsFocusToken++;
     setTab(benchmarkTabIndex);

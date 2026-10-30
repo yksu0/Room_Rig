@@ -35,7 +35,7 @@ class OnboardingSheet extends StatelessWidget {
       (
         RoomSvg.speedometer,
         'Benchmark & Apply',
-        'Simulate My Room → Improved, then Apply. Hub flips to ${HubScoreLabels.benchmarkOk}. Edits show ${HubScoreLabels.roughEst} until Benchmark again.',
+        'Simulate My Room → Improved, then Apply. Browse Community from its own tab. Hub flips to ${HubScoreLabels.benchmarkOk}. Edits show ${HubScoreLabels.roughEst} until Benchmark again.',
         AppColors.amber,
         benchmarkTabIndex,
       ),
@@ -77,7 +77,7 @@ class OnboardingSheet extends StatelessWidget {
             ),
             const SizedBox(height: AppSpace.xs),
             const Text(
-              'Four tips for a better setup',
+              'Tips for a better setup',
               style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 22,

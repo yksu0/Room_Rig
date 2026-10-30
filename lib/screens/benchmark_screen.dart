@@ -17,7 +17,6 @@ import '../widgets/room_status_strip.dart';
 import '../widgets/benchmark_room_views.dart';
 import '../widgets/benchmark_panel_scaffold.dart';
 import '../widgets/chrome/benchmark_results_chrome.dart';
-import '../widgets/community_benchmark_panel.dart';
 import '../widgets/ergonomics_benchmark_panel.dart';
 import '../widgets/lighting_benchmark_panel.dart';
 import '../widgets/room_icons.dart';
@@ -274,8 +273,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
         return SpatialBenchmarkPanel(onOrbitDraggingChanged: _setOrbitDragging);
       case 'ergonomics':
         return ErgonomicsBenchmarkPanel(onOrbitDraggingChanged: _setOrbitDragging);
-      case 'community':
-        return const CommunityBenchmarkPanel();
       default:
         return _buildAirflowDesktop(state);
     }
@@ -320,9 +317,6 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
 
   Widget _buildModeScoreHero(AppState state, {bool expand = false}) {
     final mode = state.benchmarkMode;
-    if (mode == 'community') {
-      return const SizedBox.shrink();
-    }
     final (label, score, prev, color) = switch (mode) {
       'lighting' => (
           'Lighting',
@@ -392,19 +386,14 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       ('lighting', 'Lighting', AppColors.lightingColor),
       ('ergonomics', 'Ergo', AppColors.ergonomicsColor),
       ('spatial', 'Space', AppColors.spatialColor),
-      ('community', 'Community', AppColors.cyan),
     ];
     final narrow = MediaQuery.sizeOf(context).width < 420;
-    final core = narrow
-        ? modes.where((m) => m.$1 != 'community').toList(growable: false)
-        : modes;
-    final communitySelected = state.benchmarkMode == 'community';
 
-    final bar = BenchmarkSegmentBar(
+    return BenchmarkSegmentBar(
       key: const ValueKey('benchmark_mode_row'),
       gap: compact ? 5 : 6,
       children: [
-        for (final mode in core)
+        for (final mode in modes)
           BenchmarkChip(
             label: mode.$2,
             selected: state.benchmarkMode == mode.$1,
@@ -417,54 +406,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           ),
       ],
     );
-
-    if (!narrow) return bar;
-
-    return Row(
-      children: [
-        Expanded(child: bar),
-        const SizedBox(width: AppSpace.xs),
-        Semantics(
-          button: true,
-          selected: communitySelected,
-          label: 'Community',
-          child: Material(
-            key: const ValueKey('benchmark_community_overflow'),
-            color: communitySelected
-                ? AppColors.cyan.withValues(alpha: 0.28)
-                : AppColors.card,
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              onTap: () {
-                state.setBenchmarkMode('community');
-                _setOrbitDragging(false);
-              },
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  border: Border.all(
-                    color: communitySelected
-                        ? AppColors.cyan.withValues(alpha: 0.55)
-                        : AppColors.border,
-                  ),
-                ),
-                child: Icon(
-                  Icons.forum_outlined,
-                  size: 20,
-                  color: communitySelected ? AppColors.cyan : AppColors.textMuted,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
   }
-
 
   Future<void> _applyAirflowImproved(AppState state) async {
     final validation = _validationForSimVariant(state);

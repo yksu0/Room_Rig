@@ -19,6 +19,7 @@ import 'screens/home_screen.dart';
 import 'screens/scanner_screen_selector.dart';
 import 'screens/room_customizer_screen.dart';
 import 'screens/benchmark_screen.dart';
+import 'screens/community_screen.dart';
 import 'screens/set_password_screen.dart';
 import 'widgets/room_model_scene_pointer_guard.dart';
 import 'widgets/guest_import_dialog.dart';
@@ -95,12 +96,13 @@ class _MainShell extends StatefulWidget {
 
 class _MainShellState extends State<_MainShell> with WidgetsBindingObserver {
   /// Order must match [hubTabIndex] / [roomTabIndex] / [scanTabIndex] /
-  /// [benchmarkTabIndex] in `models/app_tabs.dart`.
+  /// [benchmarkTabIndex] / [communityTabIndex] in `models/app_tabs.dart`.
   static const _screens = [
     HomeScreen(),
     RoomCustomizerScreen(),
     ScannerScreen(),
     BenchmarkScreen(),
+    CommunityScreen(),
   ];
 
   int? _handledTab;
@@ -320,6 +322,7 @@ const kAppNavItems = [
   (RoomSvg.floorPlan, 'Room'),
   (RoomSvg.scan, 'Scan'),
   (RoomSvg.speedometer, 'Benchmark'),
+  (RoomSvg.community, 'Community'),
 ];
 
 class _RoomSideNav extends StatelessWidget {
@@ -486,17 +489,21 @@ class _RoomNavBar extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text(
-                          item.$2,
-                          style: TextStyle(
-                            color: isSelected
-                                ? AppColors.cyan
-                                : AppColors.textMuted,
-                            fontSize: 11,
-                            fontWeight: isSelected
-                                ? FontWeight.w800
-                                : FontWeight.w600,
-                            letterSpacing: 0.2,
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            item.$2,
+                            maxLines: 1,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? AppColors.cyan
+                                  : AppColors.textMuted,
+                              fontSize: 10,
+                              fontWeight: isSelected
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              letterSpacing: 0.1,
+                            ),
                           ),
                         ),
                       ],

@@ -191,56 +191,62 @@ void main() {
     expect(find.text('Cached Studio'), findsWidgets);
   });
 
-  test('Community Compare keeps Benchmark mode (no silent Airflow force)', () async {
+  test('Community Compare deep-links to Benchmark and keeps scoring mode', () async {
     final layout = _sampleLayout(id: 'cmp-1', title: 'Compare Me');
     final state = AppState();
     state.debugSetSignedInForTests(true);
     state.cachePublishedLayout(layout);
     state.setBenchmarkMode('lighting');
+    state.setTab(communityTabIndex);
 
     final ok = await state.openPublishedInCompare(layout.id, title: layout.title);
     expect(ok, isTrue);
     expect(state.benchmarkMode, 'lighting');
+    expect(state.currentTab, benchmarkTabIndex);
     expect(state.benchmarkCompareRight.isPublishedLayout, isTrue);
   });
 
-  testWidgets('Narrow Benchmark puts Community behind overflow control', (tester) async {
-    ignoreLayoutNoise();
-    tester.view.physicalSize = const Size(390 * 2.75, 844 * 2.75);
-    tester.view.devicePixelRatio = 2.75;
-    addTearDown(() {
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-    });
-
+  test('Legacy community benchmarkMode sanitizes to airflow', () {
     final state = AppState();
-    state.createManualRoom(name: 'Studio', lengthMeters: 3.6, widthMeters: 4.8);
-    state.setBenchmarkMode('airflow');
-    state.setTab(3);
-
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => AuthService()),
-          ChangeNotifierProvider(create: (_) => ProfileService()),
-          ChangeNotifierProvider.value(value: state),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.dark,
-          home: const BenchmarkScreen(),
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-
-    expect(find.byKey(const ValueKey('benchmark_community_overflow')), findsOneWidget);
-    expect(find.byKey(const ValueKey('benchmark_mode_row')), findsOneWidget);
-
-    await tester.tap(find.byKey(const ValueKey('benchmark_community_overflow')));
-    await tester.pump();
-    expect(state.benchmarkMode, 'community');
+    state.setBenchmarkMode('community');
+    expect(state.benchmarkMode, 'airflow');
+    expect(AppState.sanitizeBenchmarkMode('community'), 'airflow');
+    expect(AppState.sanitizeBenchmarkMode('spatial'), 'spatial');
   });
+
+  for (final width in const [360.0, 390.0, 412.0]) {
+    testWidgets('Benchmark has no Community chip at ${width.toInt()}dp', (tester) async {
+      ignoreLayoutNoise();
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final state = AppState();
+      state.createManualRoom(name: 'Studio', lengthMeters: 3.6, widthMeters: 4.8);
+      state.setBenchmarkMode('airflow');
+      state.setTab(benchmarkTabIndex);
+
+      await tester.binding.setSurfaceSize(Size(width, 740));
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthService()),
+            ChangeNotifierProvider(create: (_) => ProfileService()),
+            ChangeNotifierProvider.value(value: state),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark,
+            home: const BenchmarkScreen(),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byKey(const ValueKey('benchmark_community_overflow')), findsNothing);
+      expect(find.byKey(const ValueKey('benchmark_mode_row')), findsOneWidget);
+      expect(find.text('Community'), findsNothing);
+      expect(find.text('Airflow'), findsWidgets);
+    });
+  }
 
   testWidgets('Community offline empty state at 360 and 412dp shows icon + Retry',
       (tester) async {

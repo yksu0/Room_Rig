@@ -9,8 +9,26 @@ import 'package:room_rig/services/profile_service.dart';
 import 'package:room_rig/models/room_model.dart';
 import 'package:room_rig/models/upgrade_catalog.dart';
 import 'package:room_rig/services/benchmark_layouts.dart';
+import 'package:room_rig/models/published_layout.dart';
+import 'package:room_rig/services/published_layout_repository.dart';
 
-/// Full no-camera QA path from the roadmap — runs without a phone.
+class _EmptyFeedRepo extends PublishedLayoutRepository {
+  @override
+  Future<List<PublishedLayout>> fetchBaselines({int limit = 20}) async =>
+      const [];
+
+  @override
+  Future<List<PublishedLayout>> fetchRecent({int limit = 30}) async =>
+      const [];
+
+  @override
+  Future<List<PublishedLayout>> fetchTop({int limit = 30}) async => const [];
+
+  @override
+  Future<List<PublishedLayout>> fetchMonthlyFeatured() async => const [];
+}
+
+/// Full no-camera QA path from the roadmap â€” runs without a phone.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -26,7 +44,7 @@ void main() {
     }
   }
 
-  testWidgets('QA product path: Ready room → Room drag → Benchmark Simulate → Apply → BENCHMARK OK', (tester) async {
+  testWidgets('QA product path: Ready room â†’ Room drag â†’ Benchmark Simulate â†’ Apply â†’ BENCHMARK OK', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1200, 2400));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -37,7 +55,7 @@ void main() {
     };
     addTearDown(() => FlutterError.onError = previousOnError);
 
-    final state = AppState();
+    final state = AppState(publishedLayouts: _EmptyFeedRepo());
     await tester.pumpWidget(
       MultiProvider(
         providers: [

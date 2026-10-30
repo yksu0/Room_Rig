@@ -46,7 +46,7 @@ void main() {
     state.selectPreset(RoomPreset.gamingSetup);
     state.setScanProgress(1.0);
     state.setBenchmarkMode('airflow');
-    state.setTab(3);
+    state.setTab(benchmarkTabIndex);
 
     await tester.pumpWidget(
       MultiProvider(

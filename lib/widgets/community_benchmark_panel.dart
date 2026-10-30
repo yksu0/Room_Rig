@@ -14,7 +14,7 @@ import 'guest_signup_gate.dart';
 import 'publish_layout_action.dart';
 import 'room_model_scene.dart';
 
-/// Benchmark → Community: Reddit-style feed with inline 3D preview + direct votes.
+/// Community tab: Reddit-style feed with inline 3D preview + direct votes.
 class CommunityBenchmarkPanel extends StatefulWidget {
   const CommunityBenchmarkPanel({super.key});
 
@@ -214,15 +214,12 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
       return;
     }
     final state = context.read<AppState>();
-    // Keep the user's current Benchmark mode (do not silently force Airflow).
     final mode = state.benchmarkMode;
-    final modeNote = mode == 'community'
-        ? 'Still on Community — switch to Airflow/Lighting/Ergo/Space to score Compare.'
-        : 'Staying on $mode mode.';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          'Compare right side set to this Community layout. $modeNote',
+          'Compare right side set to this Community layout. '
+          'Opened Benchmark ($mode).',
         ),
       ),
     );
