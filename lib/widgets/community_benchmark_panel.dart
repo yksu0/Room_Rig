@@ -278,31 +278,35 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
 
     final feedChildren = <Widget>[
       if (showStaleFeed) ...[
-        Material(
-          key: const ValueKey('community_stale_banner'),
-          color: AppColors.amber.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpace.sm),
-            child: Row(
-              children: [
-                const Icon(Icons.cloud_off_rounded, color: AppColors.amber, size: 18),
-                const SizedBox(width: AppSpace.xs),
-                Expanded(
-                  child: Text(
-                    'Offline — showing last loaded Community feed.',
-                    style: const TextStyle(
-                      color: AppColors.amber,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+        Semantics(
+          liveRegion: true,
+          label: 'Offline — showing last loaded Community feed.',
+          child: Material(
+            key: const ValueKey('community_stale_banner'),
+            color: AppColors.amber.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpace.sm),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_off_rounded, color: AppColors.amber, size: 18),
+                  const SizedBox(width: AppSpace.xs),
+                  Expanded(
+                    child: Text(
+                      'Offline — showing last loaded Community feed.',
+                      style: const TextStyle(
+                        color: AppColors.amber,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-                TextButton(
-                  onPressed: _loading ? null : _reload,
-                  child: const Text('Retry'),
-                ),
-              ],
+                  TextButton(
+                    onPressed: _loading ? null : _reload,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -387,18 +391,21 @@ class _CommunityBenchmarkPanelState extends State<CommunityBenchmarkPanel> {
               AppSpace.md,
               AppSpace.xs,
             ),
-            child: Material(
-              key: const ValueKey('community_guest_hint'),
-              color: AppColors.cyan.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(AppRadius.sm),
-              child: const Padding(
-                padding: EdgeInsets.all(AppSpace.sm),
-                child: Text(
-                  'Sign in to unlock publish, vote, clone, and compare.',
-                  style: TextStyle(
-                    color: AppColors.cyan,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+            child: Semantics(
+              label: 'Sign in to unlock publish, vote, clone, and compare.',
+              child: Material(
+                key: const ValueKey('community_guest_hint'),
+                color: AppColors.cyan.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                child: const Padding(
+                  padding: EdgeInsets.all(AppSpace.sm),
+                  child: Text(
+                    'Sign in to unlock publish, vote, clone, and compare.',
+                    style: TextStyle(
+                      color: AppColors.cyan,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
@@ -562,41 +569,54 @@ class _CommunityPostCard extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
-                    onPressed: onUp,
-                    icon: Icon(
-                      Icons.arrow_upward_rounded,
-                      color: upSelected ? AppColors.amber : AppColors.textMuted,
-                      size: 22,
-                    ),
-                    tooltip: 'Upvote',
-                  ),
-                  Text(
-                    '${layout.netScore}',
-                    style: TextStyle(
-                      color: layout.netScore > 0
-                          ? AppColors.amber
-                          : layout.netScore < 0
-                              ? AppColors.red
-                              : AppColors.textPrimary,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
+                  Semantics(
+                    button: true,
+                    selected: upSelected,
+                    label: upSelected ? 'Remove upvote' : 'Upvote',
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+                      onPressed: onUp,
+                      icon: Icon(
+                        Icons.arrow_upward_rounded,
+                        color: upSelected ? AppColors.amber : AppColors.textMuted,
+                        size: 22,
+                      ),
+                      tooltip: 'Upvote',
                     ),
                   ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
-                    onPressed: onDown,
-                    icon: Icon(
-                      Icons.arrow_downward_rounded,
-                      color: downSelected ? AppColors.red : AppColors.textMuted,
-                      size: 22,
+                  Semantics(
+                    label: 'Rating ${layout.netScore}',
+                    child: Text(
+                      '${layout.netScore}',
+                      style: TextStyle(
+                        color: layout.netScore > 0
+                            ? AppColors.amber
+                            : layout.netScore < 0
+                                ? AppColors.red
+                                : AppColors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
+                      ),
                     ),
-                    tooltip: 'Downvote',
+                  ),
+                  Semantics(
+                    button: true,
+                    selected: downSelected,
+                    label: downSelected ? 'Remove downvote' : 'Downvote',
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+                      onPressed: onDown,
+                      icon: Icon(
+                        Icons.arrow_downward_rounded,
+                        color: downSelected ? AppColors.red : AppColors.textMuted,
+                        size: 22,
+                      ),
+                      tooltip: 'Downvote',
+                    ),
                   ),
                 ],
               ),

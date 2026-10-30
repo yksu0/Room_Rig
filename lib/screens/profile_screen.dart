@@ -417,16 +417,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Positioned(
                 right: -2,
                 bottom: -2,
-                child: Material(
-                  color: AppColors.cyan,
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: _busy ? null : () => _changePhoto(profiles),
-                    child: const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Icon(Icons.photo_camera_rounded,
-                          size: 18, color: AppColors.bg),
+                child: Semantics(
+                  button: true,
+                  label: 'Change profile photo',
+                  child: Material(
+                    color: AppColors.cyan,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _busy ? null : () => _changePhoto(profiles),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.photo_camera_rounded,
+                            size: 18, color: AppColors.bg),
+                      ),
                     ),
                   ),
                 ),
@@ -436,48 +440,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         const SizedBox(height: 14),
         Center(
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: _busy ? null : () => _editName(profiles),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      profiles.displayLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: profiles.hasDisplayName
-                            ? AppColors.textPrimary
-                            : AppColors.textMuted,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
+          child: Semantics(
+            button: true,
+            label: 'Display name, ${profiles.displayLabel}. Double tap to edit',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _busy ? null : () => _editName(profiles),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        profiles.displayLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: profiles.hasDisplayName
+                              ? AppColors.textPrimary
+                              : AppColors.textMuted,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.edit_outlined,
-                      size: 16, color: AppColors.textMuted),
-                ],
+                    const SizedBox(width: 6),
+                    const Icon(Icons.edit_outlined,
+                        size: 16, color: AppColors.textMuted),
+                  ],
+                ),
               ),
             ),
           ),
         ),
         const SizedBox(height: 2),
         Center(
-          child: Text(
-            email,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+          child: Semantics(
+            label: 'Email, $email',
+            child: Text(
+              email,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+            ),
           ),
         ),
         const SizedBox(height: 2),
         Center(
-          child: Text(
-            'Sign-in: ${providers.join(' · ')}',
-            style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+          child: Semantics(
+            label: 'Sign-in methods, ${providers.join(', ')}',
+            child: Text(
+              'Sign-in: ${providers.join(' · ')}',
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
           ),
         ),
         if (profiles.loading) ...[
@@ -560,16 +574,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
               : (v) => context.read<AppState>().setSharedPhoneLock(v),
         ),
         const Divider(color: AppColors.border),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.delete_outline, color: AppColors.red),
-          title: const Text('Delete account',
-              style: TextStyle(color: AppColors.red)),
-          subtitle: const Text(
-            'Needs internet to Room Rig cloud. Email code required; account and synced rooms are removed after a 7-day grace period.',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+        Semantics(
+          button: true,
+          label: 'Delete account',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.delete_outline, color: AppColors.red),
+            title: const Text('Delete account',
+                style: TextStyle(color: AppColors.red)),
+            subtitle: const Text(
+              'Needs internet to Room Rig cloud. Email code required; account and synced rooms are removed after a 7-day grace period.',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
+            onTap: _busy ? null : () => _deleteAccount(auth, profiles),
           ),
-          onTap: _busy ? null : () => _deleteAccount(auth, profiles),
         ),
         const SizedBox(height: 28),
         OutlinedButton(
