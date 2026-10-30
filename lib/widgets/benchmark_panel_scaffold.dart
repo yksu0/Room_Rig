@@ -690,26 +690,38 @@ class BenchmarkPrimaryButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadius.lg),
             border: Border.all(color: disabled ? AppColors.border : Colors.transparent),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              SvgIcon(icon, size: 18, color: disabled ? AppColors.textMuted : Colors.white),
-              const SizedBox(width: AppSpace.xs),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final phone = constraints.maxWidth < 320;
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SvgIcon(
+                    icon,
+                    size: phone ? 16 : 18,
                     color: disabled ? AppColors.textMuted : Colors.white,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                    letterSpacing: 1.1,
                   ),
-                ),
-              ),
-            ],
+                  const SizedBox(width: AppSpace.xs),
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        softWrap: false,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: disabled ? AppColors.textMuted : Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: phone ? 12 : 14,
+                          letterSpacing: phone ? 0.6 : 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -773,14 +785,25 @@ class BenchmarkApplyRow extends StatelessWidget {
         ),
         if (onApply == null && blockedReason != null) ...[
           const SizedBox(height: AppSpace.xs),
-          Text(
-            blockedReason!,
-            key: const ValueKey('benchmark_apply_blocked_reason'),
-            style: TextStyle(
-              color: AppColors.amber.withValues(alpha: 0.95),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final phone = constraints.maxWidth < 412;
+              return Semantics(
+                liveRegion: true,
+                label: blockedReason!,
+                child: Text(
+                  blockedReason!,
+                  key: const ValueKey('benchmark_apply_blocked_reason'),
+                  softWrap: true,
+                  style: TextStyle(
+                    color: AppColors.amber.withValues(alpha: 0.95),
+                    fontSize: phone ? 11 : 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ],
