@@ -1004,6 +1004,63 @@ class BenchmarkMetricComparisonRow extends StatelessWidget {
 }
 
 /// Results comparison: dual rings + metric rows for the Compare pair.
+/// Shared Results body for Airflow / Lighting / Ergonomics / Spatial.
+/// Keeps compare header, why-reasons, and left/right rings identical across modes.
+Widget buildBenchmarkModeResults({
+  String? eyebrow,
+  required String title,
+  required Color accentColor,
+  required BenchmarkValidation validation,
+  required String leftCaption,
+  required String rightCaption,
+  required bool rightIsAutoRig,
+  required List<String> improvedReasons,
+  required double leftScore,
+  required double rightScore,
+  required String summaryText,
+  required List<Widget> metricRows,
+}) {
+  final why = rightIsAutoRig ? improvedReasons : const <String>[];
+  final card = BenchmarkResultsCard(
+    title: title,
+    accentColor: accentColor,
+    validation: validation,
+    compareHeader: 'Now comparing: $leftCaption vs $rightCaption',
+    whyReasons: why,
+    rings: [
+      BenchmarkScoreRingSpec(
+        score: leftScore,
+        color: AppColors.cyan,
+        label: leftCaption,
+      ),
+      BenchmarkScoreRingSpec(
+        score: rightScore,
+        color: accentColor,
+        label: rightCaption,
+      ),
+    ],
+    summaryText: summaryText,
+    metricRows: metricRows,
+  );
+  if (eyebrow == null) return card;
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        eyebrow,
+        style: const TextStyle(
+          color: AppColors.textMuted,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 2,
+        ),
+      ),
+      const SizedBox(height: 12),
+      card,
+    ],
+  );
+}
+
 class BenchmarkResultsCard extends StatelessWidget {
   final String title;
   final BenchmarkValidation validation;

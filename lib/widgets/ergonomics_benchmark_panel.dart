@@ -1174,27 +1174,16 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
     final right = _layouts?.rightCaption ?? 'Right';
     final pathDelta = ((opt.pathScore - base.pathScore) * 100).round();
     final pathLabel = pathDelta >= 0 ? '+$pathDelta' : '$pathDelta';
-    final why = (_layouts?.rightIsAutoRig ?? false)
-        ? (_layouts?.improvedReasons ?? const <String>[])
-        : const <String>[];
-    return BenchmarkResultsCard(
+    return buildBenchmarkModeResults(
       title: 'Ergonomics Comfort Benchmark',
       accentColor: AppColors.ergonomicsColor,
       validation: validation,
-      compareHeader: 'Now comparing: $left vs $right',
-      whyReasons: why,
-      rings: [
-        BenchmarkScoreRingSpec(
-          score: base.comfortScore,
-          color: AppColors.cyan,
-          label: left,
-        ),
-        BenchmarkScoreRingSpec(
-          score: opt.comfortScore,
-          color: AppColors.ergonomicsColor,
-          label: right,
-        ),
-      ],
+      leftCaption: left,
+      rightCaption: right,
+      rightIsAutoRig: _layouts?.rightIsAutoRig ?? false,
+      improvedReasons: _layouts?.improvedReasons ?? const <String>[],
+      leftScore: base.comfortScore,
+      rightScore: opt.comfortScore,
       summaryText:
           'Walk paths $pathLabel · '
           'Door view +${((opt.doorProspect - base.doorProspect) * 100).toStringAsFixed(0)} · '

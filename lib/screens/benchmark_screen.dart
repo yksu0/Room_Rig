@@ -1148,67 +1148,42 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     final right = _layouts?.rightCaption ?? 'Right';
     final delta = (opt.circulationScore - base.circulationScore).round();
     final deltaLabel = delta >= 0 ? '+$delta' : '$delta';
-    final why = (_layouts?.rightIsAutoRig ?? false)
-        ? (_layouts?.improvedReasons ?? const <String>[])
-        : const <String>[];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'AIRFLOW BENCHMARK RESULTS',
-          style: TextStyle(
-            color: AppColors.textMuted,
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 2,
-          ),
+    return buildBenchmarkModeResults(
+      eyebrow: 'AIRFLOW BENCHMARK RESULTS',
+      title: 'Voxel Circulation Benchmark',
+      accentColor: AppColors.airflowColor,
+      validation: validation,
+      leftCaption: left,
+      rightCaption: right,
+      rightIsAutoRig: _layouts?.rightIsAutoRig ?? false,
+      improvedReasons: _layouts?.improvedReasons ?? const <String>[],
+      leftScore: base.circulationScore,
+      rightScore: opt.circulationScore,
+      summaryText:
+          'Circulation $deltaLabel · '
+          'Dead zones ${((base.deadZoneRatio - opt.deadZoneRatio) * 100).toStringAsFixed(0)} pts · '
+          'Heat ${((base.heatPocketRatio - opt.heatPocketRatio) * 100).toStringAsFixed(0)} pts',
+      metricRows: [
+        BenchmarkMetricComparisonRow(
+          label: 'Circulation',
+          left: base.circulationScore,
+          right: opt.circulationScore,
+          color: AppColors.airflowColor,
         ),
-        const SizedBox(height: 12),
-        BenchmarkResultsCard(
-          title: 'Voxel Circulation Benchmark',
-          accentColor: AppColors.airflowColor,
-          validation: validation,
-          compareHeader: 'Now comparing: $left vs $right',
-          whyReasons: why,
-          rings: [
-            BenchmarkScoreRingSpec(
-              score: base.circulationScore,
-              color: AppColors.cyan,
-              label: left,
-            ),
-            BenchmarkScoreRingSpec(
-              score: opt.circulationScore,
-              color: AppColors.airflowColor,
-              label: right,
-            ),
-          ],
-          summaryText:
-              'Circulation $deltaLabel · '
-              'Dead zones ${((base.deadZoneRatio - opt.deadZoneRatio) * 100).toStringAsFixed(0)} pts · '
-              'Heat ${((base.heatPocketRatio - opt.heatPocketRatio) * 100).toStringAsFixed(0)} pts',
-          metricRows: [
-            BenchmarkMetricComparisonRow(
-              label: 'Circulation',
-              left: base.circulationScore,
-              right: opt.circulationScore,
-              color: AppColors.airflowColor,
-            ),
-            BenchmarkMetricComparisonRow(
-              label: 'Dead zones',
-              left: base.deadZoneRatio * 100,
-              right: opt.deadZoneRatio * 100,
-              color: AppColors.red,
-              lowerIsBetter: true,
-            ),
-            BenchmarkMetricComparisonRow(
-              label: 'Heat pockets',
-              left: base.heatPocketRatio * 100,
-              right: opt.heatPocketRatio * 100,
-              color: AppColors.amber,
-              lowerIsBetter: true,
-            ),
-          ],
+        BenchmarkMetricComparisonRow(
+          label: 'Dead zones',
+          left: base.deadZoneRatio * 100,
+          right: opt.deadZoneRatio * 100,
+          color: AppColors.red,
+          lowerIsBetter: true,
+        ),
+        BenchmarkMetricComparisonRow(
+          label: 'Heat pockets',
+          left: base.heatPocketRatio * 100,
+          right: opt.heatPocketRatio * 100,
+          color: AppColors.amber,
+          lowerIsBetter: true,
         ),
       ],
     );

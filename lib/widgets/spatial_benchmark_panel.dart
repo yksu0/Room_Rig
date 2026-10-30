@@ -943,27 +943,16 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
 
     final spaceDelta = (opt.overallScore - base.overallScore).round();
     final spaceLabel = spaceDelta >= 0 ? '+$spaceDelta' : '$spaceDelta';
-    final why = (_layouts?.rightIsAutoRig ?? false)
-        ? (_layouts?.improvedReasons ?? const <String>[])
-        : const <String>[];
-    return BenchmarkResultsCard(
+    return buildBenchmarkModeResults(
       title: 'Walkway Space Benchmark',
       accentColor: AppColors.spatialColor,
       validation: validation,
-      compareHeader: 'Now comparing: $left vs $right',
-      whyReasons: why,
-      rings: [
-        BenchmarkScoreRingSpec(
-          score: base.overallScore,
-          color: AppColors.cyan,
-          label: left,
-        ),
-        BenchmarkScoreRingSpec(
-          score: opt.overallScore,
-          color: AppColors.spatialColor,
-          label: right,
-        ),
-      ],
+      leftCaption: left,
+      rightCaption: right,
+      rightIsAutoRig: _layouts?.rightIsAutoRig ?? false,
+      improvedReasons: _layouts?.improvedReasons ?? const <String>[],
+      leftScore: base.overallScore,
+      rightScore: opt.overallScore,
       summaryText:
           'Space $spaceLabel · '
           'Walkable +${((opt.walkableRatio - base.walkableRatio) * 100).toStringAsFixed(0)} pts · '

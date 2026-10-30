@@ -1103,27 +1103,16 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
     final right = _layouts?.rightCaption ?? 'Right';
     final delta = (opt.exposureScore - base.exposureScore).round();
     final deltaLabel = delta >= 0 ? '+$delta' : '$delta';
-    final why = (_layouts?.rightIsAutoRig ?? false)
-        ? (_layouts?.improvedReasons ?? const <String>[])
-        : const <String>[];
-    return BenchmarkResultsCard(
+    return buildBenchmarkModeResults(
       title: 'Lighting Exposure Benchmark',
       accentColor: AppColors.lightingColor,
       validation: validation,
-      compareHeader: 'Now comparing: $left vs $right',
-      whyReasons: why,
-      rings: [
-        BenchmarkScoreRingSpec(
-          score: base.exposureScore,
-          color: AppColors.cyan,
-          label: left,
-        ),
-        BenchmarkScoreRingSpec(
-          score: opt.exposureScore,
-          color: AppColors.lightingColor,
-          label: right,
-        ),
-      ],
+      leftCaption: left,
+      rightCaption: right,
+      rightIsAutoRig: _layouts?.rightIsAutoRig ?? false,
+      improvedReasons: _layouts?.improvedReasons ?? const <String>[],
+      leftScore: base.exposureScore,
+      rightScore: opt.exposureScore,
       summaryText:
           'Exposure $deltaLabel · '
           'Shadows ${((base.shadowRatio - opt.shadowRatio) * 100).toStringAsFixed(0)} pts · '
