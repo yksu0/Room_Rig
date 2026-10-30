@@ -23,7 +23,13 @@ class RoomStatusStrip extends StatelessWidget {
     final state = context.watch<AppState>();
     final conflicts = state.layoutConflicts.length;
     final simulated = state.scoresAreSimulated;
-    final fs = compact ? 11.0 : 12.0;
+    final honesty = simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchmarkOk;
+    final honestyColor = simulated ? AppColors.amber : AppColors.green;
+    final scores =
+        'Air ${state.airflowScore.round()} · '
+        'Light ${state.lightingScore.round()} · '
+        'Ergo ${state.ergonomicsScore.round()} · '
+        'Space ${state.spatialScore.round()}';
 
     return Material(
       color: AppColors.card.withValues(alpha: 0.9),
@@ -31,54 +37,71 @@ class RoomStatusStrip extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadius.sm),
         onTap: onTapScores,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 8 : 10,
-            vertical: compact ? 6 : 8,
-          ),
-          child: Row(
-            children: [
-              _chip(
-                simulated ? HubScoreLabels.roughEst : HubScoreLabels.benchmarkOk,
-                simulated ? AppColors.amber : AppColors.green,
-                fs,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final phone = constraints.maxWidth < 412;
+            final fs = compact || phone ? 11.0 : 12.0;
+            return Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: compact || phone ? 8 : 10,
+                vertical: compact || phone ? 6 : 8,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Air ${state.airflowScore.round()} · '
-                  'Light ${state.lightingScore.round()} · '
-                  'Ergo ${state.ergonomicsScore.round()} · '
-                  'Space ${state.spatialScore.round()}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: fs,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              if (conflicts > 0) ...[
-                const SizedBox(width: 6),
-                InkWell(
-                  onTap: onTapConflicts ?? onTapScores,
-                  borderRadius: BorderRadius.circular(999),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    child: Text(
-                      '$conflicts conflict${conflicts == 1 ? '' : 's'}',
-                      style: TextStyle(
-                        color: AppColors.amber,
-                        fontSize: fs,
-                        fontWeight: FontWeight.w800,
+              child: Semantics(
+                label: '$honesty. $scores'
+                    '${conflicts > 0 ? '. $conflicts conflicts' : ''}',
+                child: Row(
+                  key: const ValueKey('room_status_strip'),
+                  children: [
+                    Flexible(
+                      flex: 0,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: _chip(honesty, honestyColor, fs),
                       ),
                     ),
-                  ),
+                    SizedBox(width: phone ? 6 : 8),
+                    Expanded(
+                      child: Text(
+                        scores,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: fs,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (conflicts > 0) ...[
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: onTapConflicts ?? onTapScores,
+                        borderRadius: BorderRadius.circular(999),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          child: Text(
+                            phone
+                                ? '$conflicts'
+                                : '$conflicts conflict${conflicts == 1 ? '' : 's'}',
+                            key: const ValueKey('room_status_conflicts'),
+                            style: TextStyle(
+                              color: AppColors.amber,
+                              fontSize: fs,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ],
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -86,6 +109,7 @@ class RoomStatusStrip extends StatelessWidget {
 
   Widget _chip(String label, Color color, double fs) {
     return Container(
+      key: const ValueKey('room_status_honesty_chip'),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.16),
@@ -94,6 +118,7 @@ class RoomStatusStrip extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 1,
         style: TextStyle(
           color: color,
           fontSize: fs - 1,
