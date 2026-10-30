@@ -29,7 +29,7 @@ class BenchmarkLayouts {
   final List<FurnitureItem> autoRig;
 
   /// Why the optimizer moved what it moved (when right is Auto-Rig).
-  final List<String> improvedReasons;
+  final List<String> autoRigReasons;
 
   /// True when left inventory is empty — never invent a reference room.
   final bool isEmpty;
@@ -51,7 +51,7 @@ class BenchmarkLayouts {
     required this.mode,
     required this.currentRoom,
     required this.autoRig,
-    required this.improvedReasons,
+    required this.autoRigReasons,
     required this.isEmpty,
     required this.fingerprint,
     required this.weights,
@@ -69,7 +69,7 @@ class BenchmarkLayouts {
   String get weightsSummary => weights.summaryLabel;
 
   /// Chip / banner line for the right variant.
-  String get improvedCaption {
+  String get autoRigCaption {
     final mix = weightsSummary;
     if (isEmpty) {
       return '$rightCaption — create a room first · $mix';
@@ -115,27 +115,6 @@ class BenchmarkLayoutBuilder {
   }
 
   static void clearCandidateCache() => _candidateCache.clear();
-
-  /// Hand-authored reference inventory (tests / demos only — never a silent UI fallback).
-  static List<FurnitureItem> sampleFor(BenchmarkMode mode) {
-    return RoomPresets.getPreset(RoomPreset.gamingSetup)
-        .furniture
-        .map((f) => f.copyWith())
-        .toList(growable: false);
-  }
-
-  static List<FurnitureItem> sampleImprovedFor(
-    BenchmarkMode mode, {
-    MultiObjectiveWeights weights = defaultWeights,
-  }) {
-    final room = RoomPresets.getPreset(RoomPreset.gamingSetup);
-    return MultiObjectiveOptimizer.optimize(
-      furniture: room.furniture,
-      gridCols: room.gridCols,
-      gridRows: room.gridRows,
-      weights: weights,
-    ).furniture;
-  }
 
   /// Build left vs right layouts.
   ///
@@ -185,7 +164,7 @@ class BenchmarkLayoutBuilder {
         mode: mode,
         currentRoom: const [],
         autoRig: const [],
-        improvedReasons: const <String>[
+        autoRigReasons: const <String>[
           'No furniture yet — create or stock a room before Benchmark can score.',
         ],
         isEmpty: true,
@@ -209,7 +188,7 @@ class BenchmarkLayoutBuilder {
         mode: mode,
         currentRoom: current,
         autoRig: right,
-        improvedReasons: const [],
+        autoRigReasons: const [],
         isEmpty: false,
         fingerprint: fp,
         weights: w,
@@ -242,7 +221,7 @@ class BenchmarkLayoutBuilder {
       mode: mode,
       currentRoom: current,
       autoRig: pick.furniture,
-      improvedReasons: pick.reasons,
+      autoRigReasons: pick.reasons,
       isEmpty: false,
       fingerprint: fp,
       weights: w,

@@ -628,7 +628,7 @@ class BenchmarkAutoRigMixBar extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              L.improvedCaption,
+              L.autoRigCaption,
               style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 12,
@@ -1014,13 +1014,13 @@ Widget buildBenchmarkModeResults({
   required String leftCaption,
   required String rightCaption,
   required bool rightIsAutoRig,
-  required List<String> improvedReasons,
+  required List<String> autoRigReasons,
   required double leftScore,
   required double rightScore,
   required String summaryText,
   required List<Widget> metricRows,
 }) {
-  final why = rightIsAutoRig ? improvedReasons : const <String>[];
+  final why = rightIsAutoRig ? autoRigReasons : const <String>[];
   final card = BenchmarkResultsCard(
     title: title,
     accentColor: accentColor,

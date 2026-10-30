@@ -54,8 +54,8 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
   String? _layoutSyncKey;
   int _seenFocusToken = 0;
   int _seenResultsFocusToken = 0;
-  LightingSimSnapshot? _myRoomSim;
-  LightingSimSnapshot? _improvedSim;
+  LightingSimSnapshot? _currentRoomSim;
+  LightingSimSnapshot? _autoRigSim;
 
   @override
   void initState() {
@@ -104,8 +104,8 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
     );
     _layouts = layouts;
     final bounds = SimRoomBounds.fromRoomData(room);
-    _myRoomSim = LightingSimulator.build(furniture: layouts.currentRoom, optimized: false, bounds: bounds);
-    _improvedSim = LightingSimulator.build(furniture: layouts.autoRig, optimized: true, bounds: bounds);
+    _currentRoomSim = LightingSimulator.build(furniture: layouts.currentRoom, optimized: false, bounds: bounds);
+    _autoRigSim = LightingSimulator.build(furniture: layouts.autoRig, optimized: true, bounds: bounds);
     _ready = true;
     if (resetStep) {
       _step = _LightStep.layout;
@@ -179,9 +179,9 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
   LightingSimSnapshot? get _activeSim {
     switch (_simVariant) {
       case BenchmarkLayoutKind.autoRig:
-        return _improvedSim;
+        return _autoRigSim;
       case BenchmarkLayoutKind.currentRoom:
-              return _myRoomSim;
+              return _currentRoomSim;
     }
   }
 
@@ -199,7 +199,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
           'Room edits do not move Baseline until you Set baseline again',
         ];
       case BenchmarkLayoutKind.autoRig:
-        final reasons = _layouts?.improvedReasons ?? const <String>[];
+        final reasons = _layouts?.autoRigReasons ?? const <String>[];
         return reasons.isEmpty
             ? const ['No rearrange found that lights Baseline better']
             : reasons;
@@ -249,7 +249,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
         lockMode: 'lighting',
       );
       final diff = summarizeLayoutDiff(before, state.furniture);
-      final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+      final why = summarizeWhyWins(_layouts?.autoRigReasons ?? const []);
       final room = state.currentRoomData;
       final after = List<FurnitureItem>.from(state.furniture);
       showBenchmarkApplySnackBar(
@@ -274,7 +274,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
                 'Auto-Rig matches Baseline — lighting is already as good as the optimizer found.',
           )
         : benchmarkWhyWinsCard(
-            reasons: _layouts?.improvedReasons ?? const [],
+            reasons: _layouts?.autoRigReasons ?? const [],
             accentColor: AppColors.lightingColor,
           );
 
@@ -484,7 +484,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
                             ? 'Empty room — add furniture before scoring'
                             : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
                     BenchmarkLayoutKind.autoRig =>
-                        _layouts?.improvedCaption ?? 'Auto-Rig',
+                        _layouts?.autoRigCaption ?? 'Auto-Rig',
                   },
               style: const TextStyle(
                 color: AppColors.textPrimary,
@@ -785,7 +785,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
                               ? 'Empty room — add furniture before scoring'
                               : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
                         BenchmarkLayoutKind.autoRig =>
-                          _layouts?.improvedCaption ??
+                          _layouts?.autoRigCaption ??
                               'Auto-Rig · from Baseline',
                       },
                 style: const TextStyle(
@@ -1097,8 +1097,8 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
 
   Widget _results(AppState state) {
     final validation = _validationForSimVariant(state);
-    final base = _myRoomSim!.metrics;
-    final opt = _improvedSim!.metrics;
+    final base = _currentRoomSim!.metrics;
+    final opt = _autoRigSim!.metrics;
     final left = _layouts?.leftCaption ?? 'Left';
     final right = _layouts?.rightCaption ?? 'Right';
     final delta = (opt.exposureScore - base.exposureScore).round();
@@ -1110,7 +1110,7 @@ class _LightingBenchmarkPanelState extends State<LightingBenchmarkPanel>
       leftCaption: left,
       rightCaption: right,
       rightIsAutoRig: _layouts?.rightIsAutoRig ?? false,
-      improvedReasons: _layouts?.improvedReasons ?? const <String>[],
+      autoRigReasons: _layouts?.autoRigReasons ?? const <String>[],
       leftScore: base.exposureScore,
       rightScore: opt.exposureScore,
       summaryText:

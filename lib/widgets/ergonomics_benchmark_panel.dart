@@ -56,8 +56,8 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
   String? _layoutSyncKey;
   int _seenFocusToken = 0;
   int _seenResultsFocusToken = 0;
-  ErgonomicsSimSnapshot? _myRoomSim;
-  ErgonomicsSimSnapshot? _improvedSim;
+  ErgonomicsSimSnapshot? _currentRoomSim;
+  ErgonomicsSimSnapshot? _autoRigSim;
 
   @override
   void initState() {
@@ -106,8 +106,8 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
     );
     _layouts = layouts;
     final bounds = SimRoomBounds.fromRoomData(room);
-    _myRoomSim = ErgonomicsSimulator.build(furniture: layouts.currentRoom, optimized: false, bounds: bounds);
-    _improvedSim = ErgonomicsSimulator.build(furniture: layouts.autoRig, optimized: true, bounds: bounds);
+    _currentRoomSim = ErgonomicsSimulator.build(furniture: layouts.currentRoom, optimized: false, bounds: bounds);
+    _autoRigSim = ErgonomicsSimulator.build(furniture: layouts.autoRig, optimized: true, bounds: bounds);
     _ready = true;
     if (resetStep) {
       _step = _ErgoStep.layout;
@@ -181,9 +181,9 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
   ErgonomicsSimSnapshot? get _activeSim {
     switch (_simVariant) {
       case BenchmarkLayoutKind.autoRig:
-        return _improvedSim;
+        return _autoRigSim;
       case BenchmarkLayoutKind.currentRoom:
-              return _myRoomSim;
+              return _currentRoomSim;
     }
   }
 
@@ -201,7 +201,7 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
           'Room edits do not move Baseline until you Set baseline again',
         ];
       case BenchmarkLayoutKind.autoRig:
-        final reasons = _layouts?.improvedReasons ?? const <String>[];
+        final reasons = _layouts?.autoRigReasons ?? const <String>[];
         return reasons.isEmpty
             ? const ['No rearrange found that sits better than Baseline']
             : reasons;
@@ -262,7 +262,7 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
         lockMode: 'ergonomics',
       );
       final diff = summarizeLayoutDiff(before, state.furniture);
-      final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+      final why = summarizeWhyWins(_layouts?.autoRigReasons ?? const []);
       final room = state.currentRoomData;
       final after = List<FurnitureItem>.from(state.furniture);
       showBenchmarkApplySnackBar(
@@ -287,7 +287,7 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
                 'Auto-Rig matches Baseline — paths are already as good as the optimizer found.',
           )
         : benchmarkWhyWinsCard(
-            reasons: _layouts?.improvedReasons ?? const [],
+            reasons: _layouts?.autoRigReasons ?? const [],
             accentColor: AppColors.ergonomicsColor,
           );
 
@@ -503,7 +503,7 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
                             ? 'Empty room — add furniture before scoring'
                             : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
                     BenchmarkLayoutKind.autoRig =>
-                        _layouts?.improvedCaption ?? 'Auto-Rig',
+                        _layouts?.autoRigCaption ?? 'Auto-Rig',
                   },
               style: const TextStyle(
                 color: AppColors.textPrimary,
@@ -851,7 +851,7 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
                               ? 'Empty room — add furniture before scoring'
                               : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
                         BenchmarkLayoutKind.autoRig =>
-                          _layouts?.improvedCaption ??
+                          _layouts?.autoRigCaption ??
                               'Auto-Rig · from Baseline',
                       },
                 style: const TextStyle(
@@ -1168,8 +1168,8 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
 
   Widget _results(AppState state) {
     final validation = _validationForSimVariant(state);
-    final base = _myRoomSim!.metrics;
-    final opt = _improvedSim!.metrics;
+    final base = _currentRoomSim!.metrics;
+    final opt = _autoRigSim!.metrics;
     final left = _layouts?.leftCaption ?? 'Left';
     final right = _layouts?.rightCaption ?? 'Right';
     final pathDelta = ((opt.pathScore - base.pathScore) * 100).round();
@@ -1181,7 +1181,7 @@ class _ErgonomicsBenchmarkPanelState extends State<ErgonomicsBenchmarkPanel>
       leftCaption: left,
       rightCaption: right,
       rightIsAutoRig: _layouts?.rightIsAutoRig ?? false,
-      improvedReasons: _layouts?.improvedReasons ?? const <String>[],
+      autoRigReasons: _layouts?.autoRigReasons ?? const <String>[],
       leftScore: base.comfortScore,
       rightScore: opt.comfortScore,
       summaryText:

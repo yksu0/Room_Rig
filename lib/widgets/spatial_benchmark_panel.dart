@@ -48,8 +48,8 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
   String? _layoutSyncKey;
   int _seenFocusToken = 0;
   int _seenResultsFocusToken = 0;
-  SpatialMetrics? _myRoomMetrics;
-  SpatialMetrics? _improvedMetrics;
+  SpatialMetrics? _currentRoomMetrics;
+  SpatialMetrics? _autoRigMetrics;
 
   @override
   void initState() {
@@ -88,12 +88,12 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
       alternateIndex: state.benchmarkAlternateCursor,
     );
     _layouts = layouts;
-    _myRoomMetrics = SpatialAnalyzer.evaluate(
+    _currentRoomMetrics = SpatialAnalyzer.evaluate(
       furniture: layouts.currentRoom,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
     );
-    _improvedMetrics = SpatialAnalyzer.evaluate(
+    _autoRigMetrics = SpatialAnalyzer.evaluate(
       furniture: layouts.autoRig,
       gridCols: room.gridCols,
       gridRows: room.gridRows,
@@ -138,9 +138,9 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
   SpatialMetrics? get _activeMetrics {
     switch (_analyzeVariant) {
       case BenchmarkLayoutKind.autoRig:
-        return _improvedMetrics;
+        return _autoRigMetrics;
       case BenchmarkLayoutKind.currentRoom:
-              return _myRoomMetrics;
+              return _currentRoomMetrics;
     }
   }
 
@@ -176,7 +176,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
           'Room edits do not move Baseline until you Set baseline again',
         ];
       case BenchmarkLayoutKind.autoRig:
-        final reasons = _layouts?.improvedReasons ?? const <String>[];
+        final reasons = _layouts?.autoRigReasons ?? const <String>[];
         return reasons.isEmpty
             ? const ['No rearrange found that opens the floor more than Baseline']
             : reasons;
@@ -239,7 +239,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
         lockMode: 'spatial',
       );
       final diff = summarizeLayoutDiff(before, state.furniture);
-      final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+      final why = summarizeWhyWins(_layouts?.autoRigReasons ?? const []);
       final room = state.currentRoomData;
       final after = List<FurnitureItem>.from(state.furniture);
       showBenchmarkApplySnackBar(
@@ -264,7 +264,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
                 'Auto-Rig matches Baseline — walkways are already clear enough to leave in place.',
           )
         : benchmarkWhyWinsCard(
-            reasons: _layouts?.improvedReasons ?? const [],
+            reasons: _layouts?.autoRigReasons ?? const [],
             accentColor: AppColors.spatialColor,
           );
 
@@ -476,7 +476,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
                             ? 'Empty room — add furniture before scoring'
                             : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
                       BenchmarkLayoutKind.autoRig =>
-                        _layouts?.improvedCaption ?? 'Auto-Rig · from Baseline',
+                        _layouts?.autoRigCaption ?? 'Auto-Rig · from Baseline',
                   },
               style: const TextStyle(
                 color: AppColors.textPrimary,
@@ -734,7 +734,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
                               ? 'Empty room — add furniture before scoring'
                               : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
                         BenchmarkLayoutKind.autoRig =>
-                          _layouts?.improvedCaption ??
+                          _layouts?.autoRigCaption ??
                               'Auto-Rig · from Baseline',
                       },
                 style: const TextStyle(
@@ -936,8 +936,8 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
 
   Widget _results(AppState state) {
     final validation = _validationForImproved(state);
-    final base = _myRoomMetrics!;
-    final opt = _improvedMetrics!;
+    final base = _currentRoomMetrics!;
+    final opt = _autoRigMetrics!;
     final left = _layouts?.leftCaption ?? 'Left';
     final right = _layouts?.rightCaption ?? 'Right';
 
@@ -950,7 +950,7 @@ class _SpatialBenchmarkPanelState extends State<SpatialBenchmarkPanel> {
       leftCaption: left,
       rightCaption: right,
       rightIsAutoRig: _layouts?.rightIsAutoRig ?? false,
-      improvedReasons: _layouts?.improvedReasons ?? const <String>[],
+      autoRigReasons: _layouts?.autoRigReasons ?? const <String>[],
       leftScore: base.overallScore,
       rightScore: opt.overallScore,
       summaryText:

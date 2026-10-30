@@ -96,7 +96,7 @@ void main() {
       rightIsAutoRig: false,
     );
     expect(layouts.rightIsAutoRig, isFalse);
-    expect(layouts.improvedReasons, isEmpty);
+    expect(layouts.autoRigReasons, isEmpty);
     expect(
       BenchmarkLayoutBuilder.fingerprintOf(layouts.autoRig),
       BenchmarkLayoutBuilder.fingerprintOf(right),

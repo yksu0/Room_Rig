@@ -59,8 +59,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   String? _layoutSyncKey;
   int _seenFocusToken = 0;
   int _seenResultsFocusToken = 0;
-  AirflowSimSnapshot? _myRoomSim;
-  AirflowSimSnapshot? _improvedSim;
+  AirflowSimSnapshot? _currentRoomSim;
+  AirflowSimSnapshot? _autoRigSim;
   bool _prototypeReady = false;
   String? _selectedFurnitureId;
 
@@ -87,10 +87,10 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
   AirflowSimSnapshot? get _activeSim {
     switch (_simVariant) {
       case BenchmarkLayoutKind.autoRig:
-        return _improvedSim;
+        return _autoRigSim;
       case BenchmarkLayoutKind.currentRoom:
               // Current Room (baseline) field.
-        return _myRoomSim;
+        return _currentRoomSim;
     }
   }
 
@@ -139,12 +139,12 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
     );
     _layouts = layouts;
     final bounds = SimRoomBounds.fromRoomData(room);
-    _myRoomSim = AirflowSimulator.build(
+    _currentRoomSim = AirflowSimulator.build(
       furniture: layouts.currentRoom,
       optimized: false,
       bounds: bounds,
     );
-    _improvedSim = AirflowSimulator.build(
+    _autoRigSim = AirflowSimulator.build(
       furniture: layouts.autoRig,
       optimized: true,
       bounds: bounds,
@@ -483,7 +483,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       lockMode: 'airflow',
     );
     final diff = summarizeLayoutDiff(before, state.furniture);
-    final why = summarizeWhyWins(_layouts?.improvedReasons ?? const []);
+    final why = summarizeWhyWins(_layouts?.autoRigReasons ?? const []);
     final room = state.currentRoomData;
     final after = List<FurnitureItem>.from(state.furniture);
     showBenchmarkApplySnackBar(
@@ -523,7 +523,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                 'Auto-Rig matches Baseline — airflow is already as good as the optimizer found.',
           )
         : benchmarkWhyWinsCard(
-            reasons: _layouts?.improvedReasons ?? const [],
+            reasons: _layouts?.autoRigReasons ?? const [],
             accentColor: AppColors.airflowColor,
           );
     final desktop = AppLayout.isDesktop(context);
@@ -846,7 +846,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
                           ? 'Empty room — add furniture before scoring'
                           : 'Baseline — ${_furnitureFor(BenchmarkLayoutKind.currentRoom).length} pinned items',
                     BenchmarkLayoutKind.autoRig =>
-                      _layouts?.improvedCaption ?? 'Auto-Rig',
+                      _layouts?.autoRigCaption ?? 'Auto-Rig',
                   },
             style: const TextStyle(
               color: AppColors.textPrimary,
@@ -945,7 +945,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           )
         else
           benchmarkWhyWinsCard(
-            reasons: _layouts?.improvedReasons ?? const [],
+            reasons: _layouts?.autoRigReasons ?? const [],
             accentColor: AppColors.airflowColor,
           ),
         const SizedBox(height: 12),
@@ -1026,7 +1026,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
           'Room edits do not move Baseline until you Set baseline again',
         ];
       case BenchmarkLayoutKind.autoRig:
-        final reasons = _layouts?.improvedReasons ?? const <String>[];
+        final reasons = _layouts?.autoRigReasons ?? const <String>[];
         final head = <String>[
           'Preview only — same Auto-Rig engine as Room. Your Room is unchanged until Apply.',
         ];
@@ -1141,8 +1141,8 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
 
 
   Widget _buildAirflowResults(AppState state) {
-    final base = _myRoomSim!.metrics;
-    final opt = _improvedSim!.metrics;
+    final base = _currentRoomSim!.metrics;
+    final opt = _autoRigSim!.metrics;
     final validation = _validationForSimVariant(state);
     final left = _layouts?.leftCaption ?? 'Left';
     final right = _layouts?.rightCaption ?? 'Right';
@@ -1157,7 +1157,7 @@ class _BenchmarkScreenState extends State<BenchmarkScreen> {
       leftCaption: left,
       rightCaption: right,
       rightIsAutoRig: _layouts?.rightIsAutoRig ?? false,
-      improvedReasons: _layouts?.improvedReasons ?? const <String>[],
+      autoRigReasons: _layouts?.autoRigReasons ?? const <String>[],
       leftScore: base.circulationScore,
       rightScore: opt.circulationScore,
       summaryText:
