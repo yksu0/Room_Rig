@@ -449,17 +449,43 @@ class _RoomCustomizerScreenState extends State<RoomCustomizerScreen>
             child: ActiveRoomChip(),
           ),
           const SizedBox(height: AppSpace.xxs),
-          Text(
-            sizeLabel,
-            key: const ValueKey('room_header_dims'),
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  sizeLabel,
+                  key: const ValueKey('room_header_dims'),
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpace.xs),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    PriceSources.estimateLabel(
+                      AppMoney.format(state.totalSpent),
+                    ),
+                    key: const ValueKey('room_header_est_cost'),
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           if (!state.isSignedIn) ...[
             const SizedBox(height: AppSpace.xxs),
