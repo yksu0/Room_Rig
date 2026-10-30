@@ -495,18 +495,25 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: AppSpace.sm),
-            Text(
-              state.roomIsReady
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final phone = constraints.maxWidth < 412;
+                final copy = state.roomIsReady
                   ? (simulated
                       ? '${HubScoreLabels.roughSubtitle} Tap a ring to open that Benchmark domain. Tap ? for Create → Room → Benchmark tips.'
                       : 'Benchmark locked these scores. Tap a ring for that domain — edit in Room, then Benchmark again after layout changes. Tap ? for a quick tour.')
-                  : 'Tap the + button to create a room (or use Create below). Scan from the Scan tab when you can. Then arrange in Room and run Benchmark to lock scores. Tap ? for the tour.',
-              style: const TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
+                  : 'Tap the + button to create a room (or use Create below). Scan from the Scan tab when you can. Then arrange in Room and run Benchmark to lock scores. Tap ? for the tour.';
+                return Text(
+                  copy,
+                  key: const ValueKey('hub_score_subtitle'),
+                  style: TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: phone ? 11 : 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.35,
+                  ),
+                );
+              },
             ),
             if (state.roomIsReady) ...[
               const SizedBox(height: AppSpace.md),
@@ -1489,41 +1496,51 @@ class _JourneySteps extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _JourneyChip(
-            label: '1. Edit Room',
-            color: AppColors.cyan,
-            onTap: () => state.setTab(roomTabIndex),
-          ),
-        ),
-        const SizedBox(width: AppSpace.xs),
-        Expanded(
-          child: _JourneyChip(
-            label: '2. Benchmark',
-            color: AppColors.amber,
-            onTap: () => state.setTab(benchmarkTabIndex),
-          ),
-        ),
-        const SizedBox(width: AppSpace.xs),
-        Expanded(
-          child: _JourneyChip(
-            label: '3. Apply',
-            color: AppColors.green,
-            onTap: () => state.openBenchmarkResults(),
-          ),
-        ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Row(
+          key: const ValueKey('hub_journey_steps'),
+          children: [
+            Expanded(
+              child: _JourneyChip(
+                label: '1. Edit Room',
+                color: AppColors.cyan,
+                onTap: () => state.setTab(roomTabIndex),
+              ),
+            ),
+            const SizedBox(width: AppSpace.xs),
+            Expanded(
+              child: _JourneyChip(
+                label: '2. Benchmark',
+                color: AppColors.amber,
+                onTap: () => state.setTab(benchmarkTabIndex),
+              ),
+            ),
+            const SizedBox(width: AppSpace.xs),
+            Expanded(
+              child: _JourneyChip(
+                label: '3. Apply',
+                color: AppColors.green,
+                onTap: () => state.openBenchmarkResults(),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
+
 }
 
 class _JourneyChip extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-  const _JourneyChip({required this.label, required this.color, required this.onTap});
+  const _JourneyChip({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1539,10 +1556,21 @@ class _JourneyChip extends StatelessWidget {
             borderRadius: BorderRadius.circular(AppRadius.sm),
             border: Border.all(color: color.withValues(alpha: 0.4)),
           ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
           ),
         ),
       ),
