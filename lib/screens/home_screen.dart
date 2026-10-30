@@ -1496,40 +1496,35 @@ class _JourneySteps extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Row(
-          key: const ValueKey('hub_journey_steps'),
-          children: [
-            Expanded(
-              child: _JourneyChip(
-                label: '1. Edit Room',
-                color: AppColors.cyan,
-                onTap: () => state.setTab(roomTabIndex),
-              ),
-            ),
-            const SizedBox(width: AppSpace.xs),
-            Expanded(
-              child: _JourneyChip(
-                label: '2. Benchmark',
-                color: AppColors.amber,
-                onTap: () => state.setTab(benchmarkTabIndex),
-              ),
-            ),
-            const SizedBox(width: AppSpace.xs),
-            Expanded(
-              child: _JourneyChip(
-                label: '3. Apply',
-                color: AppColors.green,
-                onTap: () => state.openBenchmarkResults(),
-              ),
-            ),
-          ],
-        );
-      },
+    return Row(
+      key: const ValueKey('hub_journey_steps'),
+      children: [
+        Expanded(
+          child: _JourneyChip(
+            label: '1. Edit Room',
+            color: AppColors.cyan,
+            onTap: () => state.setTab(roomTabIndex),
+          ),
+        ),
+        const SizedBox(width: AppSpace.xs),
+        Expanded(
+          child: _JourneyChip(
+            label: '2. Benchmark',
+            color: AppColors.amber,
+            onTap: () => state.setTab(benchmarkTabIndex),
+          ),
+        ),
+        const SizedBox(width: AppSpace.xs),
+        Expanded(
+          child: _JourneyChip(
+            label: '3. Apply',
+            color: AppColors.green,
+            onTap: () => state.openBenchmarkResults(),
+          ),
+        ),
+      ],
     );
   }
-
 }
 
 class _JourneyChip extends StatelessWidget {
@@ -1690,66 +1685,107 @@ class _RoomSlotTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Custom row (not ListTile): trailing IconButtons must not claim the full
+    // tile width on phone layouts — ListTile asserts when trailing >= maxWidth.
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: selected ? AppColors.cyan.withValues(alpha: 0.12) : AppColors.card,
         borderRadius: BorderRadius.circular(12),
-        child: ListTile(
+        child: InkWell(
           onTap: onTap,
-          dense: true,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: selected ? AppColors.cyan : AppColors.border),
-          ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: selected ? AppColors.cyan : AppColors.border),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          if (badgeLabel != null)
+                            Container(
+                              margin: const EdgeInsets.only(left: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.orange.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: AppColors.orange.withValues(alpha: 0.55),
+                                ),
+                              ),
+                              child: Text(
+                                badgeLabel!,
+                                style: const TextStyle(
+                                  color: AppColors.orange,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-              if (badgeLabel != null)
-                Container(
-                  margin: const EdgeInsets.only(left: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.orange.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppColors.orange.withValues(alpha: 0.55)),
-                  ),
-                  child: Text(
-                    badgeLabel!,
-                    style: const TextStyle(
-                      color: AppColors.orange,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textMuted, fontSize: 11)),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.copy_outlined, size: 18, color: AppColors.textMuted),
-                onPressed: onDuplicate,
-                tooltip: 'Duplicate',
-              ),
-              if (onDelete != null)
                 IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.textMuted),
-                  onPressed: onDelete,
-                  tooltip: 'Delete',
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(
+                    Icons.copy_outlined,
+                    size: 18,
+                    color: AppColors.textMuted,
+                  ),
+                  onPressed: onDuplicate,
+                  tooltip: 'Duplicate',
                 ),
-            ],
+                if (onDelete != null)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    padding: EdgeInsets.zero,
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      size: 18,
+                      color: AppColors.textMuted,
+                    ),
+                    onPressed: onDelete,
+                    tooltip: 'Delete',
+                  ),
+              ],
+            ),
           ),
         ),
       ),

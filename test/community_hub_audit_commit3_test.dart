@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -55,6 +56,29 @@ class _ThrowingFeedRepo extends PublishedLayoutRepository {
   }
 }
 
+/// Holds the first fetch until [complete] so the loading spinner stays visible.
+class _HangingFeedRepo extends PublishedLayoutRepository {
+  final Completer<List<PublishedLayout>> _baselines = Completer();
+
+  void complete([List<PublishedLayout>? layouts]) {
+    if (!_baselines.isCompleted) {
+      _baselines.complete(layouts ?? const []);
+    }
+  }
+
+  @override
+  Future<List<PublishedLayout>> fetchBaselines({int limit = 20}) => _baselines.future;
+
+  @override
+  Future<List<PublishedLayout>> fetchRecent({int limit = 30}) async => const [];
+
+  @override
+  Future<List<PublishedLayout>> fetchTop({int limit = 30}) async => const [];
+
+  @override
+  Future<List<PublishedLayout>> fetchMonthlyFeatured() async => const [];
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -68,18 +92,33 @@ void main() {
     final previousOnError = FlutterError.onError;
     FlutterError.onError = (details) {
       final s = details.toString();
-      if (s.contains('A RenderFlex overflowed') ||
-          s.contains('hasSize') ||
-          s.contains('RenderBox was not laid out') ||
-          s.contains('NEEDS-LAYOUT') ||
-          s.contains('_RenderListTile') ||
-          s.contains('rendering/object.dart') ||
-          s.contains('Failed assertion')) {
+      if (s.contains('A RenderFlex overflowed')) {
         return;
       }
       previousOnError?.call(details);
     };
     addTearDown(() => FlutterError.onError = previousOnError);
+  }
+
+  Future<void> pumpCommunity(
+    WidgetTester tester, {
+    required AppState state,
+    required double width,
+  }) async {
+    await tester.binding.setSurfaceSize(Size(width, 740));
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthService()),
+          ChangeNotifierProvider(create: (_) => ProfileService()),
+          ChangeNotifierProvider.value(value: state),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.dark,
+          home: const Scaffold(body: CommunityBenchmarkPanel()),
+        ),
+      ),
+    );
   }
 
   testWidgets('Community guest sees sign-in unlock hint', (tester) async {
@@ -203,12 +242,41 @@ void main() {
     expect(state.benchmarkMode, 'community');
   });
 
-  testWidgets('Community offline empty state at 360dp shows icon + Retry', (tester) async {
+  testWidgets('Community offline empty state at 360 and 412dp shows icon + Retry',
+      (tester) async {
     ignoreLayoutNoise();
-    await tester.binding.setSurfaceSize(const Size(360, 740));
+    for (final width in const [360.0, 412.0]) {
+      final state = AppState(publishedLayouts: _ThrowingFeedRepo());
+      await pumpCommunity(tester, state: state, width: width);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.byKey(const ValueKey('community_offline_error')), findsOneWidget,
+          reason: 'error at ${width}dp');
+      expect(find.byKey(const ValueKey('community_offline_error_icon')), findsOneWidget,
+          reason: 'icon at ${width}dp');
+      expect(find.textContaining('Could not load Community feed'), findsOneWidget,
+          reason: 'copy at ${width}dp');
+      expect(find.text('Retry'), findsOneWidget, reason: 'Retry at ${width}dp');
+      expect(find.byKey(const ValueKey('community_stale_banner')), findsNothing,
+          reason: 'no stale at ${width}dp');
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+  });
+
+  testWidgets('Community loading spinner shows while feed loads', (tester) async {
+    ignoreLayoutNoise();
+    await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final state = AppState(publishedLayouts: _ThrowingFeedRepo());
+    final repo = _HangingFeedRepo();
+    addTearDown(repo.complete);
+    final state = AppState(publishedLayouts: repo);
+
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -222,14 +290,17 @@ void main() {
         ),
       ),
     );
+    // First frame: _loading starts true; post-frame starts hanging fetch.
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Loading Community feed'),
+      findsOneWidget,
+    );
+
+    repo.complete();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    await tester.pump(const Duration(seconds: 1));
-
-    expect(find.byKey(const ValueKey('community_offline_error')), findsOneWidget);
-    expect(find.byKey(const ValueKey('community_offline_error_icon')), findsOneWidget);
-    expect(find.textContaining('Could not load Community feed'), findsOneWidget);
-    expect(find.text('Retry'), findsOneWidget);
-    expect(find.byKey(const ValueKey('community_stale_banner')), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 }

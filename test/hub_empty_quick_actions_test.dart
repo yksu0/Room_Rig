@@ -21,13 +21,7 @@ void main() {
     final previousOnError = FlutterError.onError;
     FlutterError.onError = (details) {
       final s = details.toString();
-      if (s.contains('A RenderFlex overflowed') ||
-          s.contains('hasSize') ||
-          s.contains('RenderBox was not laid out') ||
-          s.contains('NEEDS-LAYOUT') ||
-          s.contains('_RenderListTile') ||
-          s.contains('rendering/object.dart') ||
-          s.contains('Failed assertion')) {
+      if (s.contains('A RenderFlex overflowed')) {
         return;
       }
       previousOnError?.call(details);
@@ -109,33 +103,41 @@ void main() {
     expect(state.benchmarkResultsFocusToken, before + 1);
   });
 
-  testWidgets('Hub score subtitle and journey chips layout at 360dp', (tester) async {
+  testWidgets('Hub score subtitle and journey chips layout at 360 and 412dp', (tester) async {
     ignoreLayoutNoise();
-    final state = AppState();
-    state.createManualRoom(name: 'Studio', lengthMeters: 3.6, widthMeters: 4.8);
-    await tester.binding.setSurfaceSize(const Size(360, 740));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => AuthService()),
-          ChangeNotifierProvider(create: (_) => ProfileService()),
-          ChangeNotifierProvider.value(value: state),
-        ],
-        child: MaterialApp(
-          theme: AppTheme.dark,
-          home: const HomeScreen(),
+    for (final width in const [360.0, 412.0]) {
+      final state = AppState();
+      state.createManualRoom(name: 'Studio', lengthMeters: 3.6, widthMeters: 4.8);
+      await tester.binding.setSurfaceSize(Size(width, 740));
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthService()),
+            ChangeNotifierProvider(create: (_) => ProfileService()),
+            ChangeNotifierProvider.value(value: state),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark,
+            home: const HomeScreen(),
+          ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pump(const Duration(seconds: 1));
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(seconds: 1));
 
-    expect(find.byKey(const ValueKey('hub_score_subtitle')), findsOneWidget);
-    expect(find.byKey(const ValueKey('hub_journey_steps')), findsOneWidget);
-    expect(find.text('1. Edit Room'), findsOneWidget);
-    expect(find.text('2. Benchmark'), findsOneWidget);
-    expect(find.text('3. Apply'), findsOneWidget);
+      expect(find.byKey(const ValueKey('hub_score_subtitle')), findsOneWidget,
+          reason: 'subtitle at ${width}dp');
+      expect(find.byKey(const ValueKey('hub_journey_steps')), findsOneWidget,
+          reason: 'journey at ${width}dp');
+      expect(find.text('1. Edit Room'), findsOneWidget, reason: 'Edit Room at ${width}dp');
+      expect(find.text('2. Benchmark'), findsOneWidget, reason: 'Benchmark at ${width}dp');
+      expect(find.text('3. Apply'), findsOneWidget, reason: 'Apply at ${width}dp');
+      // Flush AppState guest-scrub timer before swapping the tree for the next width.
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    }
+    addTearDown(() => tester.binding.setSurfaceSize(null));
   });
 }
