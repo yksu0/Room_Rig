@@ -19,6 +19,23 @@ export const metadata: Metadata = {
   description:
     "Treat your room like a PC build. Layout → score → optimize. The Android app for Hub, Room, Scan, and Benchmark.",
   metadataBase: new URL("https://roomrig.vercel.app"),
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "https://roomrig.vercel.app",
+    siteName: "Room Rig",
+    title: "Room Rig",
+    description:
+      "Treat your room like a PC build. Layout → score → optimize. The Android app for Hub, Room, Scan, and Benchmark.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+    },
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
