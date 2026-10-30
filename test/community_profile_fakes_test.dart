@@ -249,6 +249,9 @@ class FakeProfileService extends ProfileService {
   String? lastConfirmCode;
   var sendCodeCalls = 0;
   var confirmCalls = 0;
+  var loadCalls = 0;
+  var cancelAccountDeletionCalls = 0;
+  bool? lastCancelPendingDeletion;
 
   @override
   Future<String?> cloudReachabilityError() async => reachabilityError;
@@ -266,8 +269,17 @@ class FakeProfileService extends ProfileService {
     return confirmError;
   }
 
+  /// Mirrors [ProfileService.load]: sign-in cancels a pending soft-delete.
   @override
-  Future<void> load({bool cancelPendingDeletion = true}) async {}
+  Future<void> load({bool cancelPendingDeletion = true}) async {
+    loadCalls++;
+    lastCancelPendingDeletion = cancelPendingDeletion;
+    final pending = profile?.deletionRequestedAt;
+    if (cancelPendingDeletion && pending != null) {
+      cancelAccountDeletionCalls++;
+      debugSetProfileForTests(profile!.copyWith(clearDeletion: true));
+    }
+  }
 }
 
 void main() {
@@ -457,6 +469,107 @@ void main() {
       expect(find.textContaining('Delete needs an internet connection'), findsOneWidget);
       expect(profiles.sendCodeCalls, 0);
       expect(find.text('Delete account?'), findsNothing);
+    });
+
+    testWidgets('Cancel on delete dialog does not send OTP or delete',
+        (tester) async {
+      final auth = FakeAuthService(signedIn: true, email: 'a@b.co', userId: 'u1');
+      final profiles = FakeProfileService(
+        profile: const UserProfile(
+          id: 'u1',
+          displayName: 'Ada',
+          avatarUrl: 'https://example.com/a.png',
+        ),
+      );
+      await pumpProfile(tester, auth: auth, profiles: profiles);
+
+      await tester.scrollUntilVisible(
+        find.text('Delete account'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delete account?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delete account?'), findsNothing);
+      expect(profiles.sendCodeCalls, 0);
+      expect(profiles.confirmCalls, 0);
+      expect(auth.signOutCalls, 0);
+    });
+
+    testWidgets('pending-delete banner shows when deletionRequestedAt is set',
+        (tester) async {
+      final requested = DateTime.utc(2026, 10, 28);
+      final auth = FakeAuthService(signedIn: true, email: 'a@b.co', userId: 'u1');
+      final profiles = FakeProfileService(
+        profile: UserProfile(
+          id: 'u1',
+          displayName: 'Ada',
+          avatarUrl: 'https://example.com/a.png',
+          deletionRequestedAt: requested,
+        ),
+      );
+      await pumpProfile(tester, auth: auth, profiles: profiles);
+
+      expect(profiles.profile?.deletionRequestedAt, requested);
+      expect(
+        find.textContaining('A deletion was requested for this account'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Signing in cancelled it'), findsOneWidget);
+    });
+  });
+
+  group('cancel_account_deletion on sign-in (ProfileService.load)', () {
+    test('load cancels pending deletion via cancel_account_deletion seam',
+        () async {
+      final requested = DateTime.utc(2026, 10, 20);
+      final profiles = FakeProfileService(
+        profile: UserProfile(
+          id: 'u1',
+          displayName: 'Ada',
+          avatarUrl: 'https://example.com/a.png',
+          deletionRequestedAt: requested,
+        ),
+      );
+
+      // Sign-in path in main.dart calls profiles.load() with default true.
+      await profiles.load();
+
+      expect(profiles.loadCalls, 1);
+      expect(profiles.lastCancelPendingDeletion, isTrue);
+      expect(profiles.cancelAccountDeletionCalls, 1);
+      expect(profiles.profile?.deletionRequestedAt, isNull);
+    });
+
+    test('load skips cancel when cancelPendingDeletion is false', () async {
+      final requested = DateTime.utc(2026, 10, 20);
+      final profiles = FakeProfileService(
+        profile: UserProfile(
+          id: 'u1',
+          deletionRequestedAt: requested,
+        ),
+      );
+
+      await profiles.load(cancelPendingDeletion: false);
+
+      expect(profiles.cancelAccountDeletionCalls, 0);
+      expect(profiles.profile?.deletionRequestedAt, requested);
+    });
+
+    test('load does not cancel when no deletion is pending', () async {
+      final profiles = FakeProfileService(
+        profile: const UserProfile(id: 'u1', displayName: 'Ada', avatarUrl: 'x'),
+      );
+
+      await profiles.load();
+
+      expect(profiles.cancelAccountDeletionCalls, 0);
+      expect(profiles.profile?.deletionRequestedAt, isNull);
     });
   });
 
