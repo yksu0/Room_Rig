@@ -50,18 +50,20 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
   }
 
-  testWidgets('Hub empty: Create quick action, no Scan quick action, FAB-oriented copy',
+  testWidgets('Hub empty: Create via FAB only — no Get Started / Quick Create',
       (tester) async {
     ignoreLayoutNoise();
     final state = AppState();
     expect(state.roomIsReady, isFalse);
     await pumpHome(tester, state);
 
-    expect(find.text('Create'), findsWidgets);
+    expect(find.text('GET STARTED'), findsNothing);
+    expect(find.text('Create room'), findsNothing);
+    expect(find.text('QUICK ACTIONS'), findsNothing);
+    expect(find.byType(FloatingActionButton), findsOneWidget);
     expect(find.text('Scan (opt.)'), findsNothing);
     expect(find.textContaining('Scan in Quick Actions'), findsNothing);
     expect(find.textContaining('Tap the + button'), findsWidgets);
-    expect(find.text('GET STARTED'), findsOneWidget);
     expect(find.text('1. Edit Room'), findsOneWidget);
     expect(find.text('3. Apply'), findsOneWidget);
     expect(find.text('Overall'), findsNothing);
